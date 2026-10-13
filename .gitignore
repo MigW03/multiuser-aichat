@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# keep the env template, never real env files
+!.env.example
+
+# throwaway test accounts for the dev Supabase project
+supabase/test-users.json

@@ -1,55 +1,59 @@
-# Multiuser Chat
+# Multiuser Chat (desktop)
 
-A group chat where everyone shares one AI. People write in the same conversation, the AI sees who said what and answers, with realtime updates for everyone.
+A group chat where everyone shares one AI, as a native desktop app. The UI is drawn with
+[GPUI](https://gpui.rs) (pinned to `=0.2.2`), with no web view. Targets macOS and Windows.
+Supabase provides accounts, the database and realtime; there is no other server.
 
 ## Features
 
-- Email/password accounts. Invite another **existing** user to a chat by email (max 2 members for now).
-- Chat history is persisted. Chats can be renamed by any member.
-- Realtime: messages, AI streaming, typing indicators.
-- **Bring your own key:** each person saves their own OpenRouter, Anthropic and/or OpenAI API key and picks their own model. The AI answers a person's messages with that person's key and model.
-- Model picker: searchable list loaded live from the provider, favorites, and the model is remembered per chat. OpenRouter models show prices; for other providers the picker points to the provider's pricing.
-- AI replies render as markdown.
+- Sign in with email and password. The session is kept in the OS keychain.
+- Chat list, new chat, rename a chat, invite an existing user by email (up to the chat's member limit).
+- Messages update live for everyone (Supabase Realtime), and AI replies stream in as they are written.
+- **Bring your own key:** each person saves their OpenRouter, Anthropic or OpenAI key under **API keys** and picks
+  a model per chat. Keys are stored in the OS keychain and only sent to that provider.
 
-Not built yet: `@` mentions to skip the AI, projects, more than 2 members, desktop app.
+## How AI replies work
 
-## Design decisions
+Each person's app answers that person's own messages:
 
-| Topic | Decision |
-|---|---|
-| AI replies | After every message |
-| Attribution | The model sees `[Name]: text` for each user message |
-| Keys | One key per provider per user, encrypted at rest (AES-256-GCM), write-only (the API only returns the last 4 characters), readable only by the server |
-| Billing | Each user pays their own provider; there is no shared server key |
-| Concurrency | One AI run per chat at a time. A run covers one person's pending messages (their key and model); other people's messages show "Waiting in queue…" and are answered in the following runs |
-| Provider prices | Only prices a provider publishes through its own API are shown |
-| Desktop later | Keep logic in Supabase and API routes so a Tauri/Electron shell can reuse the same web app |
+1. Sending inserts the message as `pending` (RLS checks membership).
+2. The sender's app calls `start_ai_run`, which takes the chat's run lock (one reply at a time per chat), marks the
+   sender's pending messages `processing` and creates an empty `streaming` assistant message.
+3. The app streams the reply from the provider with the key in its keychain, broadcasting full-text snapshots on the
+   private `chat:<id>` channel so everyone sees it being written.
+4. `finish_ai_run` saves the reply and releases the lock. A run whose app quit mid-reply is cleaned up when its
+   lock expires (5 minutes).
 
-## How it works
+These functions are in `supabase/migrations/0008_client_ai_runs.sql`.
 
-1. `POST /api/chats/[id]/messages` checks the sender has a key for the chosen provider, inserts the message as `pending` (RLS checks membership), then schedules `processChatQueue` with `after()`.
-2. `processChatQueue` (`src/lib/ai/run-queue.ts`) takes a per-chat lock (`claim_chat_run`, expires after 5 min), picks the earliest waiting author, marks that author's pending messages `processing`, decrypts their key, streams the reply with the AI SDK, and marks them `done`. It repeats until nothing is pending.
-3. Streaming text goes to clients as full-text snapshots over a private Supabase Broadcast channel (`chat:<id>`). The final message is saved to Postgres, and clients receive it through Postgres Changes.
-4. Typing indicators and chat renames are client-to-client Broadcast events on the same channel.
-5. Keys live in `user_api_keys`, which has row level security on and no access for browser roles; only the server's service key reads it (`src/lib/ai/keys.ts`, `src/lib/crypto.ts`).
+## Run it
 
-## Setup
+1. Install Rust: https://rustup.rs (on Windows, also the "Desktop development with C++" workload of Visual Studio Build Tools).
+2. `cp .env.example .env` and fill in `SUPABASE_URL` and `SUPABASE_ANON_KEY` (the publishable key). `.env` is gitignored.
+3. `cargo run --release`.
+   On macOS, `./scripts/bundle-macos.sh` builds `target/MultiuserChat.app` with the Supabase settings built in,
+   so it opens like any other app.
 
-1. Create a Supabase project and run the files in `supabase/migrations/` in order (`0001` to `0006`), in the SQL editor or with the Supabase CLI.
-2. In Supabase, Authentication → Providers → Email: turn off "Confirm email" for local demos.
-3. Copy `.env.example` to `.env.local` and fill in the Supabase URL, anon key and secret key. Generate the encryption secret with `openssl rand -base64 32` and set it as `KEY_ENCRYPTION_SECRET`.
-4. `npm install && npm run dev`, then open http://localhost:3000.
-5. Sign up two accounts (two browsers or one normal and one private window), add an API key under "API keys" for each, create a chat with one, and invite the other by email.
+macOS builds use GPUI's `runtime_shaders` feature, so Xcode's Command Line Tools are enough.
 
-## Deploying (Vercel)
+## Database setup
 
-- Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SECRET_KEY` and `KEY_ENCRYPTION_SECRET` as environment variables, and mark the last two Sensitive. Redeploy after changing any of them, because the `NEXT_PUBLIC_` values are baked in at build time.
-- Use the same `KEY_ENCRYPTION_SECRET` as every other environment that shares the database. A different secret makes the saved keys unreadable.
-- Choose a function region close to your Supabase project. A run is bounded by the route's `maxDuration` (300 s).
+Run the files in `supabase/migrations/` in order on a Supabase project (SQL editor or `supabase db push`).
+For local demos, turn off "Confirm email" under Authentication → Providers → Email.
 
-## Known limitations
+## Not built yet
 
-- Reloading the page mid-stream shows the AI bubble empty until the reply finishes (only the final text is stored).
-- Messages sent while you were on another page may not appear until you reload.
-- No rate limiting on the API key and model routes yet.
-- `KEY_ENCRYPTION_SECRET` can't be rotated without users re-entering their keys.
+- Sign up (create accounts on Supabase for now), invite links, favorite models, a model list from the provider.
+- Markdown rendering, selecting or copying message text, multi-line input, typing indicators.
+- Keys are per computer: a second computer needs the key entered again.
+- Not tested on Windows yet.
+
+## Layout
+
+- `src/theme.rs`: every color, size and font.
+- `src/config.rs`: Supabase URL and key.
+- `src/backend/`: auth and REST (`mod.rs`), realtime (`realtime.rs`), AI runs (`runner.rs`), provider streaming
+  (`ai.rs`), keychain (`keys.rs`), row types (`models.rs`).
+- `src/ui/`: sign-in, chat list, chat view (with rename, invite and model editors), API keys, and the text input
+  (adapted from the Apache-2.0 `gpui` example).
+- `src/runtime.rs`: runs network code on Tokio and hands results back to GPUI.

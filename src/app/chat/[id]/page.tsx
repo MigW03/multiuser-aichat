@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ChatRoom, type ChatMessage, type Member } from "@/components/chat-room";
+import type { ChatCheckpoint } from "@/components/summary-divider";
 import type { ModelChoice } from "@/components/model-picker";
 import { listKeyHints } from "@/lib/ai/keys";
 import { isProvider } from "@/lib/ai/provider-meta";
@@ -19,8 +20,16 @@ export default async function ChatPage({ params }: PageProps<"/chat/[id]">) {
   const { data: chat } = await supabase.from("chats").select("id, title").eq("id", id).maybeSingle();
   if (!chat) notFound();
 
-  const [{ data: messages }, { data: members }, { data: profile }, { data: membership }, { data: favorites }, keys] = await Promise.all([
+  const [{ data: messages }, { data: checkpoint }, { data: members }, { data: profile }, { data: membership }, { data: favorites }, keys] = await Promise.all([
     supabase.from("messages").select("id, author_id, role, content, status, seq, provider, model").eq("chat_id", id).order("seq"),
+    supabase
+      .from("chat_checkpoints")
+      .select("id, covers_through_seq, summary, model")
+      .eq("chat_id", id)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase.from("chat_members").select("profiles(id, display_name)").eq("chat_id", id),
     supabase.from("profiles").select("ai_provider, ai_model").eq("id", userId).maybeSingle(),
     supabase.from("chat_members").select("ai_provider, ai_model").eq("chat_id", id).eq("user_id", userId).maybeSingle(),
@@ -42,6 +51,7 @@ export default async function ChatPage({ params }: PageProps<"/chat/[id]">) {
       title={chat.title}
       userId={userId}
       initialMessages={(messages ?? []) as ChatMessage[]}
+      initialCheckpoint={checkpoint ? { ...(checkpoint as ChatCheckpoint), covers_through_seq: Number(checkpoint.covers_through_seq) } : null}
       initialMembers={memberList}
       providers={keys.map((k) => k.provider)}
       initialFavorites={(favorites ?? []).filter((f): f is ModelChoice => isProvider(f.provider))}

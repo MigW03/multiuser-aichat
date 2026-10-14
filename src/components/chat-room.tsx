@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Markdown } from "@/components/markdown";
 import { ModelPicker, type ModelChoice } from "@/components/model-picker";
+import { SharingMenu } from "@/components/sharing-menu";
+import { SummaryDivider, type ChatCheckpoint } from "@/components/summary-divider";
 import type { ProviderId } from "@/lib/ai/provider-meta";
 
 export type ChatMessage = {
@@ -27,6 +29,7 @@ export function ChatRoom(props: {
   title: string;
   userId: string;
   initialMessages: ChatMessage[];
+  initialCheckpoint: ChatCheckpoint | null;
   initialMembers: Member[];
   providers: ProviderId[]; // providers this user has saved a key for
   initialChoice: ModelChoice | null;
@@ -35,6 +38,7 @@ export function ChatRoom(props: {
   const { chatId, userId } = props;
   const supabase = useMemo(() => createClient(), []);
   const [messages, setMessages] = useState(props.initialMessages);
+  const [checkpoint, setCheckpoint] = useState(props.initialCheckpoint);
   const [members, setMembers] = useState(props.initialMembers);
   const [providers, setProviders] = useState(props.providers);
   const [choice, setChoice] = useState(props.initialChoice);
@@ -42,7 +46,6 @@ export function ChatRoom(props: {
   const [streams, setStreams] = useState<Record<string, string>>({}); // messageId -> live text
   const [typing, setTyping] = useState<Record<string, number>>({}); // userId -> last typing timestamp
   const [text, setText] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [title, setTitle] = useState(props.title);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -63,6 +66,17 @@ export function ChatRoom(props: {
     });
   }, []);
 
+  const refreshMembers = useCallback(async () => {
+    const { data: rows } = await supabase.from("chat_members").select("profiles(id, display_name)").eq("chat_id", chatId);
+    setMembers((rows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean));
+  }, [supabase, chatId]);
+
+  // Someone who joins through an invite link isn't in `members` yet; their first message triggers a refresh.
+  const memberIds = useRef(new Set(props.initialMembers.map((m) => m.id)));
+  useEffect(() => {
+    memberIds.current = new Set(members.map((m) => m.id));
+  }, [members]);
+
   useEffect(() => {
     const channel = supabase
       .channel(`chat:${chatId}`, { config: { private: true } })
@@ -70,6 +84,7 @@ export function ChatRoom(props: {
         if (p.eventType === "DELETE") return;
         const m = p.new as ChatMessage;
         upsert(m);
+        if (m.author_id && !memberIds.current.has(m.author_id)) void refreshMembers();
         if (m.status === "done" || m.status === "error") {
           setStreams((s) => {
             if (!(m.id in s)) return s;
@@ -78,6 +93,10 @@ export function ChatRoom(props: {
             return rest;
           });
         }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_checkpoints", filter: `chat_id=eq.${chatId}` }, (p) => {
+        const c = p.new as ChatCheckpoint & { status: string };
+        if (c.status === "completed") setCheckpoint({ ...c, covers_through_seq: Number(c.covers_through_seq) });
       })
       .on("broadcast", { event: "stream" }, ({ payload }) => {
         setStreams((s) => ({ ...s, [payload.messageId]: payload.content }));
@@ -94,7 +113,7 @@ export function ChatRoom(props: {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [chatId, supabase, upsert]);
+  }, [chatId, supabase, upsert, refreshMembers]);
 
   // Keys are added on the Settings page; this re-runs when a kept-alive chat page is shown again.
   useEffect(() => {
@@ -234,17 +253,6 @@ export function ChatRoom(props: {
     void channelRef.current?.send({ type: "broadcast", event: "rename", payload: { title: data } });
   }
 
-  async function invite(e: React.FormEvent) {
-    e.preventDefault();
-    setNotice(null);
-    const { data, error } = await supabase.rpc("invite_to_chat", { p_chat_id: chatId, p_email: inviteEmail });
-    if (error) return setNotice(error.message);
-    setInviteEmail("");
-    setNotice(`${data} was added to the chat.`);
-    const { data: rows } = await supabase.from("chat_members").select("profiles(id, display_name)").eq("chat_id", chatId);
-    setMembers((rows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean));
-  }
-
   const typingNames = Object.keys(typing)
     .filter((id) => id !== userId)
     .map((id) => names.get(id) ?? "Someone");
@@ -289,17 +297,9 @@ export function ChatRoom(props: {
           </h1>
         )}
         <span className="text-sm text-neutral-500">{members.map((m) => m.display_name).join(", ")}</span>
-        <form onSubmit={invite} className="ml-auto flex gap-2">
-          <input
-            type="email"
-            required
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="Invite by email"
-            className="w-48 rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-          />
-          <button className="rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700">Invite</button>
-        </form>
+        <div className="ml-auto">
+          <SharingMenu chatId={chatId} members={members} onMembersChanged={refreshMembers} />
+        </div>
         {notice && <p className="w-full text-sm text-neutral-500">{notice}</p>}
       </header>
 
@@ -315,36 +315,41 @@ export function ChatRoom(props: {
             )}
           </div>
         )}
-        {messages.map((m) => {
+        {messages.map((m, i) => {
+          const summarizedAbove =
+            !!checkpoint && m.seq > checkpoint.covers_through_seq && (i === 0 || messages[i - 1].seq <= checkpoint.covers_through_seq);
           const mine = m.author_id === userId;
           const content = m.role === "assistant" && m.status === "streaming" ? (streams[m.id] ?? "") : m.content;
           const waiting = m.role === "user" && (m.status === "pending" || m.status === "processing");
           return (
-            <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
-              <span className="mb-1 text-xs text-neutral-500">
-                {m.role === "assistant" ? (m.model ? `AI · ${m.model}` : "AI") : mine ? "You" : (names.get(m.author_id ?? "") ?? "Someone")}
-              </span>
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.role === "assistant" ? "" : "whitespace-pre-wrap"} ${
-                  m.role === "assistant"
-                    ? "bg-neutral-100 dark:bg-neutral-900"
-                    : mine
-                      ? "bg-foreground text-background"
-                      : "bg-blue-100 text-neutral-900 dark:bg-blue-950 dark:text-neutral-100"
-                } ${m.status === "error" ? "border border-red-500" : ""}`}
-              >
-                {m.role === "assistant" ? (
-                  content ? <Markdown>{content}</Markdown> : m.status === "streaming" ? "…" : ""
-                ) : (
-                  content
+            <Fragment key={m.id}>
+              {summarizedAbove && checkpoint && <SummaryDivider checkpoint={checkpoint} />}
+              <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                <span className="mb-1 text-xs text-neutral-500">
+                  {m.role === "assistant" ? (m.model ? `AI · ${m.model}` : "AI") : mine ? "You" : (names.get(m.author_id ?? "") ?? "Someone")}
+                </span>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.role === "assistant" ? "" : "whitespace-pre-wrap"} ${
+                    m.role === "assistant"
+                      ? "bg-neutral-100 dark:bg-neutral-900"
+                      : mine
+                        ? "bg-foreground text-background"
+                        : "bg-blue-100 text-neutral-900 dark:bg-blue-950 dark:text-neutral-100"
+                  } ${m.status === "error" ? "border border-red-500" : ""}`}
+                >
+                  {m.role === "assistant" ? (
+                    content ? <Markdown>{content}</Markdown> : m.status === "streaming" ? "…" : ""
+                  ) : (
+                    content
+                  )}
+                </div>
+                {waiting && (
+                  <span className="mt-1 text-xs text-neutral-500">
+                    {m.status === "pending" ? "Waiting in queue…" : "AI is answering…"}
+                  </span>
                 )}
               </div>
-              {waiting && (
-                <span className="mt-1 text-xs text-neutral-500">
-                  {m.status === "pending" ? "Waiting in queue…" : "AI is answering…"}
-                </span>
-              )}
-            </div>
+            </Fragment>
           );
         })}
         <div ref={bottomRef} />

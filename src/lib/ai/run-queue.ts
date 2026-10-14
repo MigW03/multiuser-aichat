@@ -1,19 +1,23 @@
-import { streamText, type ModelMessage } from "ai";
+import { generateText, streamText, type LanguageModel } from "ai";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserKey } from "@/lib/ai/keys";
 import { isProvider, languageModel, PROVIDER_LABELS } from "@/lib/ai/providers";
+import { summarizeMessages } from "@/lib/ai/context/compaction";
+import {
+  estimateRequest,
+  splitForCompaction,
+  toModelMessages,
+  trimToFit,
+  type Checkpoint,
+  type HistoryMessage,
+} from "@/lib/ai/context/history";
+import { textParts, type MessagePart, type StoredUsage } from "@/lib/ai/context/parts";
+import { DEFAULT_CONTEXT_WINDOW, inputCeiling } from "@/lib/ai/context/tokens";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-type Row = {
-  id: string;
-  role: "user" | "assistant";
-  author_id: string | null;
-  content: string;
-  status: string;
-};
-
-const HISTORY_LIMIT = 60;
+// History is bounded by tokens, not count; this only stops a runaway load if summarizing keeps failing.
+const HISTORY_SAFETY_LIMIT = 2000;
 const LOCK_SECONDS = 300;
 const BROADCAST_EVERY_MS = 120;
 
@@ -22,21 +26,6 @@ function instructions(askerName: string) {
 Each user message is prefixed with the author's name in brackets, like "[Ana]: ...". Address people by name when it helps, and keep track of who said what.
 You are replying to the latest message(s) from ${askerName}. Other people may have messages waiting that you haven't seen yet; those are answered separately, so don't guess at them.
 Don't prefix your own replies with a name.`;
-}
-
-/** Merge consecutive same-role messages; some providers require strict alternation. */
-function toModelMessages(rows: Row[], names: Map<string, string>): ModelMessage[] {
-  const out: ModelMessage[] = [];
-  for (const r of rows) {
-    const text = r.role === "user" ? `[${names.get(r.author_id ?? "") ?? "Someone"}]: ${r.content}` : r.content;
-    const last = out[out.length - 1];
-    if (last && last.role === r.role && typeof last.content === "string") {
-      last.content += `\n\n${text}`;
-    } else {
-      out.push({ role: r.role, content: text });
-    }
-  }
-  return out;
 }
 
 async function hasPending(admin: Admin, chatId: string) {
@@ -76,7 +65,7 @@ export async function processChatQueue(chatId: string) {
 async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
   const { data: pending } = await admin
     .from("messages")
-    .select("id, author_id, provider, model")
+    .select("id, seq, author_id, provider, model")
     .eq("chat_id", chatId)
     .eq("status", "pending")
     .order("seq");
@@ -87,6 +76,7 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
   const choice = batch[batch.length - 1]; // their most recent model pick
   const provider = isProvider(choice.provider) ? choice.provider : null;
   const modelId = choice.model as string | null;
+  const batchStartSeq = Number(batch[0].seq);
 
   await admin.from("messages").update({ status: "processing" }).in("id", batchIds);
 
@@ -105,15 +95,17 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
 
   let apiKey: string | null = null;
   try {
-    const [{ data: history }, { data: members }] = await Promise.all([
-      admin
-        .from("messages")
-        .select("id, role, author_id, content, status")
-        .eq("chat_id", chatId)
-        .in("status", ["done", "processing"])
-        .order("seq", { ascending: false })
-        .limit(HISTORY_LIMIT),
+    const [{ data: chat }, { data: members }, { data: lastCheckpoint }] = await Promise.all([
+      admin.from("chats").select("context_window").eq("id", chatId).single(),
       admin.from("chat_members").select("profiles(id, display_name)").eq("chat_id", chatId),
+      admin
+        .from("chat_checkpoints")
+        .select("id, covers_through_seq, summary")
+        .eq("chat_id", chatId)
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     const names = new Map<string, string>();
@@ -126,6 +118,35 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
     if (!authorId || !provider || !modelId) throw new Error("This message was sent without a model selected.");
     apiKey = await getUserKey(authorId, provider);
     if (!apiKey) throw new Error(`${asker} has no ${PROVIDER_LABELS[provider]} API key saved. They can add one in Settings.`);
+    const model = languageModel(provider, apiKey, modelId);
+
+    let checkpoint = lastCheckpoint as Checkpoint | null;
+    const { data: rows } = await admin
+      .from("messages")
+      .select("seq, role, author_id, content, parts, usage")
+      .eq("chat_id", chatId)
+      .in("status", ["done", "processing"])
+      .gt("seq", checkpoint?.covers_through_seq ?? 0)
+      .order("seq", { ascending: false })
+      .limit(HISTORY_SAFETY_LIMIT);
+    let history = ((rows ?? []) as HistoryMessage[]).map((r) => ({ ...r, seq: Number(r.seq) })).reverse();
+
+    // Budget against the chat's window, not the model's, so every model in the chat sees the same history.
+    const window = (chat?.context_window as number | null) ?? DEFAULT_CONTEXT_WINDOW;
+    const ceiling = inputCeiling(window);
+    const sizeOf = (messages: HistoryMessage[]) =>
+      estimateRequest({ instructions: instructions(asker), checkpoint, messages, names, provider });
+
+    if (sizeOf(history) > ceiling) {
+      void send("_Summarizing earlier messages…_");
+      try {
+        const compacted = await compact(admin, { chatId, authorId, provider, modelId, model, checkpoint, history, names, window, batchStartSeq });
+        if (compacted) ({ checkpoint, history } = compacted);
+      } catch (err) {
+        console.error("Chat compaction failed", chatId, err instanceof Error ? err.message.split(apiKey).join("***") : err);
+      }
+      if (sizeOf(history) > ceiling) history = trimToFit(history, (m) => sizeOf(m) <= ceiling, batchStartSeq);
+    }
 
     // streamText swallows provider errors (bad key, unknown model) and just ends the stream, so capture them.
     let streamError: unknown = null;
@@ -133,9 +154,9 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
       onError: ({ error }) => {
         streamError = error;
       },
-      model: languageModel(provider, apiKey, modelId),
+      model,
       instructions: instructions(asker),
-      messages: toModelMessages((history ?? []).reverse() as Row[], names),
+      messages: toModelMessages(checkpoint, history, names),
       timeout: { totalMs: (LOCK_SECONDS - 30) * 1000 },
     });
 
@@ -150,7 +171,19 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
     }
 
     if (streamError) throw streamError;
-    await admin.from("messages").update({ content: text, status: "done" }).eq("id", assistant.id);
+    const producedBy = { provider, model: modelId };
+    const [usage, reasoning] = await Promise.all([result.usage, result.reasoningText]);
+    const parts: MessagePart[] = [
+      ...(reasoning ? [{ type: "reasoning" as const, text: reasoning, producedBy }] : []),
+      ...textParts(text, producedBy),
+    ];
+    const storedUsage: StoredUsage = {
+      ...producedBy,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      checkpointId: checkpoint?.id ?? null,
+    };
+    await admin.from("messages").update({ content: text, parts, usage: storedUsage, status: "done" }).eq("id", assistant.id);
     await admin.from("messages").update({ status: "done" }).in("id", batchIds);
   } catch (err) {
     let message = err instanceof Error ? err.message : "AI request failed";
@@ -164,4 +197,60 @@ async function runOnce(admin: Admin, chatId: string): Promise<boolean> {
     await admin.removeChannel(channel);
   }
   return true;
+}
+
+/**
+ * Summarizes everything but the most recent messages into a new checkpoint, with the requester's model
+ * and key ("each person pays for their own messages"). Returns null when nothing is old enough to fold in.
+ */
+async function compact(
+  admin: Admin,
+  opts: {
+    chatId: string;
+    authorId: string;
+    provider: string;
+    modelId: string;
+    model: LanguageModel;
+    checkpoint: Checkpoint | null;
+    history: HistoryMessage[];
+    names: Map<string, string>;
+    window: number;
+    batchStartSeq: number;
+  },
+): Promise<{ checkpoint: Checkpoint; history: HistoryMessage[] } | null> {
+  const split = splitForCompaction(opts.history, opts.names, opts.window, opts.batchStartSeq);
+  if (!split) return null;
+
+  const { summary, inputTokens, outputTokens } = await summarizeMessages({
+    previous: opts.checkpoint?.summary ?? null,
+    messages: split.covered,
+    names: opts.names,
+    window: opts.window,
+    summarize: async (instructions, prompt) => {
+      const { text, usage } = await generateText({
+        model: opts.model,
+        instructions,
+        prompt,
+        timeout: { totalMs: 120_000 },
+      });
+      return { text, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
+    },
+  });
+
+  const { data, error } = await admin
+    .from("chat_checkpoints")
+    .insert({
+      chat_id: opts.chatId,
+      covers_through_seq: split.covered[split.covered.length - 1].seq,
+      summary,
+      status: "completed",
+      created_by: opts.authorId,
+      provider: opts.provider,
+      model: opts.modelId,
+      usage: { inputTokens, outputTokens },
+    })
+    .select("id, covers_through_seq, summary")
+    .single();
+  if (error || !data) throw new Error(`Could not save the summary: ${error?.message}`);
+  return { checkpoint: { ...data, covers_through_seq: Number(data.covers_through_seq) }, history: split.kept };
 }

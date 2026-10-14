@@ -2,6 +2,7 @@ import { LIMITS, isProvider, type Chat, type ChatMessage, type Member, type Mode
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "../api.ts";
 import { supabase } from "../supabase.ts";
+import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 
 const MESSAGE_COLUMNS = "id, chat_id, author_id, role, content, status, seq, provider, model";
@@ -231,7 +232,7 @@ export function ChatRoom(props: { chat: Chat; userId: string; onRenamed: (id: st
           return (
             <div key={m.id} className={`message ${own ? "own" : ""} ${ai ? "ai" : ""} ${m.status === "error" && ai ? "error" : ""}`}>
               <div className="small muted">{author}</div>
-              <div className="bubble">{body}</div>
+              <div className={`bubble ${ai ? "rich" : ""}`}>{ai ? <Markdown text={body} /> : body}</div>
               {status && <div className="small muted">{status}</div>}
             </div>
           );

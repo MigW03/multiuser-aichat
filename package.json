@@ -1,35 +1,23 @@
 {
   "name": "multiuser-chat",
-  "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "ui",
+    "web",
+    "desktop"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.79",
-    "@ai-sdk/openai": "^4.0.92",
-    "@ai-sdk/openai-compatible": "^3.0.68",
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.117.3",
-    "ai": "^7.0.138",
-    "next": "16.4.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "zod": "^4.6.7"
+    "dev": "concurrently -n server,web,desktop -c blue,green,magenta \"npm run dev -w server\" \"npm run dev -w web\" \"npm run dev -w desktop\"",
+    "dev:web": "concurrently -n server,web \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web && npm run build -w desktop",
+    "typecheck": "tsc -p shared && tsc -p server && tsc -p ui && tsc -p web && tsc -p desktop",
+    "audit": "npm audit --omit=dev"
   },
   "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.0",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "concurrently": "^10.0.6",
+    "typescript": "^5.9.3"
   }
 }

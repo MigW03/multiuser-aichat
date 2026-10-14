@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNext } from "@/lib/safe-next";
 
 // Refreshes the Supabase session cookie and gates pages behind login.
 export async function proxy(request: NextRequest) {
@@ -22,14 +23,20 @@ export async function proxy(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const isLoggedIn = !!data?.claims;
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
-  const isApi = request.nextUrl.pathname.startsWith("/api");
+  const { pathname, search } = request.nextUrl;
+  const isLoginPage = pathname.startsWith("/login");
+  const isApi = pathname.startsWith("/api");
 
   if (!isLoggedIn && !isLoginPage && !isApi) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Come back to the requested page after signing in. Invite links go straight to sign-up,
+    // since whoever opens one most likely has no account yet.
+    const login = new URL("/login", request.url);
+    if (pathname !== "/") login.searchParams.set("next", pathname + search);
+    if (pathname.startsWith("/invite/")) login.searchParams.set("mode", "signup");
+    return NextResponse.redirect(login);
   }
   if (isLoggedIn && isLoginPage) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL(safeNext(request.nextUrl.searchParams.get("next")), request.url));
   }
   return response;
 }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Markdown } from "@/components/markdown";
 import { ModelPicker, type ModelChoice } from "@/components/model-picker";
+import { SharingMenu } from "@/components/sharing-menu";
 import type { ProviderId } from "@/lib/ai/provider-meta";
 
 export type ChatMessage = {
@@ -42,7 +43,6 @@ export function ChatRoom(props: {
   const [streams, setStreams] = useState<Record<string, string>>({}); // messageId -> live text
   const [typing, setTyping] = useState<Record<string, number>>({}); // userId -> last typing timestamp
   const [text, setText] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [title, setTitle] = useState(props.title);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -63,6 +63,17 @@ export function ChatRoom(props: {
     });
   }, []);
 
+  const refreshMembers = useCallback(async () => {
+    const { data: rows } = await supabase.from("chat_members").select("profiles(id, display_name)").eq("chat_id", chatId);
+    setMembers((rows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean));
+  }, [supabase, chatId]);
+
+  // Someone who joins through an invite link isn't in `members` yet; their first message triggers a refresh.
+  const memberIds = useRef(new Set(props.initialMembers.map((m) => m.id)));
+  useEffect(() => {
+    memberIds.current = new Set(members.map((m) => m.id));
+  }, [members]);
+
   useEffect(() => {
     const channel = supabase
       .channel(`chat:${chatId}`, { config: { private: true } })
@@ -70,6 +81,7 @@ export function ChatRoom(props: {
         if (p.eventType === "DELETE") return;
         const m = p.new as ChatMessage;
         upsert(m);
+        if (m.author_id && !memberIds.current.has(m.author_id)) void refreshMembers();
         if (m.status === "done" || m.status === "error") {
           setStreams((s) => {
             if (!(m.id in s)) return s;
@@ -94,7 +106,7 @@ export function ChatRoom(props: {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [chatId, supabase, upsert]);
+  }, [chatId, supabase, upsert, refreshMembers]);
 
   // Keys are added on the Settings page; this re-runs when a kept-alive chat page is shown again.
   useEffect(() => {
@@ -234,17 +246,6 @@ export function ChatRoom(props: {
     void channelRef.current?.send({ type: "broadcast", event: "rename", payload: { title: data } });
   }
 
-  async function invite(e: React.FormEvent) {
-    e.preventDefault();
-    setNotice(null);
-    const { data, error } = await supabase.rpc("invite_to_chat", { p_chat_id: chatId, p_email: inviteEmail });
-    if (error) return setNotice(error.message);
-    setInviteEmail("");
-    setNotice(`${data} was added to the chat.`);
-    const { data: rows } = await supabase.from("chat_members").select("profiles(id, display_name)").eq("chat_id", chatId);
-    setMembers((rows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean));
-  }
-
   const typingNames = Object.keys(typing)
     .filter((id) => id !== userId)
     .map((id) => names.get(id) ?? "Someone");
@@ -289,17 +290,9 @@ export function ChatRoom(props: {
           </h1>
         )}
         <span className="text-sm text-neutral-500">{members.map((m) => m.display_name).join(", ")}</span>
-        <form onSubmit={invite} className="ml-auto flex gap-2">
-          <input
-            type="email"
-            required
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="Invite by email"
-            className="w-48 rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-          />
-          <button className="rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700">Invite</button>
-        </form>
+        <div className="ml-auto">
+          <SharingMenu chatId={chatId} members={members} onMembersChanged={refreshMembers} />
+        </div>
         {notice && <p className="w-full text-sm text-neutral-500">{notice}</p>}
       </header>
 

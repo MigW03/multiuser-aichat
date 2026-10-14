@@ -1,0 +1,23 @@
+{
+  "name": "multiuser-chat",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "ui",
+    "web",
+    "desktop"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web,desktop -c blue,green,magenta \"npm run dev -w server\" \"npm run dev -w web\" \"npm run dev -w desktop\"",
+    "dev:web": "concurrently -n server,web \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web && npm run build -w desktop",
+    "typecheck": "tsc -p shared && tsc -p server && tsc -p ui && tsc -p web && tsc -p desktop",
+    "audit": "npm audit --omit=dev"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "^5.9.3"
+  }
+}

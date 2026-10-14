@@ -1,5 +1,8 @@
-/target
+node_modules/
+dist/
+out/
 .DS_Store
+*.tsbuildinfo
 
 # secrets: env files (keep the template), keys and certificates
 .env*
@@ -11,10 +14,7 @@
 # throwaway test accounts for the dev Supabase project
 supabase/test-users.json
 
-# left over from the old web app, kept out of git
-/node_modules
+# left over from the old Next.js app
 /.next/
-/out/
-.vercel
 next-env.d.ts
-*.tsbuildinfo
+.vercel

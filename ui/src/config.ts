@@ -9,3 +9,6 @@ export const config = {
 
 export const configError =
   !config.supabaseUrl || !config.supabaseAnonKey ? "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local, then restart." : null;
+
+/** Shown in the app. The product name is not final. */
+export const APP_NAME = "Multiuser Chat";

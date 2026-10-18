@@ -3,6 +3,7 @@ import { ArrowUp, CornerUpLeft, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
+import { useModelReasoning } from "../lib/models.ts";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { Avatar, Button, ICON, ICON_SM, STROKE } from "./kit.tsx";
 
@@ -38,6 +39,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
 }
 
 export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status }: Props) {
+  const thinking = useModelReasoning(choice);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [highlight, setHighlight] = useState(0);
@@ -143,7 +145,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
           {status}
           <span className="grow" />
           <ModelPicker choice={choice} onChoose={onModel} />
-          <ReasoningPicker value={choice?.reasoning ?? "medium"} onChange={onReasoning} disabled={!choice} />
+          <ReasoningPicker levels={thinking.levels} value={thinking.effective} onChange={onReasoning} disabled={!choice} />
         </div>
         <div className="composer">
           {replyTo && (

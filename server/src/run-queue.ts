@@ -12,7 +12,7 @@ import {
 import { APICallError, streamText, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { getUserKey } from "./keys.ts";
-import { languageModel } from "./providers.ts";
+import { languageModel, reasoningOptions } from "./providers.ts";
 import { admin, type Admin } from "./supabase.ts";
 
 type Row = {
@@ -247,7 +247,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       model: languageModel(provider, apiKey, modelId),
       instructions,
       messages,
-      ...(reasoning ? { reasoning: reasoning === "off" ? ("none" as const) : reasoning } : {}),
+      ...reasoningOptions(provider, reasoning),
       abortSignal: controller.signal,
       timeout: { totalMs: (LOCK_SECONDS - 30) * 1000 },
     });

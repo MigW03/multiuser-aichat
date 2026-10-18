@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { api } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { greeting } from "../lib/time.ts";
+import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
 import { Composer, type OutgoingMessage } from "./Composer.tsx";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
@@ -85,6 +86,7 @@ export function Landing({
   onShowLeft: () => void;
 }) {
   const { me, keys, choice, setChoice, openAddKey } = useApp();
+  const thinking = useModelReasoning(choice);
   const toast = useToast();
   const created = useRef<string | null>(null);
   const hasKey = (keys?.length ?? 0) > 0;
@@ -98,7 +100,7 @@ export function Landing({
       await api.sendMessage(chatId, {
         id: crypto.randomUUID(),
         content: out.content,
-        ...(choice ? { provider: choice.provider, model: choice.model, reasoning: choice.reasoning } : {}),
+        ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
         mentions: out.mentions,
       });
       notifyChanged();

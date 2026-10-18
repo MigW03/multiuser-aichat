@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
+import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
 import { supabase } from "../supabase.ts";
 import { Composer, type OutgoingMessage } from "./Composer.tsx";
@@ -34,6 +35,7 @@ function typingText(names: string[]): string | null {
 
 export function ChatView({ chat, project, projectPeople, projectOnline, leftCollapsed, onShowLeft }: Props) {
   const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite } = useApp();
+  const thinking = useModelReasoning(choice);
   const toast = useToast();
   const room = useChatRoom(chat.id, me.id);
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
@@ -92,7 +94,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       created_at: new Date().toISOString(),
       provider: choice?.provider ?? null,
       model: choice?.model ?? null,
-      reasoning: choice?.reasoning ?? null,
+      reasoning: thinking.effective,
       reply_to: out.replyTo,
       mentions: out.mentions,
       skip_reason: null,
@@ -106,7 +108,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       await api.sendMessage(chat.id, {
         id,
         content: out.content,
-        ...(choice ? { provider: choice.provider, model: choice.model, reasoning: choice.reasoning } : {}),
+        ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
         mentions: out.mentions,
         ...(out.replyTo ? { replyTo: out.replyTo } : {}),
       });

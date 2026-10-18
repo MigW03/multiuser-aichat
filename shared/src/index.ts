@@ -27,11 +27,24 @@ export function isProvider(value: unknown): value is ProviderId {
   return typeof value === "string" && (PROVIDER_IDS as readonly string[]).includes(value);
 }
 
-export const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
+// Lowest to highest. Which of these a model offers comes from the provider (see ModelInfo.reasoning).
+export const REASONING_LEVELS = ["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type Reasoning = (typeof REASONING_LEVELS)[number];
-export const REASONING_LABELS: Record<Reasoning, string> = { off: "Off", low: "Low", medium: "Medium", high: "High" };
+export const REASONING_LABELS: Record<Reasoning, string> = { off: "Off", on: "On", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 export function isReasoning(value: unknown): value is Reasoning {
   return typeof value === "string" && (REASONING_LEVELS as readonly string[]).includes(value);
+}
+/** Shown only until a model's real levels are known, or when the provider does not say. */
+export const FALLBACK_REASONING: readonly Reasoning[] = ["off", "low", "medium", "high"];
+// "on" stands for a model that can think but has no levels, so it sits where a default level would.
+const RANK: Record<Reasoning, number> = { off: 0, minimal: 1, low: 2, on: 3, medium: 3, high: 4, xhigh: 5, max: 6 };
+/** The level to use on a model that offers `levels`: the wanted one, else the closest. Null when the model cannot think. */
+export function fitReasoning(levels: readonly Reasoning[], wanted: Reasoning): Reasoning | null {
+  if (levels.length === 0) return null;
+  if (levels.includes(wanted)) return wanted;
+  let best = levels[0]!;
+  for (const l of levels) if (Math.abs(RANK[l] - RANK[wanted]) < Math.abs(RANK[best] - RANK[wanted])) best = l;
+  return best;
 }
 export const DEFAULT_REASONING: Reasoning = "medium";
 
@@ -130,7 +143,8 @@ export type ProjectSummary = {
 export type Person = { id: string; display_name: string };
 export type ProjectMember = Person & { email: string; role: Role; joined_at: string };
 export type ModelChoice = { provider: ProviderId; model: string; reasoning: Reasoning };
-export type ModelInfo = { id: string; name: string; pricing?: { input: number; output: number } };
+/** `reasoning` lists the thinking levels the model accepts, lowest first. Empty: it does not think (or cannot be told how). */
+export type ModelInfo = { id: string; name: string; pricing?: { input: number; output: number }; reasoning?: Reasoning[] };
 
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */
 export function modelLabel(model: string | null | undefined): string {

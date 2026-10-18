@@ -1,12 +1,8 @@
-# Wakes the Fly machine in the morning. The night stop (and the main 06:00 start) are two cron-job.org jobs that call
-# the Fly Machines API; see "Night shutdown" in the README. This workflow is the backup start (06:10 Brasília, UTC-3,
-# no daylight saving) and a manual start/stop button. GitHub cron is UTC and can start minutes late; starting a machine
-# that is already running does nothing.
+# Manual start/stop button for the Fly machine (Actions tab > fly-wake > Run workflow).
+# The nightly schedule is two cron-job.org jobs that call the Fly Machines API; see "Night shutdown" in the README.
 name: fly-wake
 
 on:
-  schedule:
-    - cron: "10 9 * * *"   # 06:10 BRT: start
   workflow_dispatch:
     inputs:
       action:
@@ -25,7 +21,7 @@ jobs:
     timeout-minutes: 10
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      ACTION: ${{ inputs.action || 'start' }}
+      ACTION: ${{ inputs.action }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -35,8 +31,6 @@ jobs:
       - name: ${{ env.ACTION }} the server machine
         run: |
           set -euo pipefail
-          # Until the Fly app and this secret exist, the daily run should not fail.
-          if [ -z "${FLY_API_TOKEN:-}" ] && [ "${{ github.event_name }}" = schedule ]; then echo "FLY_API_TOKEN not set, skipping"; exit 0; fi
           app=$(sed -n 's/^app = "\([^"]*\)".*/\1/p' fly.toml)
           ids=$(flyctl machine list --app "$app" --json | jq -r '.[].id')
           [ -n "$ids" ] || { echo "no machines found for $app"; exit 1; }

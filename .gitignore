@@ -18,3 +18,5 @@ supabase/test-users.json
 /.next/
 next-env.d.ts
 .vercel
+desktop/web-dist/
+desktop/release/

@@ -1,6 +1,6 @@
 # Architecture: one small server, two thin clients (TypeScript)
 
-Status: chat part built (2026-10-14). Shared files are next.
+Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18.
 
 ## Pieces
 
@@ -44,18 +44,38 @@ the local file host.
 - **Realtime:** `chat:<id>` carries message changes, stream snapshots, typing hints and presence; `project:<id>`
   carries presence for the green dots. Broadcasts and presence are hints only; nothing is decided from them.
 
-## Shared files (next)
+## Shared folder (v1, read only, built 2026-10-18)
 
-Same model as Zed's collaboration (studied, not copied): the host's app owns the files; the server keeps rooms and
-peers and forwards messages; it never stores the files.
+The project's host shares up to 20 folders and files from their computer in the desktop app. Nothing is uploaded:
+the host's app serves them through the server, which relays requests and checks permissions but stores no file
+contents. One folder alone is shared as is (paths like `src/index.ts`); several items appear as a top level of their
+names (`my-app/src/index.ts`, `notes.md`).
 
-- **CRDT:** Yjs documents, one per open file. Server: Hocuspocus (Yjs websocket server) with an auth hook that
-  checks the Supabase token and chat membership.
-- **Desktop host:** the Electron main process reads/watches the shared folder (only the folder the user picked),
-  answers file-tree and open-file requests, and writes merged edits back to disk.
-- **Guests (web or desktop):** open files through the relay and edit live; cursors via Yjs awareness.
-- **AI:** runs on the server and reads/edits host files through the same relay, so its changes are just more edits.
-- If the host goes offline, the shared files go offline too.
+- **Host app (desktop main process):** items are picked in a native dialog; their paths stay on the host's computer
+  (`userData/shared-folders.json`, mode 0600). The main process keeps one outgoing WebSocket per project to
+  `/api/folder-host` and answers `list`, `read`, `glob` and `grep` (`folder-items.ts`, `folder-fs.ts`). The page can
+  only ask for status, open the dialog, remove an item and stop sharing: it never sees a path or reads a file. Rules:
+  relative paths only, no `..`, symlinks never followed, secrets and junk hidden (`.env*`, keys, `.git`,
+  `node_modules`, build folders), binary and >2 MB files refused, known token formats masked, every answer
+  size-capped. Like opencode (ripgrep), glob and grep skip `.gitignore`d and hidden files; grep runs in a worker
+  thread that is stopped after 10 s so a runaway regular expression can't hang the app.
+- **Server:** `folder-relay.ts` accepts only the project host (Supabase token checked on connect and on each refresh,
+  host role re-checked every 5 minutes, closed when the sign-in is older than 75 minutes), refuses browser-originated
+  sockets (any `Origin` header), validates and size-limits every answer. `routes/folder.ts`: the host links/unlinks;
+  every project member can list and read (rate limited).
+- **Database:** `project_folders` (name, linked by, online flag). Members read it through RLS (it drives the live
+  online/offline badge); only `app_folder_*` functions (service role) write it. Paths are never stored.
+- **AI:** in project chats with shared files, runs get opencode's `read` (files and folders, `<line>: <content>`,
+  offset/limit, 2000 lines), `glob` and `grep` (regex or literal, include, 100 results) with opencode's output shape
+  (`folder-tools.ts`). Results are fenced as untrusted data and the instructions forbid following them. Host offline:
+  the tool says so and the AI tells the chat. ChatGPT plan connections get the tools too; if a model or connection
+  refuses tools, the answer is retried once without them and says it can't open the files.
+- **UI:** the right column of a project's chats (the approved hi-fi board: a 320 px column, the shared folder card on
+  top, Notes under it later), shown and hidden from the chat header. The card shows status, a read-only browser, and
+  for the host in the desktop app: add folders or files, remove one, stop sharing. The web app shows status and browses.
+
+Later: AI edits with host approval (opencode's edit + diff, Odysseus's sealed approvals), compaction, live co-editing
+(Yjs, Zed's model).
 
 ## Decisions
 

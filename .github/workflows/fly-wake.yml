@@ -1,0 +1,40 @@
+# Manual start/stop button for the Fly machine (Actions tab > fly-wake > Run workflow).
+# The nightly schedule is two cron-job.org jobs that call the Fly Machines API; see "Night shutdown" in the README.
+name: fly-wake
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Run by hand
+        type: choice
+        options: [start, stop]
+        required: true
+
+permissions: {}
+
+concurrency: fly-wake
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      ACTION: ${{ inputs.action }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: fly.toml
+          persist-credentials: false
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+      - name: ${{ env.ACTION }} the server machine
+        run: |
+          set -euo pipefail
+          app=$(sed -n 's/^app = "\([^"]*\)".*/\1/p' fly.toml)
+          ids=$(flyctl machine list --app "$app" --json | jq -r '.[].id')
+          [ -n "$ids" ] || { echo "no machines found for $app"; exit 1; }
+          for id in $ids; do
+            # Only `stop` takes --wait-timeout; `start` waits for the machine by itself.
+            if [ "$ACTION" = stop ]; then flyctl machine stop "$id" --app "$app" --wait-timeout 60s; else flyctl machine start "$id" --app "$app"; fi
+          done

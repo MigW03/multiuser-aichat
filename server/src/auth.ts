@@ -6,7 +6,7 @@ import { admin } from "./supabase.ts";
 
 export type AuthVars = { Variables: { userId: string; token: string } };
 
-async function userIdFor(token: string | undefined): Promise<string | null> {
+export async function userIdFor(token: string | undefined): Promise<string | null> {
   if (!token) return null;
   const { data, error } = await admin.auth.getUser(token);
   return error || !data.user ? null : data.user.id;

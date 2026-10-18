@@ -3,6 +3,7 @@ import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { navigate } from "../lib/router.ts";
 import { PREF, writePref } from "../lib/prefs.ts";
+import { authRedirectUrl } from "../config.ts";
 import { supabase } from "../supabase.ts";
 import { Button, ErrorLine, Field, IconButton, ICON, STROKE, TextInput } from "./kit.tsx";
 
@@ -95,7 +96,7 @@ export function AuthForm({
       ? await supabase.auth.signUp({
           email: address,
           password,
-          options: { data: { display_name: name.trim().slice(0, LIMITS.displayNameChars) }, emailRedirectTo: `${location.origin}${location.pathname}` },
+          options: { data: { display_name: name.trim().slice(0, LIMITS.displayNameChars) }, emailRedirectTo: authRedirectUrl() },
         })
       : await supabase.auth.signInWithPassword({ email: address, password });
     setBusy(false);
@@ -155,7 +156,7 @@ function ForgotLink({ email }: { email: string }) {
   const [state, setState] = useState<"idle" | "sent" | "error">("idle");
   async function send() {
     if (!email.trim()) return setState("error");
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${location.origin}${location.pathname}` });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: authRedirectUrl() });
     setState(error ? "error" : "sent");
   }
   if (state === "sent") return <span className="small muted">If that address has an account, a reset link is on its way.</span>;
@@ -180,7 +181,7 @@ export function CheckEmail({ email, onBack }: { email: string; onBack: () => voi
 
   async function resend() {
     setError(null);
-    const { error: e } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: `${location.origin}${location.pathname}` } });
+    const { error: e } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: authRedirectUrl() } });
     if (e) setError(friendly(e.message));
     else setWait(30);
   }

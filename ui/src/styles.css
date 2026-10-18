@@ -76,6 +76,7 @@ h1, h2, h3, p { margin: 0; }
 .icon-btn:hover, .icon-btn.active { background: var(--hover-btn); color: var(--fg); }
 
 .spinner {
+  display: inline-block; vertical-align: middle; box-sizing: border-box;
   width: 14px; height: 14px; border-radius: 50%; flex: none;
   border: 2px solid currentColor; border-right-color: transparent; opacity: 0.7;
   animation: spin 0.7s linear infinite;
@@ -275,6 +276,7 @@ h1, h2, h3, p { margin: 0; }
 .app { display: flex; gap: var(--gap); height: 100%; padding: var(--gap); background: var(--bg); }
 .left-slot { position: relative; flex: none; width: var(--left-width); min-height: 0; display: flex; }
 .panel-resizer { position: absolute; top: 0; bottom: 0; right: calc(var(--gap) / -1); width: var(--gap); z-index: 5; cursor: col-resize; touch-action: none; outline: none; }
+.panel-resizer.right { right: auto; left: calc(var(--gap) / -1); }
 .panel-resizer::after { content: ""; position: absolute; top: 12px; bottom: 12px; left: 50%; width: 2px; margin-left: -1px; border-radius: var(--r-full); background: transparent; transition: background 0.12s; }
 .panel-resizer:hover::after, .panel-resizer:focus-visible::after, .panel-resizer.dragging::after { background: var(--p); }
 .app:has(.panel-resizer.dragging) { cursor: col-resize; user-select: none; }
@@ -364,7 +366,7 @@ h1, h2, h3, p { margin: 0; }
 .error-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .summary-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .mention { color: var(--p-text); font-weight: 600; background: var(--t12); border-radius: 4px; padding: 0 3px; }
-.quoted { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-left: 2px solid var(--t40); border-radius: 4px; color: var(--muted-fg); font: var(--text-small); }
+.quoted { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-left: 2px solid var(--t40); color: var(--muted-fg); font: var(--text-small); }
 .quoted b { color: var(--fg); font-weight: 600; margin-right: 2px; }
 .msg-note { font: var(--text-small); }
 .danger-text { color: var(--danger); }
@@ -476,3 +478,45 @@ h1, h2, h3, p { margin: 0; }
   .msg.own .msg-main { max-width: 92%; }
   .picker-btn .muted { display: none; }
 }
+
+/* ------------------------------------------------------------------ right column: shared folder (Notes later) */
+/* Drawn after the approved "Hi-fi · light" board: a 320 px column of cards; the folder card fills the top. */
+.right-slot { position: relative; flex: none; width: var(--right-width, 320px); min-height: 0; display: flex; }
+.drawer.right { left: auto; right: 0; width: min(340px, 92vw); }
+.right-column { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
+.side-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); box-shadow: var(--shadow-panel); min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.folder-card { flex: 1; }
+.side-card-head { display: flex; align-items: center; gap: 8px; height: 40px; flex: none; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.side-card-head > svg { flex: none; color: var(--muted-fg); }
+.side-card-status { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.icon-btn.sm { width: 26px; height: 26px; }
+.side-card-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.side-card-actions { display: flex; align-items: center; gap: 6px; }
+.folder-card.empty { position: relative; align-items: center; justify-content: center; gap: 8px; padding: 16px; text-align: center; border-style: dashed; box-shadow: none; background: transparent; color: var(--muted-fg); }
+.folder-card.empty .strong { font-size: 13px; }
+.folder-card.empty p { max-width: 260px; margin: 0; }
+.folder-empty-close { position: absolute; top: 6px; right: 6px; }
+.status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--offline); }
+.status-dot.on { background: var(--online); }
+.info-tip-btn { color: var(--muted-fg); flex: none; }
+.info-tip { position: fixed; z-index: 60; padding: 10px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); font: var(--text-small); pointer-events: none; }
+.info-tip-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.shared-items ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.shared-items li { display: flex; align-items: center; gap: 6px; height: 30px; font: var(--text-small); }
+.shared-items li svg { flex: none; color: var(--muted-fg); }
+.folder-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--muted-fg); }
+.folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 180px; }
+.folder-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font: var(--text-row); }
+.folder-crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--muted-fg); max-width: 160px; }
+.folder-crumbs button:hover { background: var(--hover-row); color: var(--fg); }
+.folder-crumbs > :last-child button, .folder-crumbs > button:only-child { color: var(--fg); }
+.folder-list { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.folder-list li + li { border-top: 1px solid var(--border); }
+.folder-list li.pad { padding: 10px 12px; }
+.folder-list button { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 12px; border: 0; background: none; text-align: left; font: var(--text-row); }
+.folder-list button:hover { background: var(--hover-row); }
+.folder-list svg { flex: none; color: var(--muted-fg); }
+.file-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 0; }
+.file-text { margin: 0; flex: 1; min-height: 120px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font: 12.5px/1.5 var(--mono); white-space: pre; tab-size: 4; }
+.folder-note { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; }
+.folder-note svg { flex: none; }

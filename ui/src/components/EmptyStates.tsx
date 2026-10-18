@@ -1,5 +1,6 @@
 import { DEFAULT_REASONING, modelName, type ModelChoice, type Person, type ProjectSummary, type Reasoning } from "@mc/shared";
 import { Check, KeyRound, MessageSquarePlus, PanelLeftOpen, Sparkles, Users } from "lucide-react";
+import { RightPanelToggle } from "./FolderUi.tsx";
 import { useRef } from "react";
 import { api } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
@@ -132,6 +133,12 @@ export function Landing({
             </span>
           )}
         </div>
+        {project && (
+          <>
+            <div className="grow" />
+            <RightPanelToggle />
+          </>
+        )}
       </header>
       <div className="landing-body">
         <div className="landing-col">

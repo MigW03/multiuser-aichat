@@ -29,6 +29,7 @@ export function clearPref(key: string) {
 export const PREF = {
   leftCollapsed: (userId: string) => `mc.leftCollapsed.${userId}`,
   leftWidth: (userId: string) => `mc.leftWidth.${userId}`,
+  rightWidth: (userId: string) => `mc.rightWidth.${userId}`,
   /** Hide the privacy notice before inviting / joining ("Never show this again"). */
   hideInviteNotice: (userId: string) => `mc.hideInviteNotice.${userId}`,
   hideJoinNotice: (userId: string) => `mc.hideJoinNotice.${userId}`,
@@ -36,4 +37,6 @@ export const PREF = {
   pendingJoin: "mc.pendingJoin",
   lastRoute: (userId: string) => `mc.lastRoute.${userId}`,
   peopleOpen: (userId: string) => `mc.peopleOpen.${userId}`,
+  /** The shared folder panel is open (on wide screens; a small screen opens it as a drawer each time). */
+  folderOpen: (userId: string) => `mc.folderOpen.${userId}`,
 } as const;

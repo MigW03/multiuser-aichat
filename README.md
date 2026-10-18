@@ -45,9 +45,21 @@ Two setups work, and each has its own `vercel.json`:
 | repo root (empty) | `vercel.json` | Builds the `web` workspace and publishes `web/dist`. |
 
 Both install with `npm ci` from the repo root and skip the Electron binary download. Use Node 22.12 or newer (Vercel's
-default 24.x is fine). Set these under Project Settings > Environment Variables (they are public, baked into the bundle):
-`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_SERVER_URL` (the public URL of the server). Never add
-`SUPABASE_SECRET_KEY` or `KEY_ENCRYPTION_SECRET` to the web project; they belong only to the server. Routes use
+default 24.x is fine). Set these under Project Settings > Environment Variables (they are public, baked into the bundle at
+build time, so **redeploy after changing them**):
+
+| Variable | Production | Preview | Local dev (`.env.local`) |
+| --- | --- | --- | --- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | your Supabase project | same | same |
+| `VITE_SERVER_URL` | `https://multiuser-chat-server.fly.dev` | leave unset (see below) | leave unset: defaults to `http://localhost:8787`, the server `npm run dev` starts |
+
+So `npm run dev` talks to your local server and the Vercel Production deploy talks to the Fly server. A hosted build
+without `VITE_SERVER_URL` shows an error instead of calling a server on the visitor's own computer. Preview deploys
+have their own address, which the Fly server's `ALLOWED_ORIGINS` does not list, so leave the variable unset there; to
+try a preview against Fly anyway, set it for Preview too and add that preview address to `ALLOWED_ORIGINS`. Both
+environments currently share one Supabase project (same accounts and chats); a separate live project would keep test
+data apart. Never add `SUPABASE_SECRET_KEY` or `KEY_ENCRYPTION_SECRET` to the web project; they belong only to the server.
+Routes use
 the URL hash, so no rewrites are needed. Add the deployed address to Supabase's redirect URL allow-list and to the server's
 `ALLOWED_ORIGINS` and `APP_URL`.
 

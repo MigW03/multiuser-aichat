@@ -57,7 +57,7 @@ h1, h2, h3, p { margin: 0; }
   font: var(--text-row); white-space: nowrap; flex: none;
 }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; }
-.btn.block { width: 100%; }
+.btn.block { display: flex; width: 100%; }
 .btn:hover:not(:disabled) { background: var(--hover-row); }
 .btn:disabled { opacity: 0.55; cursor: default; }
 .btn.primary { background: var(--p); border-color: var(--p); color: var(--p-fg); }

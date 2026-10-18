@@ -47,7 +47,7 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const folder = useProjectFolder(project.id);
   const host = project.my_role === "host";
   const bridge = folderBridge();
-  if (folder.data === undefined) return <section className="side-card folder-card center-text"><Spinner /></section>;
+  if (folder.data === undefined) return <section className="side-card folder-card"><div className="folder-loading"><Spinner /></div></section>;
   if (folder.data === null) return <FolderEmpty project={project} host={host} bridge={bridge} onClose={onClose} />;
   return (
     <section className="side-card folder-card" aria-label="Shared folder">
@@ -347,7 +347,7 @@ function FolderBrowser({ projectId, rootName }: { projectId: string; rootName: s
               {text.truncated && <div className="small muted">Showing lines {text.startLine}–{text.endLine} of {text.totalLines}.</div>}
             </>
           ) : !error ? (
-            <div className="center-text"><Spinner /></div>
+            <div className="folder-loading small"><Spinner /> Opening {file.split("/").at(-1)}…</div>
           ) : null}
         </div>
       ) : dir ? (
@@ -365,7 +365,7 @@ function FolderBrowser({ projectId, rootName }: { projectId: string; rootName: s
           {dir.truncated && <li className="small muted pad">Only the first {FOLDER_LIMITS.listEntries} entries are shown.</li>}
         </ul>
       ) : !error ? (
-        <div className="center-text"><Spinner /></div>
+        <div className="folder-loading small"><Spinner /> Loading…</div>
       ) : null}
     </div>
   );

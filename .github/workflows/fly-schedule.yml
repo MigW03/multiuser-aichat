@@ -1,0 +1,42 @@
+# Keeps the Fly machine off at night (23:00-06:00 Brasília, UTC-3, no daylight saving) to save cost.
+# GitHub cron is UTC and can start a few minutes late, which is fine here.
+name: fly-schedule
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 23:00 BRT: stop
+    - cron: "0 9 * * *"   # 06:00 BRT: start
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Run by hand
+        type: choice
+        options: [start, stop]
+        required: true
+
+permissions: {}
+
+concurrency: fly-schedule
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      ACTION: ${{ inputs.action || (github.event.schedule == '0 2 * * *' && 'stop' || 'start') }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: fly.toml
+          persist-credentials: false
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+      - name: ${{ env.ACTION }} the server machine
+        run: |
+          set -euo pipefail
+          app=$(sed -n 's/^app = "\([^"]*\)".*/\1/p' fly.toml)
+          ids=$(flyctl machine list --app "$app" --json | jq -r '.[].id')
+          [ -n "$ids" ] || { echo "no machines found for $app"; exit 1; }
+          for id in $ids; do
+            flyctl machine "$ACTION" "$id" --app "$app" --wait-timeout 60s
+          done

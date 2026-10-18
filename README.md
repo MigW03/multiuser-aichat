@@ -51,6 +51,54 @@ default 24.x is fine). Set these under Project Settings > Environment Variables 
 the URL hash, so no rewrites are needed. Add the deployed address to Supabase's redirect URL allow-list and to the server's
 `ALLOWED_ORIGINS` and `APP_URL`.
 
+## Deploy the server (Fly.io)
+
+`fly.toml` and `server/Dockerfile` run the server on one small Fly machine (`shared-cpu-1x`, 512 MB, region `gru`).
+Keep it at **one machine**: rate limits and the run queue live in the process's memory (queued messages are saved
+in the database and picked up again at boot, but two machines would both run the same chat).
+
+**Server environment** (set with `fly secrets set`, never in `fly.toml` or git):
+
+| Name | What |
+| --- | --- |
+| `SUPABASE_URL` | Supabase project URL (https) |
+| `SUPABASE_SECRET_KEY` | Supabase secret (service role) key |
+| `KEY_ENCRYPTION_SECRET` | `openssl rand -base64 32`; losing or changing it makes stored API keys unreadable |
+| `ALLOWED_ORIGINS` | Comma-separated web origins, e.g. `https://chat.example.com,app://desktop` |
+| `APP_URL` | The web app's public address (https), used in invite links |
+| `RESEND_API_KEY`, `MAIL_FROM` | Optional, to email invites |
+
+`PORT`, `HOST` and `TRUST_PROXY` are already set in `fly.toml`. The web app gets the server's address at build time
+as `VITE_SERVER_URL` (for example `https://multiuser-chat-server.fly.dev`; see the Vercel section).
+
+**First deploy** (once, from the repo root):
+
+```sh
+fly apps create multiuser-chat-server        # or pick another name and change `app` in fly.toml
+fly secrets set --stage SUPABASE_URL=... SUPABASE_SECRET_KEY=... KEY_ENCRYPTION_SECRET=... ALLOWED_ORIGINS=... APP_URL=...
+fly deploy --ha=false
+curl https://multiuser-chat-server.fly.dev/health   # {"ok":true}
+```
+
+Later deploys are `fly deploy`. Check `fly status`: it must list exactly one machine.
+
+**Night shutdown.** The machine is off from 23:00 to 06:00 in Brasília (02:00-09:00 UTC) to save cost. Fly has no
+cron stop/start, so `.github/workflows/fly-schedule.yml` runs `fly machine stop` at 02:00 UTC and `fly machine start`
+at 09:00 UTC. `auto_start_machines` is off in `fly.toml`; otherwise the first request at night would wake the machine.
+Set it up once:
+
+1. `fly tokens create deploy -a multiuser-chat-server` and save the output as the repo secret `FLY_API_TOKEN`
+   (Settings > Secrets and variables > Actions).
+2. To test, run the workflow by hand from the Actions tab (choose `stop` or `start`).
+
+While it is stopped, nobody can send messages, manage keys or invites; reading old chats still works (clients read
+Supabase directly). Stopping drops open connections and the in-memory queue: an answer being written at 23:00 is cut
+off (it shows "The reply was interrupted"), and at boot `recoverRuns` puts messages that were waiting or being
+answered back in the queue.
+GitHub starts scheduled runs a few minutes late, and pauses them after 60 days without repo activity. `fly deploy`
+starts a stopped machine, so a deploy at night keeps it on until the next 02:00 UTC stop; stop it by hand with the
+workflow if that matters.
+
 ## Supabase setup
 
 Run the migrations in `supabase/migrations` in order (the SQL editor or `supabase db push`). Then, under

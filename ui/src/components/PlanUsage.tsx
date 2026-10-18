@@ -71,7 +71,7 @@ function Bar({ percent, label }: { percent: number; label: string }) {
 function RefreshButton({ busy, load }: { busy: boolean; load: (refresh: boolean) => Promise<void> }) {
   return (
     <div>
-      <Button size="sm" variant="ghost" busy={busy} onClick={() => void load(true)}>
+      <Button size="sm" variant="secondary" busy={busy} onClick={() => void load(true)}>
         Refresh
       </Button>
     </div>

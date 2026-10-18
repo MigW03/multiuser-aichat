@@ -2,7 +2,6 @@ import {
   ASSIGNABLE_ROLES,
   canManagePeople,
   LIMITS,
-  modelLabel,
   PROVIDER_LABELS,
   ROLE_LABELS,
   type AssignableRole,
@@ -131,7 +130,7 @@ export function SecretWarning({ kind, snippet, onEdit, onSendAnyway }: { kind: s
         <h2 className="dialog-title flush">This looks like a {kind}</h2>
       </div>
       <code className="secret-snippet">{snippet}</code>
-      <p className="lead">Everyone in this chat can read it, and so can Claude and the AI provider behind it. Share passwords and keys another way.</p>
+      <p className="lead">Everyone in this chat can read it, and so can the AI and its provider. Share passwords and keys another way.</p>
     </Dialog>
   );
 }
@@ -468,7 +467,7 @@ export function MembersDialog({
               </div>
               <div className="small muted truncate">{m.email}</div>
             </div>
-            {hasKey[m.id] === false && <span className="chip" title="Can chat with people, but not use Claude">No AI key</span>}
+            {hasKey[m.id] === false && <span className="chip" title="Can chat with people, but not use the AI">No AI key</span>}
             {canChange(m) ? (
               <Menu
                 label={`Role for ${m.display_name}`}
@@ -532,7 +531,7 @@ export function SummarizeDialog({ chatId, choice, readSeq, hasUnread, onClose }:
   if (!choice) {
     return (
       <Dialog title="Add an AI key first" onClose={onClose}>
-        <p className="lead">A summary is written by Claude using your own key. Add one, and then try again.</p>
+        <p className="lead">A summary is written by the AI using your own key. Add one, and then try again.</p>
         <div className="dialog-actions">
           <Button onClick={onClose}>Cancel</Button>
           <Button
@@ -594,7 +593,7 @@ export function SummarizeDialog({ chatId, choice, readSeq, hasUnread, onClose }:
         ))}
       </div>
       <p className="small muted">
-        The summary is posted in the chat for everyone. It runs on your {PROVIDER_LABELS[choice.provider]} key with {modelButtonLabel(choice.model) || modelLabel(choice.model)}, so your key pays for it.
+        The summary is posted in the chat for everyone. It runs on your {PROVIDER_LABELS[choice.provider]} key with {modelButtonLabel(choice.model)}, so your key pays for it.
       </p>
       <ErrorLine>{error}</ErrorLine>
     </Dialog>

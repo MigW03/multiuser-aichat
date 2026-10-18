@@ -48,8 +48,9 @@ export function stopRun(chatId: string, userId: string): boolean {
   return true;
 }
 
-function chatInstructions(askerName: string) {
-  return `You are Claude, an AI assistant inside a shared group chat with several people.
+function chatInstructions(askerName: string, modelId: string) {
+  const model = /^[\w./:@+-]{1,100}$/.test(modelId) ? modelId : "an AI model";
+  return `You are an AI assistant inside a shared group chat with several people. You are running as the model ${model}. If someone asks what you are, say that, and don't claim to be a different model or product.
 Each user message is prefixed with the author's name in brackets, like "[Ana]: ...". Address people by name when it helps, and keep track of who said what.
 Messages marked "not for you" were addressed to another person with an @tag; use them as context only and never answer them.
 You are replying to the latest message(s) from ${askerName}. Other people may have messages waiting that you haven't seen yet; those are answered separately, so don't guess at them.
@@ -233,7 +234,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         .in("status", ["done", "processing"])
         .order("seq", { ascending: false })
         .limit(HISTORY_LIMIT);
-      instructions = chatInstructions(asker);
+      instructions = chatInstructions(asker, modelId);
       messages = toModelMessages(((history ?? []) as Row[]).reverse(), names);
     }
 
@@ -288,7 +289,7 @@ function transcriptText(rows: Row[], names: Map<string, string>): string {
   const lines: string[] = [];
   let used = 0;
   for (const r of [...rows].reverse()) {
-    const who = r.role === "assistant" ? "Claude" : (names.get(r.author_id ?? "") ?? "Someone");
+    const who = r.role === "assistant" ? "AI" : (names.get(r.author_id ?? "") ?? "Someone");
     const when = new Date(r.created_at).toISOString().slice(0, 16).replace("T", " ");
     const line = `[${when}] ${who}: ${clip(r.content)}`;
     if (used + line.length > HISTORY_CHAR_BUDGET && lines.length > 0) break;
@@ -319,7 +320,7 @@ function describeFailure(err: unknown, provider: ProviderId | null, aborted: boo
     if (err.statusCode === 404 || err.statusCode === 400) return { code: "model", text: `${name} didn't accept this model or request. Pick another model, then retry.` };
   }
   if (aborted || (err instanceof Error && /abort|timeout|timed out/i.test(`${err.name} ${err.message}`))) {
-    return { code: "timeout", text: "Claude took too long to answer. The connection dropped. Nothing was lost. Try again." };
+    return { code: "timeout", text: "The AI took too long to answer. The connection dropped. Nothing was lost. Try again." };
   }
   return { code: "other", text: `The ${name} request failed. Check the API key and model, then retry.` };
 }

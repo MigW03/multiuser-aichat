@@ -211,7 +211,7 @@ function KeyTab() {
 
   return (
     <div className="col" style={{ gap: 20 }}>
-      <p className="lead">Claude answers with your own AI account. Add a key from Anthropic, OpenAI or OpenRouter. Without one you can still chat with people.</p>
+      <p className="lead">The AI answers with your own account. Add a key from Anthropic, OpenAI or OpenRouter. Without one you can still chat with people.</p>
       {keys && keys.length > 0 && (
         <ul className="key-list">
           {keys.map((k) => (
@@ -241,7 +241,7 @@ function KeyTab() {
 export function AddKeyDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Add your AI key" onClose={onClose} width={480}>
-      <p className="lead">Claude answers with your own AI account, so you stay in control of the cost.</p>
+      <p className="lead">The AI answers with your own account, so you stay in control of the cost.</p>
       <KeyForm onSaved={onClose} />
     </Dialog>
   );

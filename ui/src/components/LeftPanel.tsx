@@ -267,7 +267,7 @@ function useMessageSearch(query: string, projectId: string | null) {
 
 function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: { chat: ChatSummary; active: boolean; meId: string; canDelete: boolean; onOpen: () => void; onRename: () => void; onDelete: () => void }) {
   const unread = chat.unread_people + chat.unread_ai;
-  const prefix = chat.preview_role === "assistant" ? "Claude: " : chat.preview_author === meId && chat.member_count !== 1 ? "You: " : "";
+  const prefix = chat.preview_role === "assistant" ? "AI: " : chat.preview_author === meId && chat.member_count !== 1 ? "You: " : "";
   const shared = chat.member_count > 1;
   return (
     <li className={`chat-row ${active ? "active" : ""}`}>

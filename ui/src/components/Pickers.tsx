@@ -1,5 +1,5 @@
 import {
-  modelLabel,
+  modelName,
   PROVIDER_LABELS,
   REASONING_LABELS,
   REASONING_LEVELS,
@@ -14,11 +14,7 @@ import { api } from "../api.ts";
 import { useApp } from "../data.tsx";
 import { ICON_SM, Menu, STROKE, Spinner } from "./kit.tsx";
 
-/** "Claude Sonnet 4.5" for Anthropic models, the short id for the rest. */
-export function modelButtonLabel(model: string): string {
-  const short = modelLabel(model);
-  return /claude/i.test(model) && !/^claude/i.test(short) ? `Claude ${short}` : short;
-}
+export const modelButtonLabel = modelName;
 
 /** A sensible first pick for a provider: a recent mid-size model. */
 export function defaultModelFor(provider: ProviderId, models: ModelInfo[]): string | null {

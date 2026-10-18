@@ -134,7 +134,7 @@ export type ModelInfo = { id: string; name: string; pricing?: { input: number; o
 
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */
 export function modelLabel(model: string | null | undefined): string {
-  if (!model) return "Claude";
+  if (!model) return "AI";
   const id = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
   const claude = id.match(/^claude-(?:(opus|sonnet|haiku|fable)-)?(\d+(?:[.-]\d+)?)?(?:-(opus|sonnet|haiku|fable))?/i);
   if (claude && (claude[1] || claude[3])) {
@@ -143,6 +143,12 @@ export function modelLabel(model: string | null | undefined): string {
     return `${family[0]!.toUpperCase()}${family.slice(1)}${version ? ` ${version}` : ""}`;
   }
   return id.length > 24 ? `${id.slice(0, 23)}…` : id;
+}
+
+/** What the AI is called in the chat: "Claude Sonnet 4.5" for Anthropic models, the short id for the rest, "AI" when unknown. */
+export function modelName(model: string | null | undefined): string {
+  const short = modelLabel(model);
+  return model && /claude/i.test(model) && !/^claude/i.test(short) ? `Claude ${short}` : short;
 }
 
 // ---- Server HTTP API (all routes need `Authorization: Bearer <supabase access token>` unless noted)

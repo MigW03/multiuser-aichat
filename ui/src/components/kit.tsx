@@ -36,9 +36,23 @@ export function Button({ variant = "secondary", size = "md", busy, block, classN
   );
 }
 
-export function IconButton({ label, active, className = "", children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; active?: boolean }) {
+export function IconButton({
+  label,
+  shortcut,
+  active,
+  className = "",
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; active?: boolean; shortcut?: { label: string; keys: string } }) {
   return (
-    <button type="button" aria-label={label} title={label} className={`icon-btn ${active ? "active" : ""} ${className}`} {...rest}>
+    <button
+      type="button"
+      aria-label={label}
+      aria-keyshortcuts={shortcut?.keys}
+      title={shortcut ? `${label} (${shortcut.label})` : label}
+      className={`icon-btn ${active ? "active" : ""} ${className}`}
+      {...rest}
+    >
       {children}
     </button>
   );

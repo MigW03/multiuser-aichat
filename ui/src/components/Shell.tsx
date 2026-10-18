@@ -17,6 +17,7 @@ import {
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { navigate, useRoute } from "../lib/router.ts";
+import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { supabase } from "../supabase.ts";
 import { ResetPassword } from "./Auth.tsx";
 import { ChatView } from "./ChatView.tsx";
@@ -137,6 +138,20 @@ export function Shell({ userId }: { userId: string }) {
     setCollapsed(v);
     writePref(PREF.leftCollapsed(userId), v);
   };
+
+  // Cmd+B (Ctrl+B off a Mac) shows or hides the left panel, also while typing; the browser's own meaning of the key is skipped.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!PANEL_SHORTCUT.matches(e) || e.repeat) return;
+      e.preventDefault();
+      if (narrow) setDrawer((d) => !d);
+      else setCollapsedPersisted(!collapsed);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // setCollapsedPersisted only closes over userId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrow, collapsed, userId]);
 
   const ctx = useMemo<AppContextValue | null>(
     () =>

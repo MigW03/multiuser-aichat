@@ -183,6 +183,20 @@ h1, h2, h3, p { margin: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--p); }
+.plan-warn { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 10px; background: var(--warning-tint); }
+.plan-warn svg { flex: none; margin-top: 2px; color: var(--warning); }
+.usage-ring-btn { width: 26px; height: 26px; flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; cursor: default; }
+.usage-ring-track { stroke: color-mix(in srgb, var(--muted-fg) 38%, var(--card)); }
+.usage-ring-arc { stroke: var(--p); }
+.usage-ring-arc.warn { stroke: var(--warning); }
+.usage-ring-arc.full { stroke: var(--danger); }
+.usage-popover { width: 280px; max-width: calc(100vw - 32px); padding: 12px; }
+.usage { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.usage-row { display: flex; flex-direction: column; gap: 4px; }
+.usage-bar { height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
+.usage-fill { height: 100%; border-radius: 3px; background: var(--p); }
+.usage-fill.high { background: var(--warning); }
+.device-code { font: 600 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; user-select: all; }
 
 .segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--muted); border-radius: 10px; align-self: flex-start; }
 .seg { height: 30px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; font: var(--text-row); color: var(--muted-fg); }

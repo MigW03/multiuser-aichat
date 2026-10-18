@@ -23,6 +23,7 @@ export function defaultModelFor(provider: ProviderId, models: ModelInfo[]): stri
     anthropic: [/sonnet/i, /opus/i, /haiku/i],
     openai: [/^gpt-\d+(\.\d+)?$/i, /^gpt-/i],
     openrouter: [/anthropic\/claude-sonnet/i, /openai\/gpt-/i],
+    chatgpt: [], // the account's own list is already best first
   };
   for (const re of prefer[provider]) {
     const hit = models.find((m) => re.test(m.id));

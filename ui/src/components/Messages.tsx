@@ -1,4 +1,4 @@
-import { modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
+import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
 import { Copy, CornerUpLeft, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
@@ -278,7 +278,12 @@ function FailedAnswer({ m, meId, onRetry, onUpdateKey }: RowProps) {
         <div className="error-actions">
           {code === "invalid_key" && (
             <Button size="sm" variant="primary" onClick={onUpdateKey}>
-              Update key
+              {provider && isPlanProvider(provider) ? "Reconnect" : "Update key"}
+            </Button>
+          )}
+          {code === "rate_limit" && provider && isPlanProvider(provider) && (
+            <Button size="sm" variant="primary" onClick={onUpdateKey}>
+              View plan usage
             </Button>
           )}
           {code === "no_credit" && provider && (

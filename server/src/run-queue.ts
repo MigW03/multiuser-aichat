@@ -1,4 +1,5 @@
 import {
+  isPlanProvider,
   isProvider,
   isReasoning,
   PROVIDER_LABELS,
@@ -12,7 +13,7 @@ import {
 import { APICallError, streamText, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { getUserKey } from "./keys.ts";
-import { languageModel, reasoningOptions } from "./providers.ts";
+import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
 import { admin, type Admin } from "./supabase.ts";
 
 type Row = {
@@ -204,7 +205,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     const asker = names.get(authorId ?? "") ?? "Someone";
     if (!authorId || !provider || !modelId) throw new UserFacing("no_key", "This message was sent without a model selected.");
     apiKey = await getUserKey(authorId, provider);
-    if (!apiKey) throw new UserFacing("no_key", `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
+    if (!apiKey) throw new UserFacing("no_key", isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
 
     let instructions: string;
     let messages: ModelMessage[];
@@ -311,7 +312,14 @@ class UserFacing extends Error {
 /** What to tell the chat, and which button it should offer. Never includes provider response bodies. */
 function describeFailure(err: unknown, provider: ProviderId | null, aborted: boolean): { code: AiErrorCode; text: string } {
   const name = provider ? PROVIDER_LABELS[provider] : "The AI provider";
-  if (err instanceof UserFacing) return { code: err.code, text: err.code === "no_key" ? `${err.message} They can add one under Settings.` : err.message };
+  if (err instanceof UserFacing) return { code: err.code, text: err.code === "no_key" ? `${err.message} They can ${provider && isPlanProvider(provider) ? "connect it" : "add one"} under Settings.` : err.message };
+  if (err instanceof ProviderError) return { code: "other", text: err.message }; // written to be shown
+  if (APICallError.isInstance(err) && provider && isPlanProvider(provider)) {
+    // A ChatGPT plan has no credit to top up: a 429 means the plan's own usage limit.
+    if (err.statusCode === 401 || err.statusCode === 403) return { code: "invalid_key", text: `${name} rejected the connection. It may have been revoked, or this account isn't allowed to use it. Reconnect it in Settings, then retry.` };
+    if (err.statusCode === 429) return { code: "rate_limit", text: `The ${name} usage limit was reached. Check your usage in ChatGPT, wait for it to reset, then retry.` };
+    if (err.statusCode === 404 || err.statusCode === 400) return { code: "model", text: `${name} didn't accept this model or request. Pick another model, then retry.` };
+  }
   if (APICallError.isInstance(err)) {
     const body = (err.responseBody ?? "").toLowerCase();
     if (err.statusCode === 401 || err.statusCode === 403) return { code: "invalid_key", text: `${name} rejected the key. It may have been deleted or changed.` };

@@ -68,6 +68,13 @@ begin
   -- the invites table and the key table are not readable by clients at all
   if has_table_privilege('authenticated', 'public.invites', 'select') then raise exception 'invites readable by clients'; end if;
   if has_table_privilege('authenticated', 'public.user_api_keys', 'select') then raise exception 'user_api_keys readable by clients'; end if;
+  -- ChatGPT plan sign-in tokens: no client access of any kind
+  if has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'select')
+     or has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'insert')
+     or has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'update')
+     or has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'delete') then
+    raise exception 'user_chatgpt_auth accessible by clients';
+  end if;
   for r in
     select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind in ('r', 'v')

@@ -1,6 +1,7 @@
 import {
   ASSIGNABLE_ROLES,
   canManagePeople,
+  isPlanProvider,
   LIMITS,
   PROVIDER_LABELS,
   ROLE_LABELS,
@@ -595,7 +596,8 @@ export function SummarizeDialog({ chatId, choice, readSeq, hasUnread, onClose }:
         ))}
       </div>
       <p className="small muted">
-        The summary is posted in the chat for everyone. It runs on your {PROVIDER_LABELS[choice.provider]} key with {modelButtonLabel(choice.model)}, so your key pays for it.
+        The summary is posted in the chat for everyone. It runs on your {PROVIDER_LABELS[choice.provider]}
+        {isPlanProvider(choice.provider) ? "" : " key"} with {modelButtonLabel(choice.model)}, so your {isPlanProvider(choice.provider) ? "plan" : "key"} pays for it.
       </p>
       <ErrorLine>{error}</ErrorLine>
     </Dialog>

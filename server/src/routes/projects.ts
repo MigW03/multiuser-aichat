@@ -42,8 +42,11 @@ projects.get("/:id/key-status", async (c) => {
   if (!role) return c.json({ error: "That doesn't exist, or you don't have access to it." }, 404);
   const { data: members } = await admin.from("project_members").select("user_id").eq("project_id", id);
   const ids = (members ?? []).map((m) => m.user_id as string);
-  const { data: keys } = await admin.from("user_api_keys").select("user_id").in("user_id", ids);
-  const withKey = new Set((keys ?? []).map((k) => k.user_id as string));
+  const [{ data: keys }, { data: plans }] = await Promise.all([
+    admin.from("user_api_keys").select("user_id").in("user_id", ids),
+    admin.from("user_chatgpt_auth").select("user_id").in("user_id", ids),
+  ]);
+  const withKey = new Set([...(keys ?? []), ...(plans ?? [])].map((k) => k.user_id as string));
   return c.json({ hasKey: Object.fromEntries(ids.map((u) => [u, withKey.has(u)])) });
 });
 

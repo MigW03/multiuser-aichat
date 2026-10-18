@@ -1,8 +1,10 @@
-import { LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ProviderId } from "@mc/shared";
-import { ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, Sun, User } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
+import { Copy, ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, ShieldAlert, Sun, User } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
+import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
+import { PlanUsage } from "./PlanUsage.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
@@ -129,6 +131,122 @@ function PasswordForm() {
 
 // ------------------------------------------------------------------ AI key
 
+/**
+ * Connects a ChatGPT plan: the user types a short code on OpenAI's own page (device code sign-in), so no password or
+ * token passes through this screen. Unofficial, so it asks for an explicit yes first.
+ */
+function ChatGptConnect({ existingHint, onConnected }: { existingHint?: string; onConnected?: (provider: ProviderId) => void }) {
+  const { reloadKeys } = useApp();
+  const toast = useToast();
+  const [agreed, setAgreed] = useState(false);
+  const [flow, setFlow] = useState<ChatGptStartResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      setFlow(await api.chatgptStart());
+    } catch (err) {
+      setError(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Ask whether the code was approved until it is, fails, or runs out.
+  useEffect(() => {
+    if (!flow) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const until = Date.now() + flow.expiresInSeconds * 1000;
+    const tick = async () => {
+      if (!live) return;
+      try {
+        const r = await api.chatgptPoll(flow.flow);
+        if (!live) return;
+        if (r.status === "connected") {
+          forgetModels("chatgpt");
+          reloadKeys();
+          toast.push("ChatGPT plan connected");
+          setFlow(null);
+          onConnected?.("chatgpt");
+          return;
+        }
+      } catch (err) {
+        if (!live) return;
+        setError(messageOf(err));
+        setFlow(null);
+        return;
+      }
+      if (Date.now() > until) {
+        setError("The code expired. Start again.");
+        setFlow(null);
+        return;
+      }
+      timer = setTimeout(() => void tick(), Math.max(flow.intervalSeconds, 3) * 1000);
+    };
+    timer = setTimeout(() => void tick(), Math.max(flow.intervalSeconds, 3) * 1000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flow]);
+
+  return (
+    <div className="col" style={{ gap: 14 }}>
+      <div className="plan-warn" role="note">
+        <ShieldAlert size={ICON} strokeWidth={STROKE} aria-hidden />
+        <div className="small">
+          <b>Unofficial.</b> This signs in to your own ChatGPT account the way OpenAI's Codex tool does. OpenAI doesn't offer this for apps like this one, so it can stop working at any time and may go against OpenAI's terms of use. Your ChatGPT account could be limited or suspended.
+          <span className="block muted">Only the messages you send use your plan. Nobody else in a chat can use it.</span>
+        </div>
+      </div>
+      {flow ? (
+        <div className="col" style={{ gap: 10 }}>
+          <p className="small">
+            1. Open{" "}
+            <a href={flow.verificationUri} target="_blank" rel="noopener noreferrer">
+              {flow.verificationUri.replace("https://", "")} <ExternalLink size={11} strokeWidth={STROKE} aria-hidden />
+            </a>{" "}
+            and sign in to ChatGPT.
+            <br />
+            2. Enter this code:
+          </p>
+          <div className="row">
+            <code className="device-code">{flow.userCode}</code>
+            <Button size="sm" onClick={() => void copyText(flow.userCode).then((ok) => toast.push(ok ? "Code copied" : "Could not copy"))}>
+              <Copy size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Copy
+            </Button>
+          </div>
+          <p className="small muted">Waiting for you to approve it. Only enter this code if you started this here.</p>
+          <div>
+            <Button size="sm" variant="ghost" onClick={() => setFlow(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            I understand, connect my ChatGPT plan
+          </label>
+          <ErrorLine>{error}</ErrorLine>
+          <div className="row">
+            <Button variant="primary" busy={busy} disabled={!agreed} onClick={() => void start()}>
+              {existingHint ? "Reconnect" : "Connect ChatGPT plan"}
+            </Button>
+            {existingHint && <span className="small muted">Connected as {existingHint}</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Saves a key for one provider. The key goes to the server, which stores it encrypted and never sends it back. */
 export function KeyForm({ initialProvider, onSaved }: { initialProvider?: ProviderId; onSaved?: (provider: ProviderId) => void }) {
   const { keys, reloadKeys } = useApp();
@@ -159,15 +277,28 @@ export function KeyForm({ initialProvider, onSaved }: { initialProvider?: Provid
     }
   }
 
+  const tiles = (
+    <div className="segmented" role="radiogroup" aria-label="Provider">
+      {PROVIDER_IDS.map((p) => (
+        <button key={p} type="button" role="radio" aria-checked={provider === p} className={`seg ${provider === p ? "on" : ""}`} onClick={() => setProvider(p)}>
+          {PROVIDER_LABELS[p]}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (isPlanProvider(provider)) {
+    return (
+      <div className="col" style={{ gap: 14 }}>
+        {tiles}
+        <ChatGptConnect existingHint={existing?.hint} onConnected={onSaved} />
+      </div>
+    );
+  }
+
   return (
     <form className="col" style={{ gap: 14 }} onSubmit={submit} noValidate>
-      <div className="segmented" role="radiogroup" aria-label="Provider">
-        {PROVIDER_IDS.map((p) => (
-          <button key={p} type="button" role="radio" aria-checked={provider === p} className={`seg ${provider === p ? "on" : ""}`} onClick={() => setProvider(p)}>
-            {PROVIDER_LABELS[p]}
-          </button>
-        ))}
-      </div>
+      {tiles}
       <Field
         label={`${PROVIDER_LABELS[provider]} API key`}
         htmlFor="key-input"
@@ -204,7 +335,7 @@ function KeyTab() {
       await api.deleteKey(provider);
       forgetModels(provider);
       reloadKeys();
-      toast.push(`${PROVIDER_LABELS[provider]} key removed`);
+      toast.push(isPlanProvider(provider) ? `${PROVIDER_LABELS[provider]} disconnected` : `${PROVIDER_LABELS[provider]} key removed`);
     } catch (e) {
       toast.push(messageOf(e), "error");
     } finally {
@@ -214,7 +345,7 @@ function KeyTab() {
 
   return (
     <div className="col" style={{ gap: 20 }}>
-      <p className="lead">The AI answers with your own account. Add a key from Anthropic, OpenAI or OpenRouter. Without one you can still chat with people.</p>
+      <p className="lead">The AI answers with your own account. Add a key from Anthropic, OpenAI or OpenRouter, or connect your ChatGPT plan. Without one you can still chat with people.</p>
       {keys && keys.length > 0 && (
         <ul className="key-list">
           {keys.map((k) => (
@@ -222,10 +353,11 @@ function KeyTab() {
               <KeyRound size={ICON} strokeWidth={STROKE} aria-hidden />
               <div className="grow">
                 <b>{PROVIDER_LABELS[k.provider]}</b>
-                <div className="small muted">Saved · ends in {k.hint}</div>
+                <div className="small muted">{isPlanProvider(k.provider) ? `Connected · ${k.hint}` : `Saved · ends in ${k.hint}`}</div>
+                {isPlanProvider(k.provider) && <PlanUsage />}
               </div>
               <Button size="sm" variant="ghost" busy={busy === k.provider} onClick={() => void remove(k.provider)}>
-                Remove
+                {isPlanProvider(k.provider) ? "Disconnect" : "Remove"}
               </Button>
             </li>
           ))}
@@ -233,7 +365,7 @@ function KeyTab() {
       )}
       <div>
         <div className="field-label" style={{ marginBottom: 10 }}>
-          {keys && keys.length > 0 ? "Add or replace a key" : "Add a key"}
+          {keys && keys.length > 0 ? "Add or replace a key, or connect a plan" : "Add a key or connect a plan"}
         </div>
         <KeyForm />
       </div>

@@ -41,5 +41,6 @@ jobs:
           ids=$(flyctl machine list --app "$app" --json | jq -r '.[].id')
           [ -n "$ids" ] || { echo "no machines found for $app"; exit 1; }
           for id in $ids; do
-            flyctl machine "$ACTION" "$id" --app "$app" --wait-timeout 60s
+            # Only `stop` takes --wait-timeout; `start` waits for the machine by itself.
+            if [ "$ACTION" = stop ]; then flyctl machine stop "$id" --app "$app" --wait-timeout 60s; else flyctl machine start "$id" --app "$app"; fi
           done

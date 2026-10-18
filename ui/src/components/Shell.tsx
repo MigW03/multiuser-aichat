@@ -14,6 +14,7 @@ import {
   type AppContextValue,
   type Me,
 } from "../data.tsx";
+import { useFolderHost } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { loadModels } from "../lib/models.ts";
@@ -24,9 +25,10 @@ import { ResetPassword } from "./Auth.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
+import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
-import { PanelResizer, useLeftWidth } from "./PanelResizer.tsx";
+import { PanelResizer, useLeftWidth, useRightWidth } from "./PanelResizer.tsx";
 import { defaultModelFor } from "./Pickers.tsx";
 import { AddKeyDialog, SettingsDialog, type SettingsTab } from "./Settings.tsx";
 import { Button, Spinner } from "./kit.tsx";
@@ -126,16 +128,32 @@ export function Shell({ userId }: { userId: string }) {
   const chats = useLive(() => fetchChats(projectId), [projectId]);
   const members = useLive(() => (projectId ? fetchProjectMembers(projectId) : Promise.resolve(undefined)), [projectId]);
   const online = useProjectPresence(projectId, userId);
+  // The desktop app serves the shared folders of the projects this person hosts.
+  useFolderHost(userId, projects.data?.filter((p) => p.my_role === "host").map((p) => p.id));
 
   const narrow = useNarrow();
   const [collapsed, setCollapsed] = useState(() => readPref(PREF.leftCollapsed(userId), false));
   const [drawer, setDrawer] = useState(false);
   const left = useLeftWidth(userId);
+  const right = useRightWidth(userId);
   const activeChatId = route.name === "homeChat" ? route.chatId : route.name === "project" ? route.chatId : null;
   // On a small screen the list is the first thing you see until you open a chat.
   useEffect(() => {
     if (narrow) setDrawer(activeChatId === null);
   }, [narrow, activeChatId, route.name, projectId]);
+
+  // The right column (shared folder): open by default and remembered on wide screens; on a small screen a drawer that starts closed.
+  const [folderPinned, setFolderPinned] = useState(() => readPref(PREF.folderOpen(userId), true));
+  const [folderDrawer, setFolderDrawer] = useState(false);
+  useEffect(() => setFolderDrawer(false), [narrow, projectId, activeChatId]);
+  const folderOpen = narrow ? folderDrawer : folderPinned;
+  const toggleFolder = useCallback(() => {
+    if (narrow) return setFolderDrawer((v) => !v);
+    setFolderPinned((v) => {
+      writePref(PREF.folderOpen(userId), !v);
+      return !v;
+    });
+  }, [narrow, userId]);
 
   const setCollapsedPersisted = (v: boolean) => {
     setCollapsed(v);
@@ -168,8 +186,9 @@ export function Shell({ userId }: { userId: string }) {
         openSettings: (tab = "account") => setSettings({ tab }),
         openAddKey: () => setAddKey(true),
         openInvite: (target) => setInviteReq(target),
+        folderPanel: { open: folderOpen, drawer: narrow, toggle: toggleFolder },
       },
-    [me, reloadMe, keys, reloadKeys, choice, setChoice],
+    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder],
   );
 
   if (route.name === "reset") return <ResetPassword />;
@@ -240,7 +259,7 @@ export function Shell({ userId }: { userId: string }) {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className={`app ${narrow ? "narrow" : ""}`} style={narrow ? undefined : ({ "--left-width": `${left.width}px` } as CSSProperties)}>
+      <div className={`app ${narrow ? "narrow" : ""}`} style={narrow ? undefined : ({ "--left-width": `${left.width}px`, "--right-width": `${right.width}px` } as CSSProperties)}>
         {narrow && drawer && <div className="drawer-backdrop" onClick={() => activeChatId && setDrawer(false)} />}
         {showLeft && (
           <div className={narrow ? "drawer" : "left-slot"}>
@@ -258,6 +277,15 @@ export function Shell({ userId }: { userId: string }) {
           </div>
         )}
         <main className="main">{main}</main>
+        {project && folderOpen && (
+          <>
+            {narrow && <div className="drawer-backdrop" onClick={toggleFolder} />}
+            <div className={narrow ? "drawer right" : "right-slot"}>
+              <RightColumn project={project} onClose={toggleFolder} />
+              {!narrow && <PanelResizer side="right" width={right.width} max={right.max} min={right.min} def={right.def} onChange={right.set} />}
+            </div>
+          </>
+        )}
       </div>
 
       {settings && <SettingsDialog initialTab={settings.tab} onClose={() => setSettings(null)} />}

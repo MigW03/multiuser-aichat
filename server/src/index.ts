@@ -5,7 +5,9 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
+import { relay, resetFolderStatus } from "./folders.ts";
 import { chats, messages } from "./routes/chats.ts";
+import { folder } from "./routes/folder.ts";
 import { invites, publicInvites } from "./routes/invites.ts";
 import { keys } from "./routes/keys.ts";
 import { projects } from "./routes/projects.ts";
@@ -27,6 +29,7 @@ app.route("/api/invites", publicInvites);
 app.use("/api/*", requireUser);
 app.route("/api", keys);
 app.route("/api/projects", projects);
+app.route("/api/projects", folder);
 app.route("/api/chats", chats);
 app.route("/api/messages", messages);
 app.route("/api/invites", invites);
@@ -37,7 +40,10 @@ app.onError((err, c) => {
   return c.json({ error: "Something went wrong" }, 500);
 });
 
-serve({ fetch: app.fetch, port: env.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
+const server = serve({ fetch: app.fetch, port: env.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
   console.log(`server listening on http://${info.address}:${info.port}`);
   void recoverRuns();
+  void resetFolderStatus();
 });
+// Host desktop apps connect over a WebSocket (/api/folder-host); everything else here is plain HTTP.
+relay.attach(server as import("node:http").Server);

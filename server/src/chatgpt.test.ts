@@ -266,6 +266,73 @@ describe("requests", () => {
     });
   });
 
+  it("passes function tools, tool results and encrypted reasoning through, and nothing else of that kind", () => {
+    const fn = { type: "function", name: "read_file", description: "Read", parameters: { type: "object" }, strict: false };
+    const shaped = c.shapeBody({
+      model: "gpt-5.5",
+      tools: [fn, { type: "web_search" }],
+      tool_choice: "auto",
+      parallel_tool_calls: false,
+      include: ["reasoning.encrypted_content", "x"],
+      input: [
+        { role: "user", content: [{ type: "input_text", text: "what is in a.ts?" }] },
+        { type: "reasoning", id: "rs_1", encrypted_content: "enc", summary: [] },
+        { type: "function_call", call_id: "c1", name: "read_file", arguments: '{"path":"a.ts"}' },
+        { type: "function_call_output", call_id: "c1", output: "1: x" },
+      ],
+    });
+    assert.deepEqual(shaped.tools, [fn]);
+    assert.equal(shaped.tool_choice, "auto");
+    assert.equal(shaped.parallel_tool_calls, false);
+    assert.deepEqual(shaped.include, ["reasoning.encrypted_content"]);
+    assert.equal((shaped.input as unknown[]).length, 4);
+    assert.equal(shaped.store, false);
+    const noTools = c.shapeBody({ model: "m", tools: [{ type: "web_search" }], tool_choice: "required", input: [] });
+    assert.equal("tools" in noTools || "tool_choice" in noTools, false);
+  });
+
+  it("runs a tool loop against the backend without referring to stored items", async () => {
+    const { streamText, stepCountIs, tool } = await import("ai");
+    const { z } = await import("zod");
+    const bodies: Record<string, unknown>[] = [];
+    const sse = (events: object[]) => new Response(events.map((e) => `event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
+    let call = 0;
+    handler = (req) => {
+      bodies.push(JSON.parse(req.body));
+      call++;
+      if (call === 1) {
+        const item = { type: "function_call", id: "fc_1", call_id: "c1", name: "read_file", arguments: '{"path":"a.ts"}', status: "completed" };
+        return sse([
+          { type: "response.created", response: { id: "resp_1", created_at: 1, model: "gpt-5.5" } },
+          { type: "response.output_item.added", output_index: 0, item: { ...item, arguments: "" } },
+          { type: "response.function_call_arguments.delta", item_id: "fc_1", output_index: 0, delta: item.arguments },
+          { type: "response.output_item.done", output_index: 0, item },
+          { type: "response.completed", response: { incomplete_details: null, usage: { input_tokens: 3, output_tokens: 1 } } },
+        ]);
+      }
+      return sse([
+        { type: "response.created", response: { id: "resp_2", created_at: 1, model: "gpt-5.5" } },
+        { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "msg_2", role: "assistant", content: [] } },
+        { type: "response.output_text.delta", item_id: "msg_2", output_index: 0, content_index: 0, delta: "It exports x." },
+        { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "msg_2", role: "assistant", content: [{ type: "output_text", text: "It exports x." }] } },
+        { type: "response.completed", response: { incomplete_details: null, usage: { input_tokens: 3, output_tokens: 1 } } },
+      ]);
+    };
+    const result = streamText({
+      model: c.chatgptModel(ACCESS, "gpt-5.5"),
+      providerOptions: c.chatgptProviderOptions,
+      messages: [{ role: "user", content: "what is in a.ts?" }],
+      tools: { read_file: tool({ description: "Read", inputSchema: z.object({ path: z.string() }), execute: async () => "1: export const x = 1;" }) },
+      stopWhen: stepCountIs(3),
+    });
+    assert.equal(await result.text, "It exports x.");
+    assert.equal(bodies.length, 2);
+    assert.ok(Array.isArray(bodies[0]!.tools) && (bodies[0]!.tools as unknown[]).length === 1);
+    const second = JSON.stringify(bodies[1]!.input);
+    assert.ok(!second.includes("item_reference"), "earlier steps are sent in full");
+    assert.ok(second.includes("function_call_output") && second.includes("export const x = 1;"));
+  });
+
   it("sends the AI SDK's request to ChatGPT's backend, shaped and with the account headers, and reads the answer", async () => {
     const { streamText } = await import("ai");
     const events = [

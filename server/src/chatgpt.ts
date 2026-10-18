@@ -380,8 +380,9 @@ const textOf = (content: unknown): string =>
       : "";
 
 /**
- * The backend takes inference only: model, instructions, input, stream, store and reasoning. Everything else the AI SDK
- * adds (temperature, token limits, tools, ...) is rejected, and system messages must be `instructions`.
+ * The backend takes what the Codex CLI sends: model, instructions, input, stream, store, reasoning, function tools and
+ * the encrypted reasoning that carries a tool loop across calls. Everything else the AI SDK adds (temperature, token
+ * limits, ...) is rejected, and system messages must be `instructions`.
  */
 export function shapeBody(body: Record<string, unknown>): Record<string, unknown> {
   const input = Array.isArray(body.input) ? (body.input as InputItem[]) : [];
@@ -405,6 +406,14 @@ export function shapeBody(body: Record<string, unknown>): Record<string, unknown
   };
   const effort = (body.reasoning as { effort?: unknown } | undefined)?.effort;
   if (typeof effort === "string" && effort) out.reasoning = { effort };
+  // Function tools only (the shared folder's list/read/search); built-in tools like web search are not offered here.
+  const tools = Array.isArray(body.tools) ? body.tools.filter((t) => (t as { type?: unknown } | null)?.type === "function") : [];
+  if (tools.length > 0) {
+    out.tools = tools;
+    if (typeof body.tool_choice === "string" && ["auto", "none", "required"].includes(body.tool_choice)) out.tool_choice = body.tool_choice;
+    if (typeof body.parallel_tool_calls === "boolean") out.parallel_tool_calls = body.parallel_tool_calls;
+  }
+  if (Array.isArray(body.include) && body.include.includes("reasoning.encrypted_content")) out.include = ["reasoning.encrypted_content"];
   return out;
 }
 
@@ -416,6 +425,12 @@ async function chatgptFetch(input: Parameters<typeof fetch>[0], init?: Parameter
   if (!raw) return fetch(input, init);
   return fetch(input, { ...init, body: JSON.stringify(shapeBody(JSON.parse(raw) as Record<string, unknown>)) });
 }
+
+/**
+ * Options every ChatGPT plan call needs. The backend keeps nothing between calls (store: false), so the AI SDK must send
+ * earlier steps in full instead of by id, and reasoning comes back encrypted so a tool loop can hand it to the next call.
+ */
+export const chatgptProviderOptions = { openai: { store: false, include: ["reasoning.encrypted_content"] } };
 
 export function chatgptModel(accessToken: string, modelId: string): LanguageModel {
   return createOpenAI({ apiKey: accessToken, baseURL: CHATGPT_BASE_URL, headers: chatgptHeaders(accessToken), fetch: chatgptFetch }).responses(modelId);

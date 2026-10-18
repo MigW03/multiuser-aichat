@@ -1,5 +1,5 @@
 import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, RotateCcw, Sparkles } from "lucide-react";
+import { Copy, CornerUpLeft, Folder, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -245,6 +245,17 @@ function AssistantMessage(props: RowProps) {
             )}
           </div>
         )}
+        {!streaming && !failed && (m.meta.files?.length || m.meta.folder_offline) ? (
+          <div className="folder-note small muted">
+            <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+            {m.meta.files?.length ? (
+              <span className="truncate" title={m.meta.files.join("\n")}>
+                Read {m.meta.files.length} {m.meta.files.length === 1 ? "file" : "files"} from the shared folder: {m.meta.files.join(", ")}
+              </span>
+            ) : null}
+            {m.meta.folder_offline ? <span>{m.meta.files?.length ? " · " : ""}The shared folder was offline.</span> : null}
+          </div>
+        ) : null}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>
             <button type="button" className="act reply" onClick={() => props.onReply(m)}>

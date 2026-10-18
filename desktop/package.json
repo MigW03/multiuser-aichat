@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/main.cjs",
   "scripts": {
-    "build:main": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist --out-extension:.js=.cjs",
+    "build:main": "esbuild src/main.ts src/preload.ts src/folder-worker.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist --out-extension:.js=.cjs",
     "dev": "npm run build:main && cross-env DESKTOP_DEV_URL=http://localhost:5173 electron .",
     "build": "npm run build:main",
     "start": "electron .",
@@ -15,10 +15,14 @@
     "dist:win": "npm run build:main && npm run build:web && electron-builder --win nsis --x64"
   },
   "devDependencies": {
+    "@mc/shared": "*",
+    "@types/picomatch": "^4.0.3",
     "cross-env": "^10.1.0",
     "electron": "44.7.2",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "ignore": "^7.0.12",
+    "picomatch": "^4.0.7",
     "tsx": "^4.23.15"
   },
   "version": "0.1.0",
@@ -76,6 +80,9 @@
       "enableNodeCliInspectArguments": false,
       "onlyLoadAppFromAsar": true,
       "grantFileProtocolExtraPrivileges": false
-    }
+    },
+    "asarUnpack": [
+      "dist/folder-worker.cjs"
+    ]
   }
 }

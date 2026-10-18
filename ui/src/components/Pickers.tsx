@@ -8,10 +8,11 @@ import {
   type ProviderId,
   type Reasoning,
 } from "@mc/shared";
-import { Brain, ChevronDown, Check, Search, Sparkles } from "lucide-react";
+import { Brain, ChevronDown, Check, Search, Sparkles, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useApp } from "../data.tsx";
+import { fetchFavoriteModels, setFavoriteModel } from "../lib/actions.ts";
 import { ICON_SM, Menu, STROKE, Spinner } from "./kit.tsx";
 
 export const modelButtonLabel = modelName;
@@ -80,11 +81,12 @@ function Menuless({ children }: { children: (s: { open: boolean; toggle: () => v
 }
 
 function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoose: (c: Pick<ModelChoice, "provider" | "model">) => void }) {
-  const { keys, openSettings } = useApp();
+  const { me, keys, openSettings } = useApp();
   const [provider, setProvider] = useState<ProviderId | null>(current?.provider ?? null);
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [starred, setStarred] = useState<string[]>([]);
 
   useEffect(() => {
     if (keys && !provider) setProvider(keys[0]?.provider ?? null);
@@ -105,10 +107,50 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
     };
   }, [provider]);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    if (!provider) return;
+    let live = true;
+    setStarred([]);
+    fetchFavoriteModels(me.id, provider).then(
+      (list) => live && setStarred(list),
+      () => {}, // stars are a convenience; the list still works without them
+    );
+    return () => {
+      live = false;
+    };
+  }, [provider, me.id]);
+
+  const toggleStar = (model: string) => {
+    if (!provider) return;
+    const on = !starred.includes(model);
+    setStarred((s) => (on ? [...s, model] : s.filter((x) => x !== model)));
+    void setFavoriteModel(me.id, provider, model, on).then((ok) => {
+      if (!ok) setStarred((s) => (on ? s.filter((x) => x !== model) : [...s, model])); // roll back
+    });
+  };
+
+  const { favorites, others } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (models ?? []).filter((m) => !q || m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)).slice(0, 200);
-  }, [models, query]);
+    const hits = (models ?? []).filter((m) => !q || m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
+    return { favorites: hits.filter((m) => starred.includes(m.id)), others: hits.filter((m) => !starred.includes(m.id)).slice(0, 200) };
+  }, [models, query, starred]);
+
+  const renderRow = (m: ModelInfo) => {
+    const selected = current?.provider === provider && current.model === m.id;
+    const isStarred = starred.includes(m.id);
+    return (
+      <div key={m.id} className="model-row">
+        <button type="button" role="option" aria-selected={selected} className={`model-item ${selected ? "selected" : ""}`} onClick={() => provider && onChoose({ provider, model: m.id })}>
+          <span className="grow truncate">{m.name}</span>
+          {m.pricing && <span className="small muted">${m.pricing.input.toFixed(2)} / ${m.pricing.output.toFixed(2)}</span>}
+          {selected && <Check size={ICON_SM} strokeWidth={2} aria-hidden />}
+        </button>
+        <button type="button" className={`icon-btn star-btn ${isStarred ? "on" : ""}`} aria-pressed={isStarred} aria-label={`${isStarred ? "Unstar" : "Star"} ${m.name}`} onClick={() => toggleStar(m.id)}>
+          <Star size={ICON_SM} strokeWidth={STROKE} fill={isStarred ? "currentColor" : "none"} aria-hidden />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="popover above end model-popover" role="dialog" aria-label="Choose a model">
@@ -139,17 +181,15 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
             </div>
           )}
           <div className="model-list" role="listbox" aria-label="Models">
-            {filtered.map((m) => {
-              const selected = current?.provider === provider && current.model === m.id;
-              return (
-                <button key={m.id} type="button" role="option" aria-selected={selected} className={`model-item ${selected ? "selected" : ""}`} onClick={() => provider && onChoose({ provider, model: m.id })}>
-                  <span className="grow truncate">{m.name}</span>
-                  {m.pricing && <span className="small muted">${m.pricing.input.toFixed(2)} / ${m.pricing.output.toFixed(2)}</span>}
-                  {selected && <Check size={ICON_SM} strokeWidth={2} aria-hidden />}
-                </button>
-              );
-            })}
-            {models && filtered.length === 0 && <div className="popover-empty small muted">No models match.</div>}
+            {favorites.length > 0 && (
+              <>
+                <div className="section-label model-group">Favorites</div>
+                {favorites.map(renderRow)}
+                {others.length > 0 && <div className="section-label model-group">All models</div>}
+              </>
+            )}
+            {others.map(renderRow)}
+            {models && favorites.length + others.length === 0 && <div className="popover-empty small muted">No models match.</div>}
           </div>
         </>
       )}

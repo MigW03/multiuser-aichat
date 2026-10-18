@@ -1,6 +1,6 @@
 import { DEFAULT_REASONING, type ModelChoice, type Person, type ProviderId } from "@mc/shared";
 import { SearchX } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api } from "../api.ts";
 import {
   AppContext,
@@ -25,6 +25,7 @@ import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
+import { PanelResizer, useLeftWidth } from "./PanelResizer.tsx";
 import { defaultModelFor } from "./Pickers.tsx";
 import { AddKeyDialog, SettingsDialog, type SettingsTab } from "./Settings.tsx";
 import { Button, Spinner } from "./kit.tsx";
@@ -128,6 +129,7 @@ export function Shell({ userId }: { userId: string }) {
   const narrow = useNarrow();
   const [collapsed, setCollapsed] = useState(() => readPref(PREF.leftCollapsed(userId), false));
   const [drawer, setDrawer] = useState(false);
+  const left = useLeftWidth(userId);
   const activeChatId = route.name === "homeChat" ? route.chatId : route.name === "project" ? route.chatId : null;
   // On a small screen the list is the first thing you see until you open a chat.
   useEffect(() => {
@@ -237,7 +239,7 @@ export function Shell({ userId }: { userId: string }) {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className={`app ${narrow ? "narrow" : ""}`}>
+      <div className={`app ${narrow ? "narrow" : ""}`} style={narrow ? undefined : ({ "--left-width": `${left.width}px` } as CSSProperties)}>
         {narrow && drawer && <div className="drawer-backdrop" onClick={() => activeChatId && setDrawer(false)} />}
         {showLeft && (
           <div className={narrow ? "drawer" : "left-slot"}>
@@ -251,6 +253,7 @@ export function Shell({ userId }: { userId: string }) {
               onCollapse={() => (narrow ? setDrawer(false) : setCollapsedPersisted(true))}
               onNavigate={() => narrow && setDrawer(false)}
             />
+            {!narrow && <PanelResizer width={left.width} max={left.max} onChange={left.set} />}
           </div>
         )}
         <main className="main">{main}</main>

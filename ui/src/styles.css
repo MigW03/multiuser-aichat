@@ -57,7 +57,7 @@ h1, h2, h3, p { margin: 0; }
   font: var(--text-row); white-space: nowrap; flex: none;
 }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; }
-.btn.block { width: 100%; }
+.btn.block { display: flex; width: 100%; }
 .btn:hover:not(:disabled) { background: var(--hover-row); }
 .btn:disabled { opacity: 0.55; cursor: default; }
 .btn.primary { background: var(--p); border-color: var(--p); color: var(--p-fg); }
@@ -259,7 +259,11 @@ h1, h2, h3, p { margin: 0; }
 
 /* ------------------------------------------------------------------ layout */
 .app { display: flex; gap: var(--gap); height: 100%; padding: var(--gap); background: var(--bg); }
-.left-slot { flex: none; width: var(--left-width); min-height: 0; display: flex; }
+.left-slot { position: relative; flex: none; width: var(--left-width); min-height: 0; display: flex; }
+.panel-resizer { position: absolute; top: 0; bottom: 0; right: calc(var(--gap) / -1); width: var(--gap); z-index: 5; cursor: col-resize; touch-action: none; outline: none; }
+.panel-resizer::after { content: ""; position: absolute; top: 12px; bottom: 12px; left: 50%; width: 2px; margin-left: -1px; border-radius: var(--r-full); background: transparent; transition: background 0.12s; }
+.panel-resizer:hover::after, .panel-resizer:focus-visible::after, .panel-resizer.dragging::after { background: var(--p); }
+.app:has(.panel-resizer.dragging) { cursor: col-resize; user-select: none; }
 .main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
 .drawer { position: fixed; z-index: 40; top: 0; bottom: 0; left: 0; width: min(320px, 92vw); padding: var(--gap); background: var(--bg); display: flex; }
@@ -391,7 +395,7 @@ h1, h2, h3, p { margin: 0; }
 .send-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--p); color: var(--p-fg); display: inline-flex; align-items: center; justify-content: center; }
 .send-btn:hover:not(:disabled) { filter: brightness(1.1); }
 .send-btn:disabled { background: var(--muted); color: var(--muted-fg); cursor: default; }
-.reply-strip { display: flex; align-items: center; gap: 8px; padding: 8px 8px 0 14px; color: var(--muted-fg); font: var(--text-small); }
+.reply-strip { display: flex; align-items: center; gap: 8px; margin: 8px 8px 0 14px; padding: 2px 0 2px 10px; border-left: 3px solid var(--p); color: var(--muted-fg); font: var(--text-small); }
 .reply-strip b { color: var(--fg); }
 .reply-strip .truncate { flex: 1; }
 .mention-list { position: absolute; left: 8px; bottom: calc(100% + 6px); min-width: 220px; max-width: calc(100% - 16px); padding: 4px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); z-index: 20; }
@@ -411,7 +415,14 @@ h1, h2, h3, p { margin: 0; }
 .tab { height: 30px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; font: var(--text-small); font-weight: 600; color: var(--muted-fg); }
 .tab.on { color: var(--p-text); border-bottom-color: var(--p); }
 .model-popover .search-field { margin: 8px; height: 42px; }
-.model-list { overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; }
+/* The popover is a capped flex column: without this the search box and tabs shrink as the list grows. */
+.model-popover > :not(.model-list) { flex-shrink: 0; }
+.model-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; }
+.model-row { display: flex; align-items: center; gap: 2px; }
+.model-row .model-item { flex: 1; min-width: 0; }
+.star-btn { width: 28px; height: 28px; }
+.star-btn.on { color: var(--p-text); }
+.model-group { padding: 8px 8px 4px; }
 .model-item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 7px; background: none; text-align: left; font: var(--text-row); }
 .model-item:hover { background: var(--hover-row); }
 .model-item.selected { background: var(--t8); color: var(--p-text); }

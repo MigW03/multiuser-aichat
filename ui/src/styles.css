@@ -496,6 +496,9 @@ h1, h2, h3, p { margin: 0; }
 .folder-empty-close { position: absolute; top: 6px; right: 6px; }
 .status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--offline); }
 .status-dot.on { background: var(--online); }
+.info-tip-btn { color: var(--muted-fg); flex: none; }
+.info-tip { position: fixed; z-index: 60; padding: 10px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); font: var(--text-small); pointer-events: none; }
+.info-tip-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
 .shared-items ul { list-style: none; margin: 4px 0 0; padding: 0; }
 .shared-items li { display: flex; align-items: center; gap: 6px; height: 30px; font: var(--text-small); }
 .shared-items li svg { flex: none; color: var(--muted-fg); }

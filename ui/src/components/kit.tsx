@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Info, Sparkles } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -117,6 +117,71 @@ export function UnreadBadge({ people, ai }: { people: number; ai: number }) {
     <span className="badge people" aria-label={`${count} unread`}>
       {text}
     </span>
+  );
+}
+
+// ------------------------------------------------------------------ info tip
+
+/**
+ * A small info icon whose text floats beside it on hover, keyboard focus or a tap. The text is rendered in a portal
+ * with fixed positioning, so a card with overflow hidden can't clip it.
+ */
+export function InfoTip({ label, children, size = ICON_SM }: { label: string; children: ReactNode; size?: number }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const WIDTH = 260;
+
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.min(Math.max(8, r.right - WIDTH), window.innerWidth - WIDTH - 8);
+    setPos({ top: r.bottom + 6, left });
+    setOpen(true);
+  };
+  const hide = () => setOpen(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && hide();
+    const onScroll = () => hide();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="icon-btn sm info-tip-btn"
+        aria-label={label}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={() => (open ? hide() : show())}
+      >
+        <Info size={size} strokeWidth={STROKE} aria-hidden />
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div id={id} role="tooltip" className="info-tip" style={{ top: pos.top, left: pos.left, width: WIDTH }}>
+            {children}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

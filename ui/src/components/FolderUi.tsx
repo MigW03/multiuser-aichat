@@ -5,7 +5,7 @@ import { api } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectFolder, type FolderBridge } from "../lib/folder.ts";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
-import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, Spinner, STROKE, useToast } from "./kit.tsx";
+import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Spinner, STROKE, useToast } from "./kit.tsx";
 
 // The project's shared folder lives in the right column of a project's chats, as the approved hi-fi boards draw it
 // ("Hi-fi · light": a 320 px column, the shared folder card on top, Notes under it later). The chat header's
@@ -54,6 +54,7 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
       <header className="side-card-head">
         <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         <b className="grow truncate" title={folder.data.name}>{folder.data.name}</b>
+        <FolderInfo />
         <span className="side-card-status small muted">
           <StatusDot on={folder.data.online} />
           {folder.data.online ? "Online" : "Offline"}
@@ -64,6 +65,20 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
       </header>
       <FolderBody project={project} folder={folder.data} host={host} bridge={bridge} />
     </section>
+  );
+}
+
+/** What sharing means, behind an info icon in the card header. */
+function FolderInfo() {
+  return (
+    <InfoTip label="About shared files">
+      <ul className="info-tip-list">
+        <li>Read only: nobody can change the files.</li>
+        <li>Never shared: .env files, keys, .git, node_modules, build folders and links.</li>
+        <li>Binary files and files over {FOLDER_LIMITS.fileBytes / 1024 / 1024} MB can't be opened.</li>
+        <li>Text the AI reads goes to the AI provider of the person who asked.</li>
+      </ul>
+    </InfoTip>
   );
 }
 
@@ -216,9 +231,6 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
       )}
       {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}
       {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} rootName={folder.name} /> : <div className="grow" />}
-      <p className="small muted">
-        Read only. Never shared: .env files, keys, .git, node_modules, build folders and links. Binary files and files over {FOLDER_LIMITS.fileBytes / 1024 / 1024} MB can't be opened. Text the AI reads goes to the AI provider of the person who asked.
-      </p>
       {manage && local?.linked && (
         <div className="shared-items">
           <div className="small muted">Shared from this computer</div>

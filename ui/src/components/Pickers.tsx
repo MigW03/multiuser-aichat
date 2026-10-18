@@ -1,8 +1,8 @@
 import {
+  FALLBACK_REASONING,
   modelName,
   PROVIDER_LABELS,
   REASONING_LABELS,
-  REASONING_LEVELS,
   type ModelChoice,
   type ModelInfo,
   type ProviderId,
@@ -10,7 +10,7 @@ import {
 } from "@mc/shared";
 import { Brain, ChevronDown, Check, Search, Sparkles, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api.ts";
+import { loadModels } from "../lib/models.ts";
 import { useApp } from "../data.tsx";
 import { fetchFavoriteModels, setFavoriteModel } from "../lib/actions.ts";
 import { ICON_SM, Menu, STROKE, Spinner } from "./kit.tsx";
@@ -98,8 +98,8 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
     let live = true;
     setModels(null);
     setError(null);
-    api.models(provider).then(
-      ({ models: list }) => live && setModels(list),
+    loadModels(provider).then(
+      (list) => live && setModels(list),
       (e: Error) => live && setError(e.message),
     );
     return () => {
@@ -197,20 +197,23 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
   );
 }
 
-export function ReasoningPicker({ value, onChange, disabled }: { value: Reasoning; onChange: (r: Reasoning) => void; disabled?: boolean }) {
+/** Thinking levels the chosen model accepts. `levels` null: not known yet, so the common ones are offered. */
+export function ReasoningPicker({ levels, value, onChange, disabled }: { levels: Reasoning[] | null; value: Reasoning | null; onChange: (r: Reasoning) => void; disabled?: boolean }) {
+  const offered = levels ?? FALLBACK_REASONING;
+  const none = levels !== null && levels.length === 0;
   return (
     <Menu
       label="Thinking"
       placement="above"
       align="end"
-      width={140}
-      items={REASONING_LEVELS.map((level) => ({ label: REASONING_LABELS[level], checked: level === value, onSelect: () => onChange(level) }))}
+      width={150}
+      items={offered.map((level) => ({ label: REASONING_LABELS[level], checked: level === value, onSelect: () => onChange(level) }))}
       trigger={({ toggle, open }) => (
-        <button type="button" className="picker-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} disabled={disabled}>
+        <button type="button" className="picker-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} disabled={disabled || none} title={none ? "This model does not offer thinking levels" : undefined}>
           <span className="picker-icon" aria-hidden>
             <Brain size={ICON_SM} strokeWidth={STROKE} />
           </span>
-          <span className="muted">Thinking</span> {REASONING_LABELS[value]}
+          <span className="muted">Thinking</span> {none || !value ? "Not available" : REASONING_LABELS[value]}
           <ChevronDown size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         </button>
       )}

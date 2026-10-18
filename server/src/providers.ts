@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { PROVIDER_LABELS, type ModelInfo, type ProviderId } from "@mc/shared";
+import { isReasoning, PROVIDER_LABELS, REASONING_LEVELS, type ModelInfo, type ProviderId, type Reasoning } from "@mc/shared";
 import type { LanguageModel } from "ai";
 
 export function languageModel(provider: ProviderId, apiKey: string, modelId: string): LanguageModel {
@@ -13,6 +13,16 @@ export function languageModel(provider: ProviderId, apiKey: string, modelId: str
     case "openai":
       return createOpenAI({ apiKey })(modelId);
   }
+}
+
+/** The thinking part of a streamText call. OpenRouter models differ too much for one effort name, so its own `reasoning` object is sent. */
+export function reasoningOptions(provider: ProviderId, level: Reasoning | null) {
+  if (!level) return {};
+  if (provider === "openrouter") {
+    const reasoning = level === "off" ? { effort: "none" } : level === "on" ? { enabled: true } : { effort: level };
+    return { providerOptions: { openrouter: { reasoning } } };
+  }
+  return { reasoning: level === "off" ? ("none" as const) : level === "on" ? ("medium" as const) : level };
 }
 
 /** A problem the user can act on (bad key, provider down). The message is safe to show. */
@@ -30,7 +40,67 @@ async function getJson(url: string, headers: Record<string, string>, provider: P
   return res.json() as Promise<{ data?: unknown[] }>;
 }
 
-type OpenRouterModel = { id: string; name?: string; pricing?: { prompt?: string; completion?: string }; architecture?: { output_modalities?: string[] } };
+type OpenRouterModel = {
+  id: string;
+  name?: string;
+  pricing?: { prompt?: string; completion?: string };
+  architecture?: { output_modalities?: string[] };
+  supported_parameters?: string[];
+  reasoning?: { supported_efforts?: string[]; mandatory?: boolean };
+};
+
+const inOrder = (levels: Iterable<Reasoning>): Reasoning[] => REASONING_LEVELS.filter((l) => new Set(levels).has(l));
+
+/** OpenRouter lists, per model, the efforts it accepts and whether thinking can be switched off. */
+export function openRouterLevels(m: Pick<OpenRouterModel, "supported_parameters" | "reasoning">): Reasoning[] | undefined {
+  const r = m.reasoning;
+  if (!r) {
+    if (!Array.isArray(m.supported_parameters)) return undefined;
+    const params = Array.isArray(m.supported_parameters) ? m.supported_parameters : [];
+    return params.includes("reasoning") || params.includes("include_reasoning") ? ["off", "on"] : [];
+  }
+  const efforts = (Array.isArray(r.supported_efforts) ? r.supported_efforts : []).map((e) => (e === "none" ? "off" : e)).filter(isReasoning);
+  if (efforts.length === 0) return r.mandatory ? [] : ["off", "on"]; // thinks, but there is no dial
+  return inOrder(r.mandatory ? efforts : [...efforts, "off"]);
+}
+
+type AnthropicCapability = { supported?: boolean };
+type AnthropicModel = {
+  id: string;
+  display_name?: string;
+  capabilities?: { thinking?: { supported?: boolean; types?: { disabled?: AnthropicCapability } }; effort?: { supported?: boolean } & Record<string, unknown> } | null;
+};
+
+/** Anthropic reports thinking and effort support per model. Models that think on a token budget get low/medium/high. */
+export function anthropicLevels(caps: AnthropicModel["capabilities"]): Reasoning[] | undefined {
+  if (!caps?.thinking) return undefined;
+  if (!caps.thinking.supported) return [];
+  const levels = new Set<Reasoning>();
+  if (caps.thinking.types?.disabled?.supported !== false) levels.add("off");
+  if (caps.effort?.supported) {
+    for (const l of ["low", "medium", "high", "xhigh", "max"] as const) {
+      if ((caps.effort[l] as AnthropicCapability | undefined)?.supported) levels.add(l);
+    }
+  } else {
+    for (const l of ["low", "medium", "high"] as const) levels.add(l);
+  }
+  return inOrder(levels);
+}
+
+/** OpenAI says nothing about thinking in /models, so this follows the model families (and the SDK's own table). */
+export function openaiLevels(id: string): Reasoning[] {
+  if (/^o\d+(-|$)/.test(id)) return ["low", "medium", "high"];
+  const gpt = /^gpt-(\d+)(?:\.(\d+))?(?:-(.+))?$/.exec(id);
+  if (!gpt) return [];
+  const major = Number(gpt[1]);
+  const minor = gpt[2] == null ? null : Number(gpt[2]);
+  const variant = gpt[3] ?? "";
+  if (major < 5 || (minor == null && variant.startsWith("chat"))) return [];
+  if (major >= 6) return id === "gpt-6-sol" || id === "gpt-6-luna" ? ["off", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh", "max"];
+  if (variant.startsWith("pro")) return ["high"];
+  if (minor == null) return ["minimal", "low", "medium", "high"];
+  return ["off", "low", "medium", "high"];
+}
 
 // OpenAI's /models also lists embedding, audio, image and moderation models; keep the chat ones.
 const OPENAI_CHAT = /^(gpt-|chatgpt-|o\d)/;
@@ -40,14 +110,14 @@ const OPENAI_NOT_CHAT = /(audio|realtime|transcribe|tts|image|embedding|moderati
 export async function listModels(provider: ProviderId, apiKey: string): Promise<ModelInfo[]> {
   if (provider === "anthropic") {
     const json = await getJson("https://api.anthropic.com/v1/models?limit=1000", { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, provider);
-    return ((json.data ?? []) as { id: string; display_name?: string }[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id }));
+    return ((json.data ?? []) as AnthropicModel[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id, reasoning: anthropicLevels(m.capabilities) }));
   }
   if (provider === "openai") {
     const json = await getJson("https://api.openai.com/v1/models", { authorization: `Bearer ${apiKey}` }, provider);
     return ((json.data ?? []) as { id: string; created?: number }[])
       .filter((m) => OPENAI_CHAT.test(m.id) && !OPENAI_NOT_CHAT.test(m.id))
       .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
-      .map((m) => ({ id: m.id, name: m.id }));
+      .map((m) => ({ id: m.id, name: m.id, reasoning: openaiLevels(m.id) }));
   }
   const json = await getJson("https://openrouter.ai/api/v1/models", { authorization: `Bearer ${apiKey}` }, provider);
   return ((json.data ?? []) as OpenRouterModel[])
@@ -56,7 +126,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
       // OpenRouter prices are USD per token as strings; negative means dynamic pricing.
       const input = Number(m.pricing?.prompt) * 1e6;
       const output = Number(m.pricing?.completion) * 1e6;
-      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined };
+      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined, reasoning: openRouterLevels(m) };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

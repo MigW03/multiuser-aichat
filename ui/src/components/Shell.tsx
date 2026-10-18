@@ -16,6 +16,7 @@ import {
 } from "../data.tsx";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
+import { loadModels } from "../lib/models.ts";
 import { navigate, useRoute } from "../lib/router.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { supabase } from "../supabase.ts";
@@ -106,8 +107,8 @@ export function Shell({ userId }: { userId: string }) {
     if (autoPicked.current === provider) return;
     autoPicked.current = provider;
     let live = true;
-    api.models(provider).then(
-      ({ models }) => {
+    loadModels(provider).then(
+      (models) => {
         const model = defaultModelFor(provider, models);
         if (live && model) setChoice({ provider, model, reasoning: stored?.reasoning ?? DEFAULT_REASONING });
       },

@@ -15,6 +15,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, type InviteCreated, type InviteRow } from "../api.ts";
 import { notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText } from "../lib/actions.ts";
+import { useModelReasoning } from "../lib/models.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
 import { navigate, tokenFromPasted } from "../lib/router.ts";
 import { expiresIn } from "../lib/time.ts";
@@ -524,6 +525,7 @@ const SCOPES: { id: SummaryScope; title: string; text: string }[] = [
 
 export function SummarizeDialog({ chatId, choice, readSeq, hasUnread, onClose }: { chatId: string; choice: ModelChoice | null; readSeq: number | null; hasUnread: boolean; onClose: () => void }) {
   const { openAddKey } = useApp();
+  const thinking = useModelReasoning(choice);
   const [scope, setScope] = useState<SummaryScope>(hasUnread ? "unread" : "day");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -559,7 +561,7 @@ export function SummarizeDialog({ chatId, choice, readSeq, hasUnread, onClose }:
         fromSeq: scope === "unread" ? (readSeq ?? 0) : undefined,
         provider: choice.provider,
         model: choice.model,
-        reasoning: choice.reasoning,
+        ...(thinking.effective ? { reasoning: thinking.effective } : {}),
       });
       onClose();
     } catch (e) {

@@ -2,6 +2,7 @@ import { LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type Provider
 import { ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, Sun, User } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "../api.ts";
+import { forgetModels } from "../lib/models.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
@@ -146,6 +147,7 @@ export function KeyForm({ initialProvider, onSaved }: { initialProvider?: Provid
     setError(null);
     try {
       await api.saveKey(provider, apiKey);
+      forgetModels(provider);
       setValue("");
       reloadKeys();
       toast.push(`${PROVIDER_LABELS[provider]} key saved`);
@@ -200,6 +202,7 @@ function KeyTab() {
     setBusy(provider);
     try {
       await api.deleteKey(provider);
+      forgetModels(provider);
       reloadKeys();
       toast.push(`${PROVIDER_LABELS[provider]} key removed`);
     } catch (e) {

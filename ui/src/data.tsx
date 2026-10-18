@@ -26,7 +26,7 @@ export function notifyChanged() {
 export function useRealtimeLists(userId: string) {
   useEffect(() => {
     const channel = supabase.channel(`lists:${userId}`);
-    for (const table of ["messages", "chats", "projects", "project_members", "chat_members"]) {
+    for (const table of ["messages", "chats", "projects", "project_members", "chat_members", "project_folders"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, notifyChanged);
     }
     channel.subscribe((status) => status === "SUBSCRIBED" && notifyChanged());

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, net, protocol, shell } from "electron";
 import { join, normalize, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { setupFolderHost } from "./folder-ipc.ts";
 
 // Production loads the web build from a private app:// origin (not file://, which would give the page
 // access to the whole disk). Development loads the Vite dev server.
@@ -66,6 +67,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   if (!DEV_URL) serveWebBuild();
+  setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => BrowserWindow.getAllWindows()[0] ?? null });
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

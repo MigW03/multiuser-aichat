@@ -1,6 +1,6 @@
 # Architecture: one small server, two thin clients (TypeScript)
 
-Status: chat part built (2026-10-14). Shared files are next.
+Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18.
 
 ## Pieces
 
@@ -44,18 +44,30 @@ the local file host.
 - **Realtime:** `chat:<id>` carries message changes, stream snapshots, typing hints and presence; `project:<id>`
   carries presence for the green dots. Broadcasts and presence are hints only; nothing is decided from them.
 
-## Shared files (next)
+## Shared folder (v1, read only, built 2026-10-18)
 
-Same model as Zed's collaboration (studied, not copied): the host's app owns the files; the server keeps rooms and
-peers and forwards messages; it never stores the files.
+One folder per project, linked by the project's host in the desktop app. Nothing is uploaded: the host's app serves
+the folder through the server, which relays requests and checks permissions but stores no file contents.
 
-- **CRDT:** Yjs documents, one per open file. Server: Hocuspocus (Yjs websocket server) with an auth hook that
-  checks the Supabase token and chat membership.
-- **Desktop host:** the Electron main process reads/watches the shared folder (only the folder the user picked),
-  answers file-tree and open-file requests, and writes merged edits back to disk.
-- **Guests (web or desktop):** open files through the relay and edit live; cursors via Yjs awareness.
-- **AI:** runs on the server and reads/edits host files through the same relay, so its changes are just more edits.
-- If the host goes offline, the shared files go offline too.
+- **Host app (desktop main process):** the folder is picked in a native dialog; its path stays on the host's computer
+  (`userData/shared-folders.json`, mode 0600). The main process keeps one outgoing WebSocket per linked project to
+  `/api/folder-host` and answers `list`, `read` and `search`. The page can only ask for status, open the dialog and
+  unlink: it never sees a path or reads a file. Rules in `desktop/src/folder-fs.ts`: relative paths only, no `..`,
+  symlinks never followed, secrets and junk hidden (`.env*`, keys, `.git`, `node_modules`, build folders), binary and
+  >2 MB files refused, known token formats masked, literal search only, every answer size-capped.
+- **Server:** `folder-relay.ts` accepts only the project host (Supabase token checked on connect and on each refresh,
+  host role re-checked every 5 minutes, closed when the sign-in is older than 75 minutes), refuses browser-originated
+  sockets (any `Origin` header), validates and size-limits every answer. `routes/folder.ts`: the host links/unlinks;
+  every project member can list/read/search (rate limited).
+- **Database:** `project_folders` (name, linked by, online flag). Members read it through RLS (it drives the live
+  online/offline badge); only `app_folder_*` functions (service role) write it. The path is never stored.
+- **AI:** in project chats with a shared folder, runs get `list_files`, `read_file` and `search_files`
+  (`folder-tools.ts`). Results are fenced as untrusted data and the instructions forbid following them. Host offline:
+  the tool says so and the AI tells the chat. ChatGPT plan connections accept no tools, so they can't read the folder.
+- **UI:** a folder row under the project name (left panel) and a chip in the chat header open one dialog: status,
+  read-only browser, and share/change/stop for the host in the desktop app. The web app shows status and browses.
+
+Later: AI edits with host approval, live co-editing (Yjs, Zed's model), `.gitignore` support.
 
 ## Decisions
 

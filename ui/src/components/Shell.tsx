@@ -14,6 +14,7 @@ import {
   type AppContextValue,
   type Me,
 } from "../data.tsx";
+import { useFolderHost } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { loadModels } from "../lib/models.ts";
@@ -126,6 +127,8 @@ export function Shell({ userId }: { userId: string }) {
   const chats = useLive(() => fetchChats(projectId), [projectId]);
   const members = useLive(() => (projectId ? fetchProjectMembers(projectId) : Promise.resolve(undefined)), [projectId]);
   const online = useProjectPresence(projectId, userId);
+  // The desktop app serves the shared folders of the projects this person hosts.
+  useFolderHost(userId, projects.data?.filter((p) => p.my_role === "host").map((p) => p.id));
 
   const narrow = useNarrow();
   const [collapsed, setCollapsed] = useState(() => readPref(PREF.leftCollapsed(userId), false));

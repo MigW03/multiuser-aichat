@@ -5,6 +5,8 @@ import type {
   ChatGptPollResponse,
   ChatGptStartResponse,
   ChatGptUsage,
+  FolderListResult,
+  FolderReadResult,
   InvitePreview,
   KeysResponse,
   ModelsResponse,
@@ -66,6 +68,11 @@ export const api = {
   removeMember: (projectId: string, userId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/members/${userId}`),
   inviteToProject: (projectId: string, email: string, role: AssignableRole) => call<InviteCreated>("POST", `/api/projects/${projectId}/invites`, { email, role }),
   projectInvites: (projectId: string) => call<{ invites: InviteRow[] }>("GET", `/api/projects/${projectId}/invites`),
+
+  linkFolder: (projectId: string, name: string) => call<{ ok: true }>("PUT", `/api/projects/${projectId}/folder`, { name }),
+  unlinkFolder: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/folder`),
+  folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
+  folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
 
   createChat: (projectId: string | null) => call<{ id: string }>("POST", "/api/chats", { projectId }),
   renameChat: (id: string, title: string) => call<{ title: string }>("PATCH", `/api/chats/${id}`, { title }),

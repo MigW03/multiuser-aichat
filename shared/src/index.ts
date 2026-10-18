@@ -94,6 +94,10 @@ export type MessageMeta = {
   error?: AiErrorCode;
   // a reply to a highlighted part of an answer: the excerpt
   quote?: string;
+  // answers: files the AI read from the project's shared folder (paths, as many as fit)
+  files?: string[];
+  /** The shared folder could not be reached while this answer was written. */
+  folder_offline?: boolean;
 };
 
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -234,6 +238,52 @@ export type InvitePreview = {
   members: { name: string; role: Role }[];
 };
 export type AcceptInviteResponse = { projectId: string | null; chatId: string | null };
+
+// ---- Shared folder: a folder on the project host's computer that project members and the AI can read.
+// The host's desktop app serves it through the chat server; the server only relays and checks permissions.
+
+export const FOLDER_LIMITS = {
+  nameChars: 80,
+  /** Longest path a request may carry, in characters. */
+  pathChars: 400,
+  /** Entries returned for one directory. */
+  listEntries: 500,
+  /** Text returned by one read. Longer files are read in parts with an offset. */
+  readBytes: 50 * 1024,
+  readLines: 2000,
+  lineChars: 2000,
+  /** Files above this are refused outright. */
+  fileBytes: 2 * 1024 * 1024,
+  /** Search skips files above this. */
+  searchFileBytes: 1024 * 1024,
+  searchQueryChars: 100,
+  searchMatches: 50,
+  searchLineChars: 200,
+  searchFiles: 5000,
+  searchMs: 8000,
+  /** How long the server waits for the host's app to answer one request. */
+  requestMs: 20_000,
+} as const;
+
+export type FolderEntry = { name: string; type: "file" | "dir"; size?: number };
+export type FolderListResult = { path: string; entries: FolderEntry[]; truncated: boolean };
+export type FolderReadResult = { path: string; text: string; startLine: number; endLine: number; totalLines: number; truncated: boolean };
+export type FolderMatch = { path: string; line: number; text: string };
+export type FolderSearchResult = { matches: FolderMatch[]; truncated: boolean };
+
+/** Why the host's app refused a request. The messages are written to be shown. */
+export type FolderErrorCode = "invalid_path" | "not_found" | "excluded" | "too_large" | "binary" | "not_a_file" | "not_a_directory" | "bad_request" | "busy" | "failed";
+
+/** What the server asks the host's app to do. `id` pairs the answer with the request. */
+export type FolderRequest =
+  | { id: string; op: "list"; path: string }
+  | { id: string; op: "read"; path: string; offset?: number; limit?: number }
+  | { id: string; op: "search"; query: string; path?: string; glob?: string };
+
+export type FolderResponse = { id: string; ok: true; result: unknown } | { id: string; ok: false; code: FolderErrorCode; message: string };
+
+/** The one row the server keeps for a project's shared folder: a name and whether the host's app is serving it. Never the path. */
+export type ProjectFolder = { project_id: string; name: string; linked_by: string; linked_at: string; online: boolean };
 
 // ---- Realtime broadcast events on the private channel `chat:<id>`
 

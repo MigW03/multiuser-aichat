@@ -1,4 +1,4 @@
-import { Eye, EyeOff, ShieldAlert, Sparkles } from "lucide-react";
+import { Eye, EyeOff, FolderLock, HardDrive, ShieldAlert, Sparkles } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, ICON, STROKE } from "./kit.tsx";
 
@@ -14,17 +14,19 @@ export type NoticeProps = {
   cancelLabel: string;
   busy?: boolean;
   error?: string | null;
+  /** The notice is shown every time: no "shows once" line and no way to turn it off. */
+  always?: boolean;
   onConfirm: (neverShowAgain: boolean) => void;
   onCancel: () => void;
 };
 
-export function NoticeBody({ title, items, confirmLabel, cancelLabel, busy, error, onConfirm, onCancel }: NoticeProps) {
+export function NoticeBody({ title, items, confirmLabel, cancelLabel, busy, error, always, onConfirm, onCancel }: NoticeProps) {
   const [never, setNever] = useState(false);
   return (
     <>
       <div>
         <h2 className="dialog-title flush">{title}</h2>
-        <p className="small muted notice-sub">This shows once, unless you turn it off.</p>
+        {!always && <p className="small muted notice-sub">This shows once, unless you turn it off.</p>}
       </div>
       <ul className="notice-list">
         {items.map((item) => (
@@ -39,10 +41,12 @@ export function NoticeBody({ title, items, confirmLabel, cancelLabel, busy, erro
           </li>
         ))}
       </ul>
-      <label className="check">
-        <input type="checkbox" checked={never} onChange={(e) => setNever(e.target.checked)} />
-        Never show this again
-      </label>
+      {!always && (
+        <label className="check">
+          <input type="checkbox" checked={never} onChange={(e) => setNever(e.target.checked)} />
+          Never show this again
+        </label>
+      )}
       {error ? <div className="error-line">{error}</div> : null}
       <div className="notice-actions">
         <Button onClick={onCancel}>{cancelLabel}</Button>
@@ -104,5 +108,17 @@ export const joinChatNotice = (chat: string, alreadyIn: number): Pick<NoticeProp
     { icon: <Eye size={ICON} strokeWidth={STROKE} />, title: "You will see every message in this chat", text: `That includes past messages, and so do the ${alreadyIn} ${alreadyIn === 1 ? "person" : "people"} already in it.` },
     claudeItem,
     secretsItem,
+  ],
+});
+
+/** Before the host shares a folder from their computer. Shown every time. */
+export const shareFolderNotice = (project: string): Pick<NoticeProps, "title" | "items" | "always"> => ({
+  title: `Before you share a folder with ${project}`,
+  always: true,
+  items: [
+    { icon: <Eye size={ICON} strokeWidth={STROKE} />, title: "Everyone in the project can browse it", text: "Every member can open and read the files in the folder you pick, as long as your desktop app is running. Nobody can change them." },
+    { icon: <Sparkles size={ICON} strokeWidth={STROKE} />, title: "The AI can read it too", text: "When someone in a project chat asks about the files, the AI opens them. The text it reads goes to that person's AI provider." },
+    { icon: <HardDrive size={ICON} strokeWidth={STROKE} />, title: "Files stay on your computer", text: "Nothing is uploaded or stored. Files are read from your computer when someone asks, and the folder goes offline when you quit the app or sign out." },
+    { icon: <FolderLock size={ICON} strokeWidth={STROKE} />, title: "Secrets are left out, but check", text: "Files like .env, keys, .git and node_modules are never shared, and common tokens are masked. Pick a project folder, not your home folder, and keep anything private elsewhere." },
   ],
 });

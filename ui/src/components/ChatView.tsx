@@ -10,6 +10,7 @@ import { supabase } from "../supabase.ts";
 import { Composer, type OutgoingMessage, type ReplyTarget } from "./Composer.tsx";
 import { DeleteChatDialog, RenameDialog, SummarizeDialog } from "./Dialogs.tsx";
 import { EmptyChat } from "./EmptyStates.tsx";
+import { FolderChip } from "./FolderUi.tsx";
 import { MessageList, OPTIMISTIC_SEQ } from "./Messages.tsx";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, IconButton, ICON, ICON_SM, Menu, STROKE, useToast } from "./kit.tsx";
@@ -166,6 +167,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
             </span>
           )}
         </div>
+        {project && <FolderChip project={project} />}
         <div className="grow" />
         {shared && (
           <span className="header-people" aria-label="People in this chat">

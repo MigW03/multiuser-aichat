@@ -10,8 +10,10 @@ import {
   type Reasoning,
   type SummaryScope,
 } from "@mc/shared";
-import { APICallError, streamText, type ModelMessage } from "ai";
+import { APICallError, stepCountIs, streamText, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import { FOLDER_MAX_STEPS, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { folderAccess, relay } from "./folders.ts";
 import { getUserKey } from "./keys.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
 import { admin, type Admin } from "./supabase.ts";
@@ -215,6 +217,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
+    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse } | null = null;
     if (summary) {
       const fromSeq = Number(first.meta.from_seq ?? 0);
       const { data: rows } = await db
@@ -242,6 +245,20 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         .limit(HISTORY_LIMIT);
       instructions = chatInstructions(asker, modelId);
       messages = toModelMessages(((history ?? []) as Row[]).reverse(), names);
+
+      // A project chat can read the project's shared folder, if one is shared. The check is the asker's own membership.
+      const { data: chatRow } = await db.from("chats").select("project_id").eq("id", chatId).maybeSingle();
+      const projectId = (chatRow?.project_id as string | null | undefined) ?? null;
+      const access = projectId ? await folderAccess(authorId, projectId) : null;
+      if (projectId && access?.ok) {
+        // A ChatGPT plan connection accepts no tools, so that answer can only say the folder exists.
+        const canRead = !isPlanProvider(provider);
+        instructions = `${instructions}\n\n${folderInstructions(access.name, canRead)}`;
+        if (canRead) {
+          const use: FolderUse = { files: new Set(), offline: false };
+          folder = { tools: folderTools((req) => relay.call(projectId, req as never), use), use };
+        }
+      }
     }
 
     // streamText reports provider errors (bad key, unknown model) through onError and ends the stream quietly.
@@ -254,13 +271,18 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       instructions,
       messages,
       ...reasoningOptions(provider, reasoning),
+      ...(folder ? { tools: folder.tools, stopWhen: stepCountIs(FOLDER_MAX_STEPS) } : {}),
       abortSignal: controller.signal,
       timeout: { totalMs: (LOCK_SECONDS - 30) * 1000 },
     });
 
     let lastSent = 0;
-    for await (const delta of result.textStream) {
-      text += delta;
+    let breakBefore = false; // text written before and after a tool call reads as separate paragraphs
+    for await (const part of result.fullStream) {
+      if (part.type === "tool-call") breakBefore = text.length > 0;
+      if (part.type !== "text-delta") continue;
+      text += (breakBefore ? "\n\n" : "") + part.text;
+      breakBefore = false;
       if (Date.now() - lastSent >= BROADCAST_EVERY_MS) {
         lastSent = Date.now();
         void send(text); // full snapshots, not deltas: a dropped packet fixes itself with the next one
@@ -269,6 +291,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (controller.signal.aborted) throw new UserFacing("stopped", "Stopped.");
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
+    if (folder) meta = { ...meta, ...fitFiles(folder.use) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);
   } catch (err) {

@@ -10,6 +10,7 @@
     "start": "electron ."
   },
   "devDependencies": {
+    "@mc/shared": "*",
     "cross-env": "^10.1.0",
     "electron": "^44.7.2",
     "esbuild": "^0.28.2"

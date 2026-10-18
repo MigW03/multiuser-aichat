@@ -259,7 +259,11 @@ h1, h2, h3, p { margin: 0; }
 
 /* ------------------------------------------------------------------ layout */
 .app { display: flex; gap: var(--gap); height: 100%; padding: var(--gap); background: var(--bg); }
-.left-slot { flex: none; width: var(--left-width); min-height: 0; display: flex; }
+.left-slot { position: relative; flex: none; width: var(--left-width); min-height: 0; display: flex; }
+.panel-resizer { position: absolute; top: 0; bottom: 0; right: calc(var(--gap) / -1); width: var(--gap); z-index: 5; cursor: col-resize; touch-action: none; outline: none; }
+.panel-resizer::after { content: ""; position: absolute; top: 12px; bottom: 12px; left: 50%; width: 2px; margin-left: -1px; border-radius: var(--r-full); background: transparent; transition: background 0.12s; }
+.panel-resizer:hover::after, .panel-resizer:focus-visible::after, .panel-resizer.dragging::after { background: var(--p); }
+.app:has(.panel-resizer.dragging) { cursor: col-resize; user-select: none; }
 .main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
 .drawer { position: fixed; z-index: 40; top: 0; bottom: 0; left: 0; width: min(320px, 92vw); padding: var(--gap); background: var(--bg); display: flex; }

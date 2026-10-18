@@ -28,6 +28,7 @@ export function clearPref(key: string) {
 /** Keys used by the app, in one place. */
 export const PREF = {
   leftCollapsed: (userId: string) => `mc.leftCollapsed.${userId}`,
+  leftWidth: (userId: string) => `mc.leftWidth.${userId}`,
   /** Hide the privacy notice before inviting / joining ("Never show this again"). */
   hideInviteNotice: (userId: string) => `mc.hideInviteNotice.${userId}`,
   hideJoinNotice: (userId: string) => `mc.hideJoinNotice.${userId}`,

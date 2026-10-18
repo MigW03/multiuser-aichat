@@ -13,6 +13,19 @@ export type HostSession = { serverUrl: string; token: string; userId: string; ho
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
 
+/**
+ * "scheme://host[:port]" of a page address. Node's URL gives the custom app:// scheme the origin "null", so the
+ * origin is built by hand; any address that doesn't parse gives null.
+ */
+export function originOf(url: string | undefined): string | null {
+  try {
+    const u = new URL(url ?? "");
+    return u.host ? `${u.protocol}//${u.host}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The chat server addresses this app may connect to. Keep in step with the page's connect-src. Local servers are for development builds. */
 export function serverSocketUrl(serverUrl: string, packaged: boolean): string | null {
   let u: URL;

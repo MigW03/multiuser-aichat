@@ -80,6 +80,9 @@
       "enableNodeCliInspectArguments": false,
       "onlyLoadAppFromAsar": true,
       "grantFileProtocolExtraPrivileges": false
-    }
+    },
+    "asarUnpack": [
+      "dist/folder-worker.cjs"
+    ]
   }
 }

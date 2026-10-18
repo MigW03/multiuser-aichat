@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, readFile, realpath, rename, writeFile } from "node
 import { basename, dirname, join } from "node:path";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
-import { FolderConn, isUuid, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
+import { FolderConn, isUuid, originOf, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
 import { nameItems, summaryName, type Item, type ItemSpec } from "./folder-items.ts";
 
 // Wires the shared folder to the app window. The page can: say who is signed in and which projects they host,
@@ -62,18 +62,14 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   let links: Links = {};
   let session: HostSession | null = null;
   const conns = new Map<string, FolderConn>();
-  const search = workerSearch(join(__dirname, "folder-worker.cjs"));
+  // Packaged, the worker is kept outside app.asar (asarUnpack in package.json): worker threads load from the real disk.
+  const search = workerSearch(join(__dirname, "folder-worker.cjs").replace(/app\.asar([\\/])/, "app.asar.unpacked$1"));
   const ready = loadLinks().then((l) => {
     links = l;
   });
 
-  const trusted = (e: IpcMainInvokeEvent) => {
-    try {
-      return new URL(e.senderFrame?.url ?? "").origin === opts.allowedOrigin;
-    } catch {
-      return false;
-    }
-  };
+  // Only the app's own page may use these calls (not an iframe or a page it navigated to).
+  const trusted = (e: IpcMainInvokeEvent) => originOf(e.senderFrame?.url) === opts.allowedOrigin;
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("folder:changed", projectId);
   const itemsOf = (projectId: string): Item[] => nameItems(links[projectId]?.items ?? []);
   const mine = (projectId: string) => !!links[projectId] && !!session && links[projectId]!.userId === session.userId;

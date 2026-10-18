@@ -6,7 +6,7 @@ import { after, before, describe, test } from "node:test";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { globFiles, grepFiles } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
-import { FolderConn, serverSocketUrl, type FolderState } from "./folder-host.ts";
+import { FolderConn, originOf, serverSocketUrl, type FolderState } from "./folder-host.ts";
 import { answer, nameItems, summaryName, type Item, type Search } from "./folder-items.ts";
 
 const grep: Search = { glob: (t, p, o) => globFiles(t, p, o), grep: (t, p, o) => grepFiles(t, p, o) };
@@ -41,6 +41,18 @@ describe("server addresses", () => {
     assert.equal(serverSocketUrl("http://localhost:8787", false), "ws://localhost:8787/api/folder-host");
     assert.equal(serverSocketUrl("http://127.0.0.1:8787", false), "ws://127.0.0.1:8787/api/folder-host");
     assert.equal(serverSocketUrl("not a url", false), null);
+  });
+});
+
+describe("page origins", () => {
+  test("the packaged app's app:// page and the dev server, nothing else", () => {
+    assert.equal(originOf("app://desktop/index.html#/p/x"), "app://desktop");
+    assert.equal(originOf("http://localhost:5173/"), "http://localhost:5173");
+    assert.notEqual(originOf("app://desktop.evil/index.html"), "app://desktop");
+    assert.notEqual(originOf("https://evil.example/app://desktop"), "app://desktop");
+    assert.equal(originOf("not a url"), null);
+    assert.equal(originOf(undefined), null);
+    assert.equal(originOf("file:///etc/passwd"), null);
   });
 });
 

@@ -1,6 +1,8 @@
-import { FOLDER_LIMITS as L, type FolderEntry, type FolderErrorCode, type FolderListResult, type FolderMatch, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type FolderEntry, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderMatch, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
+import ignore, { type Ignore } from "ignore";
+import picomatch from "picomatch";
 import { constants } from "node:fs";
-import { lstat, open, readdir, realpath, type FileHandle } from "node:fs/promises";
+import { lstat, open, readdir, readFile, realpath, type FileHandle } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, parse, sep } from "node:path";
 
@@ -225,79 +227,173 @@ export async function readText(root: string, path: unknown, offset?: unknown, li
   return { path: found.parts.join("/"), text: out.join("\n"), startLine: start, endLine: start - 1 + out.length, totalLines: lines.length, truncated: i < lines.length };
 }
 
-// ------------------------------------------------------------------ search
+// ------------------------------------------------------------------ search: glob and grep, as opencode's tools
+// Like opencode (which runs ripgrep), searches skip files listed in .gitignore and hidden (dot) files unless asked,
+// on top of the secrets and junk that are never shared. Reading a path directly ignores .gitignore, as opencode's read does.
 
-/** `*` and `?` only, matched against the file name. Anything else in the pattern is refused so it can never be a regex. */
-function globToRegex(glob: string): RegExp {
-  if (!/^[A-Za-z0-9._*?-]{1,60}$/.test(glob)) throw new FolderError("bad_request", "The file pattern may only use letters, digits, . _ - and the wildcards * and ?.");
-  return new RegExp(`^${glob.replace(/[.]/g, "\\.").replace(/\*/g, ".*").replace(/\?/g, ".")}$`, "i");
+/** Where a search runs: inside `root`, starting at `start` (a folder or one file). Results are reported under `prefix`. */
+export type Target = { root: string; start: string[]; prefix: string; single?: boolean };
+
+type Hit = { abs: string; rel: string; fromStart: string; size: number; mtimeMs: number; dev: number; ino: number };
+type Walk = { hidden: boolean; deadline: number; scanned: number; cut: boolean };
+
+const GITIGNORE_BYTES = 256 * 1024;
+
+async function loadIgnore(dirAbs: string): Promise<Ignore | null> {
+  try {
+    const st = await lstat(join(dirAbs, ".gitignore"));
+    if (!st.isFile() || st.size > GITIGNORE_BYTES) return null;
+    return ignore().add(await readFile(join(dirAbs, ".gitignore"), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
-/** Finds a piece of text in the files under `path`. Plain text, not a regular expression, so a search can't hang the app. */
-export async function searchText(root: string, query: unknown, path?: unknown, glob?: unknown): Promise<FolderSearchResult> {
-  if (typeof query !== "string" || query.trim().length === 0 || query.length > L.searchQueryChars || CONTROL.test(query)) {
-    throw new FolderError("bad_request", `Search for 1 to ${L.searchQueryChars} characters of plain text.`);
+type Rule = { base: string[]; ig: Ignore };
+const ignoredBy = (rules: Rule[], parts: string[], isDir: boolean) =>
+  rules.some((r) => {
+    const rel = parts.slice(r.base.length).join("/");
+    return rel !== "" && r.ig.ignores(isDir ? `${rel}/` : rel);
+  });
+
+/** Every shareable file under a target, in name order, minus hidden, ignored and linked entries. Stops at the walk's limits. */
+async function* walk(t: Target, w: Walk): AsyncGenerator<Hit> {
+  const start = await locate(t.root, t.start.join("/"));
+  const report = (rel: string) => (t.single ? t.prefix : [t.prefix, rel].filter(Boolean).join("/"));
+  if (!start.isDir) {
+    w.scanned++;
+    yield { abs: start.abs, rel: report(start.parts.join("/")), fromStart: basename(start.abs), size: start.size, mtimeMs: 0, dev: start.dev, ino: start.ino };
+    return;
   }
-  const needle = query.toLowerCase();
-  const nameFilter = typeof glob === "string" && glob !== "" ? globToRegex(glob) : null;
-  const start = await locate(root, path ?? "");
-  const deadline = Date.now() + L.searchMs;
-  const matches: FolderMatch[] = [];
-  let scanned = 0;
-  let truncated = false;
-
-  const full = () => matches.length >= L.searchMatches || scanned >= L.searchFiles || Date.now() > deadline;
-
-  async function scanFile(abs: string, parts: string[], size: number, dev: number, ino: number) {
-    if (size > L.searchFileBytes) return;
-    scanned++;
-    let handle: FileHandle;
-    try {
-      handle = await openFile({ abs, parts, isDir: false, size, dev, ino });
-    } catch {
-      return;
-    }
-    try {
-      const buf = await readWhole(handle, (await handle.stat()).size, L.searchFileBytes).catch(() => null);
-      if (!buf || looksBinary(buf)) return;
-      const lines = redactSecrets(buf.toString("utf8")).split(/\r\n|\n|\r/);
-      for (const [n, line] of lines.entries()) {
-        if (!line.toLowerCase().includes(needle)) continue;
-        matches.push({ path: parts.join("/"), line: n + 1, text: line.trim().slice(0, L.searchLineChars) });
-        if (matches.length >= L.searchMatches) return;
-      }
-    } finally {
-      await handle.close().catch(() => undefined);
-    }
+  // .gitignore files from the folder's top down to where the search starts all apply.
+  const rules: Rule[] = [];
+  for (let i = 0; i <= start.parts.length; i++) {
+    const ig = await loadIgnore(join(t.root, ...start.parts.slice(0, i)));
+    if (ig) rules.push({ base: start.parts.slice(0, i), ig });
   }
 
-  async function walk(abs: string, parts: string[]) {
+  async function* dir(abs: string, parts: string[], rules: Rule[]): AsyncGenerator<Hit> {
     let dirents;
     try {
       dirents = await readdir(abs, { withFileTypes: true });
     } catch {
       return;
     }
-    dirents.sort((a, b) => a.name.localeCompare(b.name));
+    dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const d of dirents) {
-      if (full()) {
-        truncated = true;
+      if (w.scanned >= L.searchFiles || Date.now() > w.deadline) {
+        w.cut = true;
         return;
       }
-      if (d.isSymbolicLink() || (!d.isFile() && !d.isDirectory()) || d.name.length > 255 || CONTROL.test(d.name) || isHiddenName(d.name, d.isDirectory())) continue;
-      const childAbs = join(abs, d.name);
+      if (d.isSymbolicLink() || (!d.isFile() && !d.isDirectory()) || d.name.length > 255 || CONTROL.test(d.name)) continue;
+      if (isHiddenName(d.name, d.isDirectory()) || (!w.hidden && d.name.startsWith("."))) continue;
       const childParts = [...parts, d.name];
+      if (ignoredBy(rules, childParts, d.isDirectory())) continue;
+      const childAbs = join(abs, d.name);
       if (d.isDirectory()) {
-        await walk(childAbs, childParts);
-      } else if (!nameFilter || nameFilter.test(d.name)) {
+        const ig = await loadIgnore(childAbs);
+        yield* dir(childAbs, childParts, ig ? [...rules, { base: childParts, ig }] : rules);
+      } else {
         const st = await lstat(childAbs).catch(() => null);
-        if (st?.isFile()) await scanFile(childAbs, childParts, st.size, Number(st.dev), Number(st.ino));
+        if (!st?.isFile()) continue;
+        w.scanned++;
+        const rel = childParts.join("/");
+        yield { abs: childAbs, rel: report(rel), fromStart: childParts.slice(start.parts.length).join("/"), size: st.size, mtimeMs: st.mtimeMs, dev: Number(st.dev), ino: Number(st.ino) };
       }
     }
   }
+  yield* dir(start.abs, start.parts, rules);
+}
 
-  if (start.isDir) await walk(start.abs, start.parts);
-  else if (!nameFilter || nameFilter.test(basename(start.abs))) await scanFile(start.abs, start.parts, start.size, start.dev, start.ino);
-  if (full() && matches.length >= L.searchMatches) truncated = true;
-  return { matches, truncated };
+function checkPattern(pattern: unknown, what: string): string {
+  if (typeof pattern !== "string" || pattern.length === 0 || pattern.length > L.patternChars || CONTROL.test(pattern)) {
+    throw new FolderError("bad_request", `The ${what} must be 1 to ${L.patternChars} characters on one line.`);
+  }
+  return pattern;
+}
+
+/** A glob like ripgrep's: a pattern without a slash matches the file name at any depth. */
+function globMatcher(pattern: string, dot: boolean): (path: string) => boolean {
+  try {
+    return picomatch(pattern, { dot, basename: !pattern.includes("/"), maxLength: L.patternChars });
+  } catch {
+    throw new FolderError("bad_request", "That glob pattern isn't valid.");
+  }
+}
+
+const limitOf = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.min(L.searchLimit, Math.max(1, Math.floor(v))) : L.searchLimit);
+
+/** opencode's glob: file paths matching a pattern, newest first. */
+export async function globFiles(targets: Target[], pattern: unknown, opts: { hidden?: unknown; limit?: unknown } = {}): Promise<FolderGlobResult> {
+  const match = globMatcher(checkPattern(pattern, "glob pattern"), opts.hidden === true);
+  const w: Walk = { hidden: opts.hidden === true, deadline: Date.now() + L.searchMs, scanned: 0, cut: false };
+  const hits: Hit[] = [];
+  for (const t of targets) {
+    for await (const h of walk(t, w)) if (match(h.fromStart)) hits.push(h);
+    if (w.cut) break;
+  }
+  hits.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.rel < b.rel ? -1 : 1));
+  const limit = limitOf(opts.limit);
+  return { paths: hits.slice(0, limit).map((h) => h.rel), truncated: w.cut || hits.length > limit };
+}
+
+/**
+ * opencode's grep: lines matching a regular expression (or plain text), grouped by file. A regular expression from the
+ * AI could take forever on some input, so the app runs this in a worker thread it can stop (folder-worker.ts).
+ */
+export async function grepFiles(
+  targets: Target[],
+  pattern: unknown,
+  opts: { include?: unknown; literal?: unknown; caseSensitive?: unknown; limit?: unknown } = {},
+): Promise<FolderSearchResult> {
+  const text = checkPattern(pattern, "search pattern");
+  const caseSensitive = opts.caseSensitive !== false;
+  let test: (line: string) => boolean;
+  if (opts.literal === true) {
+    const needle = caseSensitive ? text : text.toLowerCase();
+    test = (line) => (caseSensitive ? line : line.toLowerCase()).includes(needle);
+  } else {
+    let re: RegExp;
+    try {
+      re = new RegExp(text, caseSensitive ? "" : "i");
+    } catch {
+      throw new FolderError("bad_request", "That regular expression isn't valid. Set literal to search for the text as written.");
+    }
+    test = (line) => re.test(line);
+  }
+  const include = opts.include === undefined || opts.include === "" ? null : globMatcher(checkPattern(opts.include, "include pattern"), true);
+  const limit = limitOf(opts.limit);
+  const w: Walk = { hidden: false, deadline: Date.now() + L.searchMs, scanned: 0, cut: false };
+  const matches: FolderMatch[] = [];
+
+  outer: for (const t of targets) {
+    for await (const h of walk(t, w)) {
+      if (include && !include(basename(h.fromStart)) && !include(h.fromStart)) continue;
+      if (h.size > L.searchFileBytes) continue;
+      let handle: FileHandle;
+      try {
+        handle = await openFile({ abs: h.abs, parts: [], isDir: false, size: h.size, dev: h.dev, ino: h.ino });
+      } catch {
+        continue;
+      }
+      let buf: Buffer | null;
+      try {
+        buf = await readWhole(handle, (await handle.stat()).size, L.searchFileBytes).catch(() => null);
+      } finally {
+        await handle.close().catch(() => undefined);
+      }
+      if (!buf || looksBinary(buf)) continue;
+      const lines = redactSecrets(buf.toString("utf8")).split(/\r\n|\n|\r/);
+      for (const [n, line] of lines.entries()) {
+        if (!test(line.length > L.lineChars ? line.slice(0, L.lineChars) : line)) continue;
+        if (matches.length === limit) {
+          w.cut = true;
+          break outer;
+        }
+        matches.push({ path: h.rel, line: n + 1, text: line.trim().slice(0, L.searchLineChars) });
+      }
+    }
+    if (w.cut) break;
+  }
+  return { matches, truncated: w.cut };
 }

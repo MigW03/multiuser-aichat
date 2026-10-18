@@ -186,8 +186,8 @@ describe("serving", () => {
     await new Promise((r) => setTimeout(r, 50));
     assert.equal(relay.isOnline(P2), true);
     assert.equal(online[P2], true);
-    answerWith(b.ws, (req) => ({ ok: true, result: { matches: [], truncated: false, q: req.query } }));
-    assert.deepEqual((await relay.call(P2, { op: "search", query: "x" })).matches, []);
+    answerWith(b.ws, () => ({ ok: true, result: { matches: [], truncated: false } }));
+    assert.deepEqual((await relay.call(P2, { op: "grep", pattern: "x" })).matches, []);
     b.ws.close();
     await until(() => !relay.isOnline(P2));
   });

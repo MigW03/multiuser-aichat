@@ -4,17 +4,21 @@ import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
 import { supabase } from "../supabase.ts";
 
-// The project's shared folder, as the app sees it. The folder row (name, online) comes from the database and is
-// live for everyone in the project. Linking and serving only exist in the desktop app; in a browser `folderBridge()`
-// is null and the folder can be browsed but not linked.
+// The project's shared folder, as the app sees it: the folders and files the host shares. The row (name, online) comes
+// from the database and is live for everyone in the project. Sharing and serving only exist in the desktop app; in a
+// browser `folderBridge()` is null and the folder can be browsed but not shared.
 
-export type LocalFolder = { linked: boolean; name: string | null; state: "off" | "connecting" | "connected" | "rejected" | "auth" };
+export type SharedItem = { name: string; kind: "dir" | "file" };
+export type LocalFolder = { linked: boolean; name: string | null; items: SharedItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth" };
 
 /** What the desktop app's preload script offers. The page never gets a path or a file, only these calls. */
 export type FolderBridge = {
   setSession: (session: { serverUrl: string; token: string; userId: string; hostProjects: string[] } | null) => Promise<void>;
   get: (projectId: string) => Promise<LocalFolder>;
-  pick: (projectId: string) => Promise<{ ok: true; name: string } | { ok: false; error: string | null }>;
+  /** Opens the native dialog to add folders or files. `skipped` names picks that couldn't be shared. */
+  pick: (projectId: string, kind: "folder" | "files") => Promise<{ ok: true; name: string; items: SharedItem[]; skipped: string[] } | { ok: false; error: string | null }>;
+  /** Stops sharing one item; the new name, or null when nothing is left. */
+  remove: (projectId: string, name: string) => Promise<{ name: string | null }>;
   /** Starts serving a linked folder now (after it was registered with the server). */
   connect: (projectId: string) => Promise<void>;
   unlink: (projectId: string) => Promise<void>;

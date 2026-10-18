@@ -1,15 +1,16 @@
 import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type ProjectFolder, type ProjectSummary } from "@mc/shared";
-import { ArrowLeft, ChevronRight, File, Folder, FolderOpen, FolderPlus, FolderX, PanelRightClose, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, PanelRightClose, PanelRightOpen, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
-import { folderBridge, useLocalFolder, useProjectFolder } from "../lib/folder.ts";
+import { folderBridge, useLocalFolder, useProjectFolder, type FolderBridge } from "../lib/folder.ts";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, Spinner, STROKE, useToast } from "./kit.tsx";
 
-// The project's shared folder: a panel on the right of the chat, opened from a row in the left panel or a chip in the
-// chat header. It shows whether the host's app is serving the folder, lets any member browse it (read only), and lets
-// the host share, change or stop sharing it from the desktop app.
+// The project's shared folder lives in the right column of a project's chats, as the approved hi-fi boards draw it
+// ("Hi-fi · light": a 320 px column, the shared folder card on top, Notes under it later). The chat header's
+// right-panel button shows and hides the column. The card shows whether the host's app is serving the files, lets
+// any member browse them (read only), and lets the host add folders and files, remove them, or stop sharing.
 
 const messageOf = (e: unknown, fallback = "Something went wrong.") => (e instanceof Error ? e.message : fallback);
 
@@ -19,111 +20,160 @@ function StatusDot({ on }: { on: boolean }) {
   return <span className={`status-dot ${on ? "on" : ""}`} aria-hidden />;
 }
 
-/** The row under the project name in the left panel. Hosts without a folder see an invitation to share one; others see nothing. */
-export function FolderRow({ project }: { project: ProjectSummary }) {
+/**
+ * Brings the right column back. As with the left panel, the toggle sits on the panel while it is open and moves into
+ * the chat header (on the right) once it is collapsed. On a small screen the column is a drawer, so the header keeps it.
+ */
+export function RightPanelToggle() {
   const { folderPanel } = useApp();
-  const folder = useProjectFolder(project.id);
-  const host = project.my_role === "host";
-  if (folder.data === undefined) return null;
-  if (folder.data === null && !host) return null;
+  if (folderPanel.open && !folderPanel.drawer) return null;
   return (
-    <div className="panel-folder">
-      {folder.data ? (
-        <button
-          type="button"
-          className={`folder-row ${folderPanel.open ? "active" : ""}`}
-          onClick={folderPanel.toggle}
-          aria-pressed={folderPanel.open}
-          aria-label={`Shared folder ${folder.data.name}, ${folder.data.online ? "online" : "offline"}`}
-        >
-          <Folder size={ICON} strokeWidth={STROKE} aria-hidden />
-          <span className="grow truncate">{folder.data.name}</span>
-          <StatusDot on={folder.data.online} />
-          <span className="small muted">{folder.data.online ? "Online" : "Offline"}</span>
-        </button>
-      ) : (
-        <button type="button" className={`folder-row empty ${folderPanel.open ? "active" : ""}`} onClick={folderPanel.toggle} aria-pressed={folderPanel.open}>
-          <FolderPlus size={ICON} strokeWidth={STROKE} aria-hidden />
-          <span className="grow">Share a folder</span>
-        </button>
-      )}
+    <IconButton label="Show shared folder" onClick={folderPanel.toggle} aria-expanded={folderPanel.open}>
+      <PanelRightOpen size={ICON} strokeWidth={STROKE} />
+    </IconButton>
+  );
+}
+
+/** The right column of a project's chats. Notes will sit under the shared folder card. */
+export function RightColumn({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
+  return (
+    <div className="right-column">
+      <FolderCard project={project} onClose={onClose} />
     </div>
   );
 }
 
-/** A small chip in the chat header of a project chat that has a shared folder. Shows and hides the folder panel. */
-export function FolderChip({ project }: { project: ProjectSummary }) {
-  const { folderPanel } = useApp();
+function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
   const folder = useProjectFolder(project.id);
-  if (!folder.data) return null;
-  return (
-    <button
-      type="button"
-      className={`folder-chip ${folderPanel.open ? "active" : ""}`}
-      onClick={folderPanel.toggle}
-      aria-pressed={folderPanel.open}
-      title={`${folderPanel.open ? "Hide" : "Show"} the shared folder: ${folder.data.name} (${folder.data.online ? "online" : "offline"})`}
-    >
-      <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-      <span className="folder-chip-name truncate">{folder.data.name}</span>
-      <StatusDot on={folder.data.online} />
-    </button>
-  );
-}
-
-/** The panel on the right of a project's chats. */
-export function FolderPanel({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
-  const folder = useProjectFolder(project.id);
-  return (
-    <aside className="right-panel" aria-label="Shared folder">
-      <header className="right-panel-head">
-        <Folder size={ICON} strokeWidth={STROKE} aria-hidden />
-        <h2 className="grow truncate">{folder.data ? folder.data.name : "Shared folder"}</h2>
-        <IconButton label="Hide shared folder" onClick={onClose}>
-          <PanelRightClose size={ICON} strokeWidth={STROKE} />
-        </IconButton>
-      </header>
-      <div className="right-panel-body">{folder.data === undefined ? <div className="center-text"><Spinner /></div> : <FolderBody project={project} folder={folder.data} />}</div>
-    </aside>
-  );
-}
-
-function FolderBody({ project, folder }: { project: ProjectSummary; folder: ProjectFolder | null }) {
-  const toast = useToast();
   const host = project.my_role === "host";
   const bridge = folderBridge();
-  const local = useLocalFolder(host ? project.id : null);
-  const [view, setView] = useState<"main" | "notice" | "stop">("main");
+  if (folder.data === undefined) return <section className="side-card folder-card center-text"><Spinner /></section>;
+  if (folder.data === null) return <FolderEmpty project={project} host={host} bridge={bridge} onClose={onClose} />;
+  return (
+    <section className="side-card folder-card" aria-label="Shared folder">
+      <header className="side-card-head">
+        <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+        <b className="grow truncate" title={folder.data.name}>{folder.data.name}</b>
+        <span className="side-card-status small muted">
+          <StatusDot on={folder.data.online} />
+          {folder.data.online ? "Online" : "Offline"}
+        </span>
+        <IconButton label="Hide shared folder" onClick={onClose} className="sm">
+          <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
+        </IconButton>
+      </header>
+      <FolderBody project={project} folder={folder.data} host={host} bridge={bridge} />
+    </section>
+  );
+}
+
+/** Nothing shared yet: the dashed placeholder card of the approved board, with the host's way to share. */
+function FolderEmpty({ project, host, bridge, onClose }: { project: ProjectSummary; host: boolean; bridge: FolderBridge | null; onClose: () => void }) {
+  const share = useShare(project, bridge, false);
+  return (
+    <section className="side-card folder-card empty" aria-label="Shared folder">
+      <span className="folder-empty-close">
+        <IconButton label="Hide shared folder" onClick={onClose} className="sm">
+          <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
+        </IconButton>
+      </span>
+      <Folder size={22} strokeWidth={1.75} aria-hidden />
+      <div className="strong">Shared folder</div>
+      <p className="small muted">
+        {host
+          ? bridge
+            ? `Share folders or files from your computer. Everyone in ${project.name} can read them, and the AI can use them in project chats. Read only; nothing is uploaded.`
+            : `Files are shared from your computer, so this takes the desktop app. Open ${project.name} there to share folders or files.`
+          : `Nothing is shared in ${project.name} yet. The project host can share folders or files from the desktop app.`}
+      </p>
+      {host && bridge && (
+        <div className="row">
+          <Button size="sm" variant="primary" onClick={() => share.start("folder")}>
+            <FolderPlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Add folder
+          </Button>
+          <Button size="sm" onClick={() => share.start("files")}>
+            <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Add files
+          </Button>
+        </div>
+      )}
+      {share.error && <ErrorLine>{share.error}</ErrorLine>}
+      {share.dialog}
+    </section>
+  );
+}
+
+/**
+ * Adding folders or files: the "who can see this" notice first when nothing is shared yet, then the native dialog,
+ * then the new name is registered with the server and the app starts serving.
+ */
+function useShare(project: ProjectSummary, bridge: FolderBridge | null, shared: boolean) {
+  const toast = useToast();
+  const [notice, setNotice] = useState<"folder" | "files" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function share() {
+  async function pick(kind: "folder" | "files") {
     if (!bridge) return;
     setBusy(true);
     setError(null);
     try {
-      const picked = await bridge.pick(project.id); // a native dialog: the page never sees the path
+      if (typeof bridge.remove !== "function") throw new Error("Restart the desktop app to share files.");
+      const picked = await bridge.pick(project.id, kind); // a native dialog: the page never sees a path
       if (!picked.ok) {
         if (picked.error) setError(picked.error);
         return;
       }
-      try {
-        await api.linkFolder(project.id, picked.name);
-      } catch (e) {
-        await bridge.unlink(project.id);
-        setError(messageOf(e));
-        return;
-      }
-      // Starts serving now. An app opened before this version has no connect: restarting it does the same.
-      if (typeof bridge.connect === "function") await bridge.connect(project.id);
-      else toast.push("Restart the desktop app to bring the folder online.", "info");
+      await api.linkFolder(project.id, picked.name);
+      await bridge.connect(project.id);
       notifyChanged();
-      setView("main");
-      toast.push("Folder shared");
+      setNotice(null);
+      if (picked.skipped.length) toast.push(`Not shared: ${picked.skipped.join(", ")}. Secrets like .env files and keys are never shared.`, "error");
+      else toast.push(kind === "folder" ? "Folder shared" : "Files shared");
     } catch (e) {
       setError(messageOf(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  const start = (kind: "folder" | "files") => (shared ? void pick(kind) : setNotice(kind));
+  const dialog = notice ? (
+    <Dialog onClose={() => setNotice(null)} width={480} label={shareFolderNotice(project.name).title}>
+      <NoticeBody
+        {...shareFolderNotice(project.name)}
+        confirmLabel={notice === "folder" ? "Choose a folder" : "Choose files"}
+        cancelLabel="Cancel"
+        busy={busy}
+        error={error}
+        onConfirm={() => void pick(notice)}
+        onCancel={() => setNotice(null)}
+      />
+    </Dialog>
+  ) : null;
+  return { start, dialog, error: notice ? null : error, busy };
+}
+
+function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary; folder: ProjectFolder; host: boolean; bridge: FolderBridge | null }) {
+  const toast = useToast();
+  const local = useLocalFolder(host ? project.id : null);
+  const share = useShare(project, bridge, true);
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove(name: string) {
+    if (!bridge) return;
+    setError(null);
+    try {
+      const next = await bridge.remove(project.id, name);
+      if (next.name === null) await api.unlinkFolder(project.id);
+      else {
+        await api.linkFolder(project.id, next.name);
+        await bridge.connect(project.id);
+      }
+      notifyChanged();
+    } catch (e) {
+      setError(messageOf(e));
     }
   }
 
@@ -134,8 +184,8 @@ function FolderBody({ project, folder }: { project: ProjectSummary; folder: Proj
       await api.unlinkFolder(project.id);
       await bridge?.unlink(project.id);
       notifyChanged();
-      toast.push("Stopped sharing the folder");
-      setView("main");
+      toast.push("Stopped sharing");
+      setConfirmStop(false);
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -143,97 +193,77 @@ function FolderBody({ project, folder }: { project: ProjectSummary; folder: Proj
     }
   }
 
-  const notHere = host && !!bridge && !!folder && !!local && !local.linked;
-  const refused = host && !!bridge && !!folder && local?.linked && local.state === "rejected";
-
-  const dialog =
-    view === "notice" ? (
-      <Dialog onClose={() => setView("main")} width={480} label={shareFolderNotice(project.name).title}>
-        <NoticeBody {...shareFolderNotice(project.name)} confirmLabel="Choose a folder" cancelLabel="Cancel" busy={busy} error={error} onConfirm={() => void share()} onCancel={() => setView("main")} />
-      </Dialog>
-    ) : view === "stop" ? (
-      <Dialog title="Stop sharing this folder?" onClose={() => setView("main")}>
-        <p className="lead">Members and the AI can no longer read the files in {project.name}. Nothing on your computer is changed or deleted.</p>
-        {error && <ErrorLine>{error}</ErrorLine>}
-        <div className="dialog-actions">
-          <Button onClick={() => setView("main")}>Cancel</Button>
-          <Button variant="danger" busy={busy} onClick={() => void stop()}>
-            Stop sharing
-          </Button>
-        </div>
-      </Dialog>
-    ) : null;
-
-  if (!folder) {
-    return (
-      <>
-        <div className="folder-empty">
-          <span className="empty-icon" aria-hidden>
-            <FolderPlus size={22} strokeWidth={1.75} />
-          </span>
-          {host ? (
-            bridge ? (
-              <p className="small muted">Share one folder from your computer. Everyone in {project.name} can read its files, and the AI can use them when answering in project chats. It is read only, and nothing is uploaded.</p>
-            ) : (
-              <p className="small muted">Folders are shared from your computer, so this takes the desktop app. Open {project.name} there and choose a folder. This panel then shows whether it is online.</p>
-            )
-          ) : (
-            <p className="small muted">Nobody has shared a folder in {project.name} yet. The project host can share one from the desktop app.</p>
-          )}
-          {host && bridge && (
-            <Button variant="primary" onClick={() => setView("notice")}>
-              <FolderPlus size={ICON} strokeWidth={STROKE} aria-hidden /> Choose a folder
-            </Button>
-          )}
-          {view === "main" && error && <ErrorLine>{error}</ErrorLine>}
-        </div>
-        {dialog}
-      </>
-    );
-  }
+  const manage = host && !!bridge && typeof bridge.remove === "function";
+  const notHere = host && !!bridge && !!local && !local.linked;
+  const refused = host && !!bridge && local?.linked && local.state === "rejected";
 
   return (
-    <>
-      <div className="folder-status">
-        <StatusDot on={folder.online} />
-        <div className="grow">
-          <div className="strong">{folder.online ? "Online" : "Offline"}</div>
-          <div className="small muted">
-            {folder.online
-              ? "Members and the AI can read these files. Read only: nobody can change them."
-              : "The host's desktop app isn't connected, so the files can't be read right now. The AI will say the folder is unavailable."}
-          </div>
-        </div>
-      </div>
+    <div className="side-card-body">
+      {!folder.online && (
+        <p className="small muted">The host's desktop app isn't connected, so the files can't be read right now. The AI will say they are unavailable.</p>
+      )}
       {notHere && (
         <div className="plan-warn" role="status">
           <TriangleAlert size={ICON} strokeWidth={STROKE} aria-hidden />
-          <div className="small">This computer isn't serving the folder. It was shared from another computer, or the link was lost. Choose the folder again here to bring it online.</div>
+          <div className="small">This computer isn't serving these files. They were shared from another computer, or the link was lost. Add them again here to bring them online.</div>
         </div>
       )}
       {refused && (
         <div className="plan-warn" role="status">
           <TriangleAlert size={ICON} strokeWidth={STROKE} aria-hidden />
-          <div className="small">The server doesn't accept this computer as the host of the folder. Choose the folder again to share it.</div>
+          <div className="small">The server doesn't accept this computer as the host. Add the files again to share them.</div>
         </div>
       )}
-      {folder.online ? <FolderBrowser projectId={project.id} rootName={folder.name} /> : <div className="grow" />}
+      {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}
+      {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} rootName={folder.name} /> : <div className="grow" />}
       <p className="small muted">
-        Never shared: .env files, keys, .git, node_modules, build folders and links. Binary files and files over {FOLDER_LIMITS.fileBytes / 1024 / 1024} MB are listed but can't be opened. Text the AI reads is sent to the AI provider of the person who asked.
+        Read only. Never shared: .env files, keys, .git, node_modules, build folders and links. Binary files and files over {FOLDER_LIMITS.fileBytes / 1024 / 1024} MB can't be opened. Text the AI reads goes to the AI provider of the person who asked.
       </p>
-      {view === "main" && error && <ErrorLine>{error}</ErrorLine>}
-      {host && bridge && (
-        <div className="right-panel-actions">
-          <Button size="sm" variant="ghost" onClick={() => setView("stop")}>
-            <FolderX size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Stop sharing
+      {manage && local?.linked && (
+        <div className="shared-items">
+          <div className="small muted">Shared from this computer</div>
+          <ul>
+            {local.items.map((i) => (
+              <li key={i.name}>
+                {i.kind === "dir" ? <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+                <span className="grow truncate">{i.name}</span>
+                <IconButton label={`Stop sharing ${i.name}`} className="sm" onClick={() => void remove(i.name)}>
+                  <X size={ICON_SM} strokeWidth={STROKE} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
+      {manage && (
+        <div className="side-card-actions">
+          <Button size="sm" onClick={() => share.start("folder")} busy={share.busy}>
+            <FolderPlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Folder
           </Button>
-          <Button size="sm" onClick={() => setView("notice")}>
-            Change folder
+          <Button size="sm" onClick={() => share.start("files")}>
+            <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Files
+          </Button>
+          <div className="grow" />
+          <Button size="sm" variant="ghost" onClick={() => setConfirmStop(true)}>
+            Stop sharing
           </Button>
         </div>
       )}
-      {dialog}
-    </>
+      {share.dialog}
+      {confirmStop && (
+        <Dialog title="Stop sharing these files?" onClose={() => setConfirmStop(false)}>
+          <p className="lead">Members and the AI can no longer read anything shared in {project.name}. Nothing on your computer is changed or deleted.</p>
+          {error && <ErrorLine>{error}</ErrorLine>}
+          <div className="dialog-actions">
+            <Button onClick={() => setConfirmStop(false)}>Cancel</Button>
+            <Button variant="danger" busy={busy} onClick={() => void stop()}>
+              Stop sharing
+            </Button>
+          </div>
+        </Dialog>
+      )}
+    </div>
   );
 }
 

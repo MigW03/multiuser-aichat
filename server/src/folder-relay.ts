@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type FolderErrorCode, type FolderListResult, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -35,7 +35,8 @@ export class RelayError extends Error {
 export type RelayRequest =
   | { op: "list"; path: string }
   | { op: "read"; path: string; offset?: number; limit?: number }
-  | { op: "search"; query: string; path?: string; glob?: string };
+  | { op: "glob"; pattern: string; path?: string; hidden?: boolean; limit?: number }
+  | { op: "grep"; pattern: string; path?: string; include?: string; literal?: boolean; caseSensitive?: boolean; limit?: number };
 
 const uuid = z.uuid();
 const hello = z.object({ type: z.literal("hello"), token: z.string().min(1).max(4096), projectId: uuid });
@@ -56,13 +57,14 @@ const results = {
     totalLines: z.number().int().min(0),
     truncated: z.boolean(),
   }),
-  search: z.object({
-    matches: z.array(z.object({ path: clean(L.pathChars), line: z.number().int().min(1), text: cleanText(L.searchLineChars + 50) })).max(L.searchMatches),
+  glob: z.object({ paths: z.array(clean(L.pathChars)).max(L.searchLimit), truncated: z.boolean() }),
+  grep: z.object({
+    matches: z.array(z.object({ path: clean(L.pathChars), line: z.number().int().min(1), text: cleanText(L.searchLineChars + 50) })).max(L.searchLimit),
     truncated: z.boolean(),
   }),
 };
 
-const ERROR_CODES = ["invalid_path", "not_found", "excluded", "too_large", "binary", "not_a_file", "not_a_directory", "bad_request", "busy", "failed"] as const;
+const ERROR_CODES = ["invalid_path", "not_found", "excluded", "too_large", "binary", "not_a_file", "not_a_directory", "bad_request", "timeout", "busy", "failed"] as const;
 const response = z.discriminatedUnion("ok", [
   z.object({ id: z.string().max(64), ok: z.literal(true), result: z.unknown() }),
   z.object({ id: z.string().max(64), ok: z.literal(false), code: z.enum(ERROR_CODES), message: clean(300) }),
@@ -235,7 +237,10 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
     },
 
     /** Asks the host's app. Callers must already have checked that the asker belongs to the project. */
-    call<K extends RelayRequest["op"]>(projectId: string, req: Extract<RelayRequest, { op: K }>): Promise<K extends "list" ? FolderListResult : K extends "read" ? FolderReadResult : FolderSearchResult> {
+    call<K extends RelayRequest["op"]>(
+      projectId: string,
+      req: Extract<RelayRequest, { op: K }>,
+    ): Promise<K extends "list" ? FolderListResult : K extends "read" ? FolderReadResult : K extends "glob" ? FolderGlobResult : FolderSearchResult> {
       const conn = hosts.get(projectId);
       if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "The project host's desktop app is offline."));
       if (conn.pending.size >= MAX_PENDING) return Promise.reject(new RelayError("busy", "The shared folder is busy. Try again in a moment."));

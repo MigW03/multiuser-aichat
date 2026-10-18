@@ -18,10 +18,9 @@ const nameBody = z.object({ name: z.string().trim().min(1).max(L.nameChars) });
 const pathParam = z.string().max(L.pathChars).default("");
 const listQuery = z.object({ path: pathParam });
 const readQuery = z.object({ path: z.string().min(1).max(L.pathChars), offset: z.coerce.number().int().min(1).max(10_000_000).optional(), limit: z.coerce.number().int().min(1).max(L.readLines).optional() });
-const searchQuery = z.object({ q: z.string().min(1).max(L.searchQueryChars), path: pathParam, glob: z.string().max(60).optional() });
 
 const HOST_STATUS: Record<string, ContentfulStatusCode> = {
-  invalid_path: 400, bad_request: 400, not_found: 404, not_a_file: 400, not_a_directory: 400, excluded: 403, too_large: 413, binary: 415, busy: 503, failed: 502,
+  invalid_path: 400, bad_request: 400, not_found: 404, not_a_file: 400, not_a_directory: 400, excluded: 403, too_large: 413, binary: 415, timeout: 504, busy: 503, failed: 502,
 };
 
 /** Maps a failed relay call to a response whose message is safe to show to any project member. */
@@ -81,16 +80,6 @@ folder.get("/:id/folder/read", async (c) => {
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
     return c.json(await relay.call(c.req.param("id"), { op: "read", path: q.data.path, offset: q.data.offset, limit: q.data.limit }));
-  } catch (e) {
-    return relayFailure(c, e);
-  }
-});
-
-folder.get("/:id/folder/search", async (c) => {
-  const q = searchQuery.safeParse(c.req.query());
-  if (!q.success) return c.json({ error: "Invalid request" }, 400);
-  try {
-    return c.json(await relay.call(c.req.param("id"), { op: "search", query: q.data.q, path: q.data.path, glob: q.data.glob }));
   } catch (e) {
     return relayFailure(c, e);
   }

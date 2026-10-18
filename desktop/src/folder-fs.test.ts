@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, describe, test } from "node:test";
-import { FolderError, isHiddenName, listDir, readText, redactSecrets, searchText, splitPath, validateRoot } from "./folder-fs.ts";
+import { FolderError, globFiles, grepFiles, isHiddenName, listDir, readText, redactSecrets, splitPath, validateRoot, type Target } from "./folder-fs.ts";
 
 const fails = async (p: Promise<unknown>, code: string) => {
   await assert.rejects(p, (e: unknown) => e instanceof FolderError && e.code === code, `expected ${code}`);
@@ -36,6 +36,10 @@ before(async () => {
   writeFileSync(join(root, "bin.dat"), Buffer.from([1, 2, 0, 3, 110, 101, 101, 100, 108, 101]));
   writeFileSync(join(root, "big.txt"), Buffer.alloc(3 * 1024 * 1024, 97));
   writeFileSync(join(root, "lines.txt"), Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`).join("\n"));
+  writeFileSync(join(root, ".gitignore"), "out/\n*.log\n");
+  mkdirSync(join(root, "out"));
+  writeFileSync(join(root, "out/keep.log"), "ignored-needle");
+  writeFileSync(join(root, ".dotfile"), "dot");
   writeFileSync(join(root, "pk.txt"), "before\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\nafter\n");
   symlinkSync(outside, join(root, "link-out"));
   symlinkSync(join(outside, "secret.txt"), join(root, "link-file"));
@@ -72,7 +76,7 @@ describe("list", () => {
   test("lists the folder, dirs first, without hidden or linked entries", async () => {
     const r = await listDir(root, "");
     const names = r.entries.map((e) => e.name);
-    assert.deepEqual(names.slice(0, 1), ["src"]);
+    assert.deepEqual(names.slice(0, 2), ["out", "src"]);
     assert.ok(names.includes("README.md") && names.includes("lines.txt"));
     for (const hidden of [".git", "node_modules", "dist", ".env", ".env.local", "server.pem", "link-out", "link-file", "link-in"]) assert.ok(!names.includes(hidden), hidden);
     assert.equal(r.entries.find((e) => e.name === "README.md")?.type, "file");
@@ -133,32 +137,53 @@ describe("read", () => {
   });
 });
 
-describe("search", () => {
-  test("finds plain text, skipping hidden, linked and binary files", async () => {
-    const r = await searchText(root, "NEEDLE");
-    const paths = r.matches.map((m) => m.path).sort();
-    assert.deepEqual(paths, ["README.md", "src/index.ts", "src/token.ts"]);
+describe("glob and grep", () => {
+  const all = (): Target[] => [{ root, start: [], prefix: "" }];
+  test("grep finds a regular expression, skipping hidden, linked, ignored and binary files", async () => {
+    const r = await grepFiles(all(), "[Nn]eed(le|ful)");
+    assert.deepEqual(r.matches.map((m) => m.path).sort(), ["README.md", "src/index.ts", "src/token.ts"]);
     assert.equal(r.matches.find((m) => m.path === "src/index.ts")?.line, 2);
   });
-  test("narrows by folder and file pattern", async () => {
-    assert.deepEqual((await searchText(root, "needle", "src")).matches.length, 2);
-    assert.deepEqual((await searchText(root, "needle", "", "*.md")).matches.map((m) => m.path), ["README.md"]);
-    assert.deepEqual((await searchText(root, "needle", "README.md")).matches.length, 1);
+  test("grep: case, literal text, include and a starting path", async () => {
+    assert.equal((await grepFiles(all(), "NEEDLE")).matches.length, 0);
+    assert.equal((await grepFiles(all(), "NEEDLE", { caseSensitive: false })).matches.length, 3);
+    assert.equal((await grepFiles(all(), "(a+)+$", { literal: true })).matches.length, 0);
+    assert.deepEqual((await grepFiles(all(), "needle", { include: "*.md", caseSensitive: false })).matches.map((m) => m.path), ["README.md"]);
+    assert.deepEqual((await grepFiles(all(), "needle", { include: "*.{ts,tsx}" })).matches.length, 2);
+    assert.equal((await grepFiles([{ root, start: ["src"], prefix: "" }], "needle")).matches.length, 2);
+    assert.equal((await grepFiles([{ root, start: ["README.md"], prefix: "" }], "Needle")).matches.length, 1);
+    const capped = await grepFiles([{ root, start: ["lines.txt"], prefix: "" }], "line", { limit: 5 });
+    assert.equal(capped.matches.length, 5);
+    assert.equal(capped.truncated, true);
   });
-  test("treats the query as text, never a pattern", async () => {
-    assert.equal((await searchText(root, "(a+)+$")).matches.length, 0);
-    assert.equal((await searchText(root, ".*")).matches.length, 0);
+  test(".gitignore is respected by searches, not by a direct read", async () => {
+    assert.equal((await grepFiles(all(), "ignored-needle")).matches.length, 0);
+    assert.equal((await globFiles(all(), "*.log")).paths.length, 0);
+    assert.ok((await readText(root, "out/keep.log")).text.includes("ignored-needle"));
+  });
+  test("glob matches names at any depth, or paths, newest first", async () => {
+    assert.deepEqual((await globFiles(all(), "*.ts")).paths.sort(), ["src/index.ts", "src/token.ts"]);
+    assert.deepEqual((await globFiles(all(), "src/**/*.ts")).paths.sort(), ["src/index.ts", "src/token.ts"]);
+    assert.deepEqual((await globFiles(all(), "*.md")).paths, ["README.md"]);
+    assert.equal((await globFiles(all(), "*.env*", { hidden: true })).paths.length, 0, "secrets stay hidden even with hidden files on");
+    assert.deepEqual((await globFiles(all(), ".dot*")).paths, []);
+    assert.deepEqual((await globFiles(all(), ".dot*", { hidden: true })).paths, [".dotfile"]);
+    assert.equal((await globFiles(all(), "*", { limit: 2 })).paths.length, 2);
+  });
+  test("results are reported under a prefix", async () => {
+    assert.deepEqual((await globFiles([{ root, start: [], prefix: "my-app" }], "README.md")).paths, ["my-app/README.md"]);
+    assert.deepEqual((await grepFiles([{ root, start: ["README.md"], prefix: "notes", single: true }], "Needle")).matches.map((m) => m.path), ["notes"]);
   });
   test("refuses bad input", async () => {
-    await fails(searchText(root, ""), "bad_request");
-    await fails(searchText(root, "x".repeat(200)), "bad_request");
-    await fails(searchText(root, "a", "", "../*"), "bad_request");
-    await fails(searchText(root, "a", "link-out"), "excluded");
-    await fails(searchText(root, "a", ".."), "invalid_path");
+    await fails(grepFiles(all(), ""), "bad_request");
+    await fails(grepFiles(all(), "x".repeat(300)), "bad_request");
+    await fails(grepFiles(all(), "(unclosed"), "bad_request");
+    await fails(grepFiles([{ root, start: ["link-out"], prefix: "" }], "a"), "excluded");
+    await fails(grepFiles([{ root, start: [".."], prefix: "" }], "a"), "invalid_path");
+    await fails(globFiles(all(), "a\nb\u0000"), "bad_request");
   });
-  test("redacts tokens in matches", async () => {
-    const r = await searchText(root, "sk-ant");
-    assert.equal(r.matches.length, 0);
+  test("tokens are masked in matches", async () => {
+    assert.equal((await grepFiles(all(), "sk-ant")).matches.length, 0);
   });
 });
 

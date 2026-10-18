@@ -1,5 +1,5 @@
-import type { FolderRequest, FolderResponse } from "@mc/shared";
-import { FolderError, listDir, readText, searchText } from "./folder-fs.ts";
+import type { FolderResponse } from "@mc/shared";
+import { answer, type Item, type Search } from "./folder-items.ts";
 
 // The host's side of the shared folder. For each linked project this app keeps one outgoing WebSocket to the chat
 // server. The server sends read requests down it (after checking who asked) and this app answers from the linked
@@ -34,34 +34,13 @@ const MAX_FRAME_CHARS = 16 * 1024;
 const SILENCE_MS = 70_000;
 const REJECTED_RETRY_MS = 5 * 60_000;
 
-/** Answers one request from the linked folder. Never throws; messages in answers never contain paths from this computer. */
-export async function answer(root: string, req: unknown): Promise<FolderResponse | null> {
-  const r = req as Partial<FolderRequest> & { id?: unknown };
-  if (typeof r?.id !== "string" || r.id.length === 0 || r.id.length > 64) return null;
-  const id = r.id;
-  try {
-    switch (r.op) {
-      case "list":
-        return { id, ok: true, result: await listDir(root, r.path) };
-      case "read":
-        return { id, ok: true, result: await readText(root, r.path, r.offset, r.limit) };
-      case "search":
-        return { id, ok: true, result: await searchText(root, r.query, r.path, r.glob) };
-      default:
-        return { id, ok: false, code: "bad_request", message: "Unknown request." };
-    }
-  } catch (e) {
-    if (e instanceof FolderError) return { id, ok: false, code: e.code, message: e.message };
-    console.error("[folder] request failed:", e instanceof Error ? e.message : e);
-    return { id, ok: false, code: "failed", message: "The folder couldn't be read." };
-  }
-}
-
 type ConnOptions = {
   projectId: string;
   wsUrl: string;
   getToken: () => string;
-  root: string;
+  /** What is shared right now. Read on every request, so adding or removing an item needs no reconnect. */
+  getItems: () => Item[];
+  search: Search;
   onState: (state: FolderState) => void;
 };
 
@@ -176,7 +155,7 @@ export class FolderConn {
     while (this.inFlight < MAX_IN_FLIGHT && this.queue.length > 0) {
       const req = this.queue.shift();
       this.inFlight++;
-      void answer(this.o.root, req)
+      void answer(this.o.getItems(), req, this.o.search)
         .then((res) => res && this.send(res))
         .finally(() => {
           this.inFlight--;

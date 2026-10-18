@@ -18,7 +18,6 @@ import {
   MembersDialog,
   RenameDialog,
 } from "./Dialogs.tsx";
-import { FolderRow } from "./FolderUi.tsx";
 import { ProjectTile } from "./Join.tsx";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, Button, IconButton, ICON, ICON_SM, Menu, SectionLabel, STROKE, UnreadBadge } from "./kit.tsx";
@@ -98,8 +97,6 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
           />
         </div>
       )}
-
-      {project && <FolderRow project={project} />}
 
       <div className="panel-actions">
         <Button variant="primary" block onClick={newChat}>

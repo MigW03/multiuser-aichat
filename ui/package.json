@@ -7,8 +7,10 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
     "@mc/shared": "*",
     "@supabase/supabase-js": "^2.117.3",
+    "lucide-react": "^1.59.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

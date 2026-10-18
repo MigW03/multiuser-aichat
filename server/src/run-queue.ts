@@ -59,16 +59,15 @@ You are replying to the latest message(s) from ${askerName}. Other people may ha
 Don't prefix your own replies with a name.`;
 }
 
-const SUMMARY_INSTRUCTIONS = `You write short recaps of a team chat for the person who asked.
-Reply in Markdown with exactly this shape and nothing before or after it:
-## <a short title: the chat topic and where things stand>
-**Decided**
-- ...
-**Still open**
-- ...
-**Next**
-- who does what next
-Keep each bullet to one line. Use people's names. Leave out a section's bullets only if there is truly nothing for it (write "- Nothing yet").`;
+const SUMMARY_INSTRUCTIONS = `You write a short recap of a team chat for the person who asked.
+Reply in Markdown. Start with one sentence on what the chat was about and where it ended.
+Then add only the lists that apply, as short one-line bullets with people's names:
+- Decisions made
+- Open questions
+- Next steps, with who owns them
+Skip any list that has nothing real in it. Never write "nothing yet" or other filler.
+If the chat was only discussion, a few sentences are enough.
+Don't invent decisions, owners or tasks.`;
 
 /** Display names are typed by users and end up in the prompt: no brackets, line breaks or control characters, so a name can't pose as another speaker. */
 const promptName = (name: string) => name.replace(/[\[\]\p{C}\u2028\u2029]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Someone";

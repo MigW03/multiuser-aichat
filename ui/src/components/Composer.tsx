@@ -6,7 +6,7 @@ import { SecretWarning } from "./Dialogs.tsx";
 import { useModelReasoning } from "../lib/models.ts";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
-import { Avatar, Button, ICON, ICON_SM, STROKE } from "./kit.tsx";
+import { Avatar, ICON, ICON_SM, STROKE } from "./kit.tsx";
 
 export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null };
 
@@ -133,16 +133,13 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
   }
 
   const empty = text.trim().length === 0;
+  // While an answer is written the button is Stop; once the person types it is Send again and the message queues.
+  const showStop = canStop && empty;
 
   return (
     <div className="composer-wrap">
       <div className="composer-col">
         <div className="composer-top">
-          {canStop && (
-            <Button size="sm" onClick={onStop}>
-              <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /> Stop
-            </Button>
-          )}
           {status}
           <span className="grow" />
           <UsageRing enabled={choice?.provider === "chatgpt"} answering={canStop} />
@@ -197,9 +194,15 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
               onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
               onKeyDown={onKeyDown}
             />
-            <button type="button" className="send-btn" aria-label="Send" title="Send" disabled={empty} onClick={submit}>
-              <ArrowUp size={ICON} strokeWidth={2.2} />
-            </button>
+            {showStop ? (
+              <button type="button" className="send-btn stop" aria-label="Stop answering" title="Stop" onClick={onStop}>
+                <Square size={13} strokeWidth={0} fill="currentColor" aria-hidden />
+              </button>
+            ) : (
+              <button type="button" className="send-btn" aria-label="Send" title="Send" disabled={empty} onClick={submit}>
+                <ArrowUp size={ICON} strokeWidth={2.2} />
+              </button>
+            )}
           </div>
         </div>
       </div>

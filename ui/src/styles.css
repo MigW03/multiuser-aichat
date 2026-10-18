@@ -276,6 +276,7 @@ h1, h2, h3, p { margin: 0; }
 .app { display: flex; gap: var(--gap); height: 100%; padding: var(--gap); background: var(--bg); }
 .left-slot { position: relative; flex: none; width: var(--left-width); min-height: 0; display: flex; }
 .panel-resizer { position: absolute; top: 0; bottom: 0; right: calc(var(--gap) / -1); width: var(--gap); z-index: 5; cursor: col-resize; touch-action: none; outline: none; }
+.panel-resizer.right { right: auto; left: calc(var(--gap) / -1); }
 .panel-resizer::after { content: ""; position: absolute; top: 12px; bottom: 12px; left: 50%; width: 2px; margin-left: -1px; border-radius: var(--r-full); background: transparent; transition: background 0.12s; }
 .panel-resizer:hover::after, .panel-resizer:focus-visible::after, .panel-resizer.dragging::after { background: var(--p); }
 .app:has(.panel-resizer.dragging) { cursor: col-resize; user-select: none; }
@@ -480,7 +481,7 @@ h1, h2, h3, p { margin: 0; }
 
 /* ------------------------------------------------------------------ right column: shared folder (Notes later) */
 /* Drawn after the approved "Hi-fi · light" board: a 320 px column of cards; the folder card fills the top. */
-.right-slot { flex: none; width: 320px; min-height: 0; display: flex; }
+.right-slot { position: relative; flex: none; width: var(--right-width, 320px); min-height: 0; display: flex; }
 .drawer.right { left: auto; right: 0; width: min(340px, 92vw); }
 .right-column { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
 .side-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); box-shadow: var(--shadow-panel); min-height: 0; display: flex; flex-direction: column; overflow: hidden; }

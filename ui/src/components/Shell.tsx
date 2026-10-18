@@ -28,7 +28,7 @@ import { Landing } from "./EmptyStates.tsx";
 import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
-import { PanelResizer, useLeftWidth } from "./PanelResizer.tsx";
+import { PanelResizer, useLeftWidth, useRightWidth } from "./PanelResizer.tsx";
 import { defaultModelFor } from "./Pickers.tsx";
 import { AddKeyDialog, SettingsDialog, type SettingsTab } from "./Settings.tsx";
 import { Button, Spinner } from "./kit.tsx";
@@ -135,6 +135,7 @@ export function Shell({ userId }: { userId: string }) {
   const [collapsed, setCollapsed] = useState(() => readPref(PREF.leftCollapsed(userId), false));
   const [drawer, setDrawer] = useState(false);
   const left = useLeftWidth(userId);
+  const right = useRightWidth(userId);
   const activeChatId = route.name === "homeChat" ? route.chatId : route.name === "project" ? route.chatId : null;
   // On a small screen the list is the first thing you see until you open a chat.
   useEffect(() => {
@@ -258,7 +259,7 @@ export function Shell({ userId }: { userId: string }) {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className={`app ${narrow ? "narrow" : ""}`} style={narrow ? undefined : ({ "--left-width": `${left.width}px` } as CSSProperties)}>
+      <div className={`app ${narrow ? "narrow" : ""}`} style={narrow ? undefined : ({ "--left-width": `${left.width}px`, "--right-width": `${right.width}px` } as CSSProperties)}>
         {narrow && drawer && <div className="drawer-backdrop" onClick={() => activeChatId && setDrawer(false)} />}
         {showLeft && (
           <div className={narrow ? "drawer" : "left-slot"}>
@@ -281,6 +282,7 @@ export function Shell({ userId }: { userId: string }) {
             {narrow && <div className="drawer-backdrop" onClick={toggleFolder} />}
             <div className={narrow ? "drawer right" : "right-slot"}>
               <RightColumn project={project} onClose={toggleFolder} />
+              {!narrow && <PanelResizer side="right" width={right.width} max={right.max} min={right.min} def={right.def} onChange={right.set} />}
             </div>
           </>
         )}

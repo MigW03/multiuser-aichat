@@ -19,8 +19,18 @@ docs/      architecture and plans
 
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill it in. The old `NEXT_PUBLIC_SUPABASE_*` names work too.
-3. `npm run dev` starts the server (http://localhost:8787), the web app (http://localhost:5173) and the desktop app.
-   `npm run dev:web` skips the desktop app.
+3. `npm run dev` starts the server (http://localhost:8787) and the web app (http://localhost:5173). No desktop app.
+
+Each part also runs on its own, from its own folder (the web app needs the server running to chat):
+
+| What | From the repo root | From its folder |
+| --- | --- | --- |
+| Server only | `npm run dev:server` | `cd server && npm run dev` |
+| Web app only | `npm run dev:web` | `cd web && npm run dev` |
+| Server + web | `npm run dev` | |
+| Desktop (Electron) with server and web | `npm run dev:desktop` | `cd desktop && npm run dev` (server and web must already run) |
+
+The desktop app loads the web dev server, so it always needs the web app running next to it.
 
 For the desktop app from a production build: `npm run build`, then `npm start -w desktop`.
 

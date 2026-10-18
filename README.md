@@ -82,22 +82,37 @@ curl https://multiuser-chat-server.fly.dev/health   # {"ok":true}
 
 Later deploys are `fly deploy`. Check `fly status`: it must list exactly one machine.
 
-**Night shutdown.** The machine is off from 23:00 to 06:00 in Brasília (02:00-09:00 UTC) to save cost. Fly has no
-cron stop/start, so `.github/workflows/fly-schedule.yml` runs `fly machine stop` at 02:00 UTC and `fly machine start`
-at 09:00 UTC. `auto_start_machines` is off in `fly.toml`; otherwise the first request at night would wake the machine.
-Set it up once:
+**Night shutdown.** The machine is off from 23:00 to 06:00 in Brasília (02:00-09:00 UTC, Brazil has no daylight
+saving) to save cost. Fly has no cron stop/start, so two [cron-job.org](https://cron-job.org) jobs call the Fly Machines
+API: stop at 23:00 and start at 06:00. `.github/workflows/fly-wake.yml` is a backup start at 06:10 and a manual
+start/stop button (Actions tab > fly-wake > Run workflow). `auto_start_machines` is off in `fly.toml`; otherwise the
+first request at night would wake the machine and save nothing.
 
-1. `fly tokens create deploy -a multiuser-chat-server` and save the output as the repo secret `FLY_API_TOKEN`
-   (Settings > Secrets and variables > Actions).
-2. To test, run the workflow by hand from the Actions tab (choose `stop` or `start`).
+Set it up once, after the first deploy:
+
+1. Token: `fly tokens create deploy -a multiuser-chat-server`. It is scoped to this app. Paste it only into the
+   cron-job.org headers below and the GitHub secret `FLY_API_TOKEN` (Settings > Secrets and variables > Actions).
+   Never into the repo, chat or `fly.toml`.
+2. Machine id: `fly machine list -a multiuser-chat-server` (a 14-character id like `148e2d1b9e4528`). It stays the
+   same across `fly deploy`; if the machine is ever destroyed and recreated, update both jobs.
+3. On cron-job.org create two jobs (CREATE CRONJOB). Both use URL `https://api.machines.dev/v1/apps/multiuser-chat-server/machines/<MACHINE_ID>/stop`
+   (job 1) or `.../start` (job 2) and the same advanced settings:
+   - Method `POST`, request body `{}`.
+   - Headers: `Authorization` = the token exactly as `fly tokens create` printed it (starts with `FlyV1 `), and
+     `Content-Type` = `application/json`. If the first test gives 401, use `Bearer ` plus the token instead.
+   - Schedule (Custom): time zone `America/Sao_Paulo`; job 1 at 23:00 every day, job 2 at 06:00 every day.
+   - Notifications: turn on "Notify me when the execution of the cronjob fails" (and "when the job gets disabled").
+   - Save, then use **Test run** (the stop job really stops the machine; run the start job after it). The response
+     should be `200` with `{"ok":true}`; confirm with `fly status`.
 
 While it is stopped, nobody can send messages, manage keys or invites; reading old chats still works (clients read
 Supabase directly). Stopping drops open connections and the in-memory queue: an answer being written at 23:00 is cut
 off (it shows "The reply was interrupted"), and at boot `recoverRuns` puts messages that were waiting or being
 answered back in the queue.
-GitHub starts scheduled runs a few minutes late, and pauses them after 60 days without repo activity. `fly deploy`
-starts a stopped machine, so a deploy at night keeps it on until the next 02:00 UTC stop; stop it by hand with the
-workflow if that matters.
+
+GitHub starts scheduled runs a few minutes late and pauses them after 60 days without repo activity, which is why the
+main schedule is on cron-job.org. `fly deploy` starts a stopped machine, so a deploy at night keeps it on until the
+next 23:00 stop; stop it by hand with the fly-wake workflow if that matters.
 
 ## Supabase setup
 

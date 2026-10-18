@@ -1,11 +1,12 @@
-# Keeps the Fly machine off at night (23:00-06:00 Brasília, UTC-3, no daylight saving) to save cost.
-# GitHub cron is UTC and can start a few minutes late, which is fine here.
-name: fly-schedule
+# Wakes the Fly machine in the morning. The night stop (and the main 06:00 start) are two cron-job.org jobs that call
+# the Fly Machines API; see "Night shutdown" in the README. This workflow is the backup start (06:10 Brasília, UTC-3,
+# no daylight saving) and a manual start/stop button. GitHub cron is UTC and can start minutes late; starting a machine
+# that is already running does nothing.
+name: fly-wake
 
 on:
   schedule:
-    - cron: "0 2 * * *"   # 23:00 BRT: stop
-    - cron: "0 9 * * *"   # 06:00 BRT: start
+    - cron: "10 9 * * *"   # 06:10 BRT: start
   workflow_dispatch:
     inputs:
       action:
@@ -16,7 +17,7 @@ on:
 
 permissions: {}
 
-concurrency: fly-schedule
+concurrency: fly-wake
 
 jobs:
   toggle:
@@ -24,7 +25,7 @@ jobs:
     timeout-minutes: 10
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      ACTION: ${{ inputs.action || (github.event.schedule == '0 2 * * *' && 'stop' || 'start') }}
+      ACTION: ${{ inputs.action || 'start' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

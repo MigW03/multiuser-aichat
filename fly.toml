@@ -19,7 +19,7 @@ primary_region = "gru"          # São Paulo
 [http_service]
   internal_port = 8080
   force_https = true
-  # The machine is stopped on a schedule (.github/workflows/fly-schedule.yml). Auto-start must stay off,
+  # The machine is stopped on a schedule (cron-job.org, see README "Night shutdown"). Auto-start must stay off,
   # or the first request at night would wake it and the schedule would save nothing.
   auto_stop_machines = "off"
   auto_start_machines = false

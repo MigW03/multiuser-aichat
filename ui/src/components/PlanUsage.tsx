@@ -157,8 +157,13 @@ function OpenRouterBody({ usage, error, busy, load }: State<OpenRouterUsage>) {
           <Bar percent={creditsPercent} label="Account credits used" />
         </div>
       )}
-      <div className="small">
-        <b>Spent</b> · {money(spend.day)} today · {money(spend.week)} this week · {money(spend.month)} this month · {money(spend.total)} in total
+      <div className="usage-row">
+        <div className="small">
+          <b>Spent</b>
+        </div>
+        <div className="small">Today · {money(spend.day)}</div>
+        <div className="small">This week · {money(spend.week)}</div>
+        <div className="small">This month · {money(spend.month)}</div>
       </div>
       <RefreshButton busy={busy} load={load} />
     </div>
@@ -270,7 +275,7 @@ function OpenRouterRing({ answering }: { answering: boolean }) {
   const u = state.usage;
   // The key's own cap if it has one, else the account balance if OpenRouter lets us read it, else nothing to measure.
   const used = u?.budget ? (u.budget.spent / u.budget.limit) * 100 : u?.credits && u.credits.total > 0 ? (u.credits.used / u.credits.total) * 100 : null;
-  const label = used !== null ? `OpenRouter usage: ${Math.round(used)}% used` : u ? `OpenRouter spend: ${money(u.spend.total)}` : state.error ? "OpenRouter usage unavailable" : "OpenRouter usage";
+  const label = used !== null ? `OpenRouter usage: ${Math.round(used)}% used` : u ? `OpenRouter spend this month: ${money(u.spend.month)}` : state.error ? "OpenRouter usage unavailable" : "OpenRouter usage";
   return (
     <Ring used={used} reached={used !== null && used >= 100} label={label} answering={answering} reload={() => void load(true)}>
       <OpenRouterBody {...state} />

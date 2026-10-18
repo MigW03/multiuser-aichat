@@ -25,6 +25,7 @@ import { ResetPassword } from "./Auth.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
+import { FolderPanel } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
 import { PanelResizer, useLeftWidth } from "./PanelResizer.tsx";
@@ -140,6 +141,19 @@ export function Shell({ userId }: { userId: string }) {
     if (narrow) setDrawer(activeChatId === null);
   }, [narrow, activeChatId, route.name, projectId]);
 
+  // The shared folder panel: remembered on wide screens; on a small screen it is a drawer that starts closed.
+  const [folderPinned, setFolderPinned] = useState(() => readPref(PREF.folderOpen(userId), false));
+  const [folderDrawer, setFolderDrawer] = useState(false);
+  useEffect(() => setFolderDrawer(false), [narrow, projectId, activeChatId]);
+  const folderOpen = narrow ? folderDrawer : folderPinned;
+  const toggleFolder = useCallback(() => {
+    if (narrow) return setFolderDrawer((v) => !v);
+    setFolderPinned((v) => {
+      writePref(PREF.folderOpen(userId), !v);
+      return !v;
+    });
+  }, [narrow, userId]);
+
   const setCollapsedPersisted = (v: boolean) => {
     setCollapsed(v);
     writePref(PREF.leftCollapsed(userId), v);
@@ -171,8 +185,9 @@ export function Shell({ userId }: { userId: string }) {
         openSettings: (tab = "account") => setSettings({ tab }),
         openAddKey: () => setAddKey(true),
         openInvite: (target) => setInviteReq(target),
+        folderPanel: { open: folderOpen, toggle: toggleFolder },
       },
-    [me, reloadMe, keys, reloadKeys, choice, setChoice],
+    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, toggleFolder],
   );
 
   if (route.name === "reset") return <ResetPassword />;
@@ -261,6 +276,14 @@ export function Shell({ userId }: { userId: string }) {
           </div>
         )}
         <main className="main">{main}</main>
+        {project && folderOpen && (
+          <>
+            {narrow && <div className="drawer-backdrop" onClick={toggleFolder} />}
+            <div className={narrow ? "drawer right" : "right-slot"}>
+              <FolderPanel project={project} onClose={toggleFolder} />
+            </div>
+          </>
+        )}
       </div>
 
       {settings && <SettingsDialog initialTab={settings.tab} onClose={() => setSettings(null)} />}

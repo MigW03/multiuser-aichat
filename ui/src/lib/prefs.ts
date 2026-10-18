@@ -36,4 +36,6 @@ export const PREF = {
   pendingJoin: "mc.pendingJoin",
   lastRoute: (userId: string) => `mc.lastRoute.${userId}`,
   peopleOpen: (userId: string) => `mc.peopleOpen.${userId}`,
+  /** The shared folder panel is open (on wide screens; a small screen opens it as a drawer each time). */
+  folderOpen: (userId: string) => `mc.folderOpen.${userId}`,
 } as const;

@@ -281,7 +281,7 @@ h1, h2, h3, p { margin: 0; }
 .main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
 .drawer { position: fixed; z-index: 40; top: 0; bottom: 0; left: 0; width: min(320px, 92vw); padding: var(--gap); background: var(--bg); display: flex; }
-.left-panel, .chat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); box-shadow: var(--shadow-panel); }
+.left-panel, .chat-card, .right-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); box-shadow: var(--shadow-panel); }
 
 .left-panel { width: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .panel-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 10px 4px 14px; }
@@ -478,6 +478,16 @@ h1, h2, h3, p { margin: 0; }
 }
 
 /* ------------------------------------------------------------------ shared folder */
+.right-slot { flex: none; width: 340px; min-height: 0; display: flex; }
+.drawer.right { left: auto; right: 0; width: min(360px, 92vw); }
+.right-panel { width: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.right-panel-head { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px 0 16px; flex: none; border-bottom: 1px solid var(--border); }
+.right-panel-head > svg { flex: none; color: var(--muted-fg); }
+.right-panel-head h2 { font: var(--text-title); margin: 0; }
+.right-panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.right-panel-actions { display: flex; justify-content: space-between; gap: 8px; }
+.folder-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 8px 2px; }
+.folder-row.active, .folder-chip.active { border-color: var(--p); box-shadow: 0 0 0 3px var(--t12); }
 .status-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--offline); }
 .status-dot.on { background: var(--online); }
 .panel-folder { padding: 6px 12px 0; }
@@ -495,19 +505,19 @@ h1, h2, h3, p { margin: 0; }
 .folder-chip:hover { background: var(--hover-row); color: var(--fg); }
 .folder-status { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
 .folder-status .status-dot { margin-top: 5px; }
-.folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 160px; }
 .folder-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font: var(--text-row); }
 .folder-crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--muted-fg); max-width: 160px; }
 .folder-crumbs button:hover { background: var(--hover-row); color: var(--fg); }
 .folder-crumbs > :last-child button, .folder-crumbs > button:only-child { color: var(--fg); }
-.folder-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.folder-list { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
 .folder-list li + li { border-top: 1px solid var(--border); }
 .folder-list li.pad { padding: 10px 12px; }
 .folder-list button { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 12px; border: 0; background: none; text-align: left; font: var(--text-row); }
 .folder-list button:hover { background: var(--hover-row); }
 .folder-list svg { flex: none; color: var(--muted-fg); }
-.file-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.file-text { margin: 0; max-height: 300px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font: 12.5px/1.5 var(--mono); white-space: pre; tab-size: 4; }
+.file-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 0; }
+.file-text { margin: 0; flex: 1; min-height: 120px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font: 12.5px/1.5 var(--mono); white-space: pre; tab-size: 4; }
 .folder-note { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; }
 .folder-note svg { flex: none; }
 @media (max-width: 640px) {

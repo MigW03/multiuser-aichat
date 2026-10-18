@@ -6,6 +6,7 @@ import { notifyChanged, useApp } from "../data.tsx";
 import { greeting } from "../lib/time.ts";
 import { navigate } from "../lib/router.ts";
 import { Composer, type OutgoingMessage } from "./Composer.tsx";
+import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Button, IconButton, ICON, ICON_SM, STROKE, useToast } from "./kit.tsx";
 
 /** Shown in a chat with no messages yet. */
@@ -116,7 +117,7 @@ export function Landing({
     <section className="chat-card landing" aria-label="New chat">
       <header className="chat-header">
         {leftCollapsed && (
-          <IconButton label="Show chats" onClick={onShowLeft}>
+          <IconButton label="Show chats" shortcut={PANEL_SHORTCUT} onClick={onShowLeft}>
             <PanelLeftOpen size={ICON} strokeWidth={STROKE} />
           </IconButton>
         )}

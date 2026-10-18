@@ -19,6 +19,7 @@ import {
   RenameDialog,
 } from "./Dialogs.tsx";
 import { ProjectTile } from "./Join.tsx";
+import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, Button, IconButton, ICON, ICON_SM, Menu, SectionLabel, STROKE, UnreadBadge } from "./kit.tsx";
 
 type Props = {
@@ -68,7 +69,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
             <span className="brand-name">{APP_NAME}</span>
           </div>
         )}
-        <IconButton label="Hide panel" onClick={onCollapse}>
+        <IconButton label="Hide panel" shortcut={PANEL_SHORTCUT} onClick={onCollapse}>
           <PanelLeftClose size={ICON} strokeWidth={STROKE} />
         </IconButton>
       </div>

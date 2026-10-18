@@ -1,4 +1,10 @@
 import { contextBridge } from "electron";
 
 // The renderer is the same React app as the web version. Only expose what it needs, as plain data.
-contextBridge.exposeInMainWorld("desktop", { platform: process.platform });
+// authRedirect / shareBase are the multiuserchat:// links, offered only when the OS sends them back to this app
+// (installed builds; the main process passes --mc-deeplinks then).
+const deepLinks = process.argv.includes("--mc-deeplinks");
+contextBridge.exposeInMainWorld("desktop", {
+  platform: process.platform,
+  ...(deepLinks ? { authRedirect: "multiuserchat://auth", shareBase: "multiuserchat://open" } : {}),
+});

@@ -369,6 +369,10 @@ h1, h2, h3, p { margin: 0; }
 .msg-note { font: var(--text-small); }
 .danger-text { color: var(--danger); }
 .inline-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.selection-menu { position: fixed; z-index: 40; transform: translate(-50%, calc(-100% - 8px)); padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
+.selection-menu.below { transform: translate(-50%, 8px); }
+.selection-respond { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: none; font: var(--text-row); color: var(--fg); }
+.selection-respond:hover { background: var(--hover-row); }
 .msg-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .msg:hover .msg-actions, .msg-actions.show, .msg-actions:focus-within { opacity: 1; }
 .act { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--muted-fg); font: var(--text-small); }

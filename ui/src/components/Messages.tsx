@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { Markdown } from "./Markdown.tsx";
 import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
+import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
 
 export const OPTIMISTIC_SEQ = Number.MAX_SAFE_INTEGER;
 
@@ -17,7 +18,7 @@ export type MessageListProps = {
   readSeq: number | null;
   /** whether the person has any AI key (for the "AI can't answer you yet" card) */
   hasKey: boolean;
-  onReply: (m: ChatMessage) => void;
+  onReply: (m: ChatMessage, quote?: string) => void;
   onRetry: (m: ChatMessage) => void;
   onCopy: (m: ChatMessage) => void;
   onAddKey: () => void;
@@ -118,6 +119,7 @@ export function MessageList(props: MessageListProps) {
         })}
         <div ref={bottomRef} />
       </div>
+      <SelectionRespond onRespond={(id, quote) => { const m = byId.get(id); if (m) props.onReply(m, quote); }} />
     </div>
   );
 }
@@ -147,7 +149,7 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
     <div className="quoted">
       <CornerUpLeft size={12} strokeWidth={STROKE} aria-hidden />
       <span className="truncate">
-        <b>{who}</b> {target ? target.content.replace(/\s+/g, " ").slice(0, 90) : ""}
+        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? target.content.replace(/\s+/g, " ").slice(0, 90) : ""}
       </span>
     </div>
   );
@@ -224,7 +226,7 @@ function AssistantMessage(props: RowProps) {
         {failed ? (
           <FailedAnswer {...props} />
         ) : (
-          <div className={`bubble ai ${summary ? "summary" : ""}`}>
+          <div className={`bubble ai ${summary ? "summary" : ""}`} {...(streaming ? {} : { [ANSWER_ATTR]: m.id })}>
             {summary && (
               <div className="summary-head">
                 <span className="chip accent">Summary</span>

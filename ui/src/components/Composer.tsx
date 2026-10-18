@@ -8,7 +8,10 @@ import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
 import { Avatar, ICON, ICON_SM, STROKE } from "./kit.tsx";
 
-export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null };
+export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null; quote: string | null };
+
+/** What the next message replies to: a whole message, or just the highlighted part of an answer. */
+export type ReplyTarget = { message: ChatMessage; who: string; quote?: string };
 
 type Props = {
   /** Everyone in the chat except the signed-in person: the people @ can tag. */
@@ -16,7 +19,7 @@ type Props = {
   choice: ModelChoice | null;
   onModel: (c: Pick<ModelChoice, "provider" | "model">) => void;
   onReasoning: (r: Reasoning) => void;
-  replyTo: { message: ChatMessage; who: string } | null;
+  replyTo: ReplyTarget | null;
   onClearReply: () => void;
   /** An answer the signed-in person asked for is being written: show Stop. */
   canStop: boolean;
@@ -93,7 +96,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
   }
 
   async function dispatch(content: string) {
-    const outgoing: OutgoingMessage = { content, mentions: mentionedIn(content, people), replyTo: replyTo?.message.id ?? null };
+    const outgoing: OutgoingMessage = { content, mentions: mentionedIn(content, people), replyTo: replyTo?.message.id ?? null, quote: replyTo?.quote ?? null };
     setText("");
     setWarning(null);
     const ok = await onSend(outgoing);
@@ -151,7 +154,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
             <div className="reply-strip">
               <CornerUpLeft size={ICON_SM} strokeWidth={STROKE} aria-hidden />
               <span className="truncate">
-                Replying to <b>{replyTo.who}</b> · {replyTo.message.content.replace(/\s+/g, " ").slice(0, 100)}
+                Replying to <b>{replyTo.who}</b> · {replyTo.quote ? `“${replyTo.quote}”` : replyTo.message.content.replace(/\s+/g, " ").slice(0, 100)}
               </span>
               <button type="button" className="icon-btn" aria-label="Cancel reply" onClick={onClearReply}>
                 <X size={ICON_SM} strokeWidth={STROKE} />

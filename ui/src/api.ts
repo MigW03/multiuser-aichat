@@ -7,6 +7,7 @@ import type {
   ChatGptUsage,
   FolderListResult,
   FolderReadResult,
+  OpenRouterUsage,
   InvitePreview,
   KeysResponse,
   ModelsResponse,
@@ -57,6 +58,7 @@ export const api = {
   deleteKey: (provider: ProviderId) => call<{ ok: true }>("DELETE", `/api/keys/${provider}`),
   models: (provider: ProviderId) => call<ModelsResponse>("GET", `/api/models/${provider}`),
   chatgptStart: () => call<ChatGptStartResponse>("POST", "/api/chatgpt/start", {}),
+  openrouterUsage: (refresh = false) => call<OpenRouterUsage>("GET", `/api/openrouter/usage${refresh ? "?refresh=1" : ""}`),
   chatgptUsage: (refresh = false) => call<ChatGptUsage>("GET", `/api/chatgpt/usage${refresh ? "?refresh=1" : ""}`),
   chatgptPoll: (flow: string) => call<ChatGptPollResponse>("POST", "/api/chatgpt/poll", { flow }),
 

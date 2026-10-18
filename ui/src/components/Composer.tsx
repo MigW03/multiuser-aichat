@@ -145,7 +145,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
         <div className="composer-top">
           {status}
           <span className="grow" />
-          <UsageRing enabled={choice?.provider === "chatgpt"} answering={canStop} />
+          <UsageRing provider={choice?.provider ?? null} answering={canStop} />
           <ModelPicker choice={choice} onChoose={onModel} />
           <ReasoningPicker levels={thinking.levels} value={thinking.effective} onChange={onReasoning} disabled={!choice} />
         </div>

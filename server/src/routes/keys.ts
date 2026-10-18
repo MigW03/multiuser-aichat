@@ -5,6 +5,7 @@ import { rateLimit, type AuthVars } from "../auth.ts";
 import { deleteUserKey, getUserKey, listKeyHints, saveUserKey } from "../keys.ts";
 import { getUsage, pollSignIn, startSignIn } from "../chatgpt.ts";
 import { supabaseLoginStore } from "../chatgpt-store.ts";
+import { forgetOpenRouterUsage, getOpenRouterUsage } from "../openrouter-usage.ts";
 import { listModels, ProviderError, verifyKey } from "../providers.ts";
 
 export const keys = new Hono<AuthVars>();
@@ -32,6 +33,18 @@ keys.get("/chatgpt/usage", rateLimit("chatgpt-usage", 20, 60_000), async (c) => 
     const token = await getUserKey(userId, "chatgpt");
     if (!token) return c.json({ error: "Connect your ChatGPT plan first." }, 400);
     return c.json(await getUsage(userId, token, c.req.query("refresh") === "1"));
+  } catch (e) {
+    return c.json({ error: planError(e) }, 502);
+  }
+});
+
+// How much of their own OpenRouter key is used. Read only, only ever for the caller's own key, which never leaves the server.
+keys.get("/openrouter/usage", rateLimit("openrouter-usage", 20, 60_000), async (c) => {
+  try {
+    const userId = c.get("userId");
+    const apiKey = await getUserKey(userId, "openrouter");
+    if (!apiKey) return c.json({ error: "Add your OpenRouter API key first." }, 400);
+    return c.json(await getOpenRouterUsage(userId, apiKey, c.req.query("refresh") === "1"));
   } catch (e) {
     return c.json({ error: planError(e) }, 502);
   }

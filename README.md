@@ -34,6 +34,23 @@ The desktop app loads the web dev server, so it always needs the web app running
 
 For the desktop app from a production build: `npm run build`, then `npm start -w desktop`.
 
+## Deploy the web app (Vercel)
+
+The web app is a static Vite build; the server (`server/`) is a separate Node service and does not go on Vercel.
+Two setups work, and each has its own `vercel.json`:
+
+| Root Directory | Config used | Notes |
+| --- | --- | --- |
+| `web` | `web/vercel.json` | Turn on **Include source files outside of the Root Directory in the Build Step** (Project Settings > General). The build imports `ui/` and `shared/` from the repo root. |
+| repo root (empty) | `vercel.json` | Builds the `web` workspace and publishes `web/dist`. |
+
+Both install with `npm ci` from the repo root and skip the Electron binary download. Use Node 22.12 or newer (Vercel's
+default 24.x is fine). Set these under Project Settings > Environment Variables (they are public, baked into the bundle):
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_SERVER_URL` (the public URL of the server). Never add
+`SUPABASE_SECRET_KEY` or `KEY_ENCRYPTION_SECRET` to the web project; they belong only to the server. Routes use
+the URL hash, so no rewrites are needed. Add the deployed address to Supabase's redirect URL allow-list and to the server's
+`ALLOWED_ORIGINS` and `APP_URL`.
+
 ## Supabase setup
 
 Run the migrations in `supabase/migrations` in order (the SQL editor or `supabase db push`). Then, under

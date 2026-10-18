@@ -1,4 +1,4 @@
-import { DEFAULT_REASONING, LIMITS, canManagePeople, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_REASONING, LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -131,7 +131,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   }
 
   function replyTo(m: ChatMessage) {
-    setReply({ message: m, who: m.role === "assistant" ? "Claude" : (names.get(m.author_id ?? "") ?? "Someone") });
+    setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone") });
   }
 
   const pickModel = (c: Pick<ModelChoice, "provider" | "model">) => setChoice({ ...c, reasoning: choice?.reasoning ?? DEFAULT_REASONING });
@@ -218,7 +218,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         onStop={() => void api.stop(chat.id).catch(() => undefined)}
         onTyping={shared ? room.sendTyping : () => undefined}
         onSend={send}
-        placeholder={shared ? "Message the chat. Tag someone with @ to talk to them, not Claude." : "Message Claude"}
+        placeholder={shared ? "Message the chat. Tag someone with @ to talk to them, not the AI." : choice ? `Message ${modelName(choice.model)}` : "Message the AI"}
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}
       />

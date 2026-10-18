@@ -92,22 +92,22 @@ export function Avatar({ id, name, size = 28, online, ring }: { id: string; name
   );
 }
 
-export function ClaudeAvatar({ size = 28 }: { size?: number }) {
+export function AiAvatar({ size = 28 }: { size?: number }) {
   return (
-    <span className="avatar claude" style={{ width: size, height: size }} aria-label="Claude">
+    <span className="avatar claude" style={{ width: size, height: size }} aria-label="AI">
       <Sparkles size={Math.round(size * 0.5)} strokeWidth={2} aria-hidden />
     </span>
   );
 }
 
-/** Gray pill for people, steel pill with a spark for Claude. When both are new, Claude's pill wins. */
+/** Gray pill for people, steel pill with a spark for the AI. When both are new, the AI pill wins. */
 export function UnreadBadge({ people, ai }: { people: number; ai: number }) {
   if (people + ai <= 0) return null;
   const count = people + ai;
   const text = count > 99 ? "99+" : String(count);
   if (ai > 0) {
     return (
-      <span className="badge ai" aria-label={`${count} unread, including Claude`}>
+      <span className="badge ai" aria-label={`${count} unread, including the AI`}>
         <Sparkles size={9} strokeWidth={2.2} aria-hidden />
         {text}
       </span>

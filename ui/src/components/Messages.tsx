@@ -1,9 +1,9 @@
-import { modelLabel, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
+import { modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
 import { Copy, CornerUpLeft, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { Markdown } from "./Markdown.tsx";
-import { Avatar, Button, ClaudeAvatar, ICON_SM, STROKE } from "./kit.tsx";
+import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
 
 export const OPTIMISTIC_SEQ = Number.MAX_SAFE_INTEGER;
 
@@ -15,7 +15,7 @@ export type MessageListProps = {
   names: Map<string, string>;
   /** the read marker when the chat was opened; messages after it get the "new" divider */
   readSeq: number | null;
-  /** whether the person has any AI key (for the "Claude can't answer you yet" card) */
+  /** whether the person has any AI key (for the "AI can't answer you yet" card) */
   hasKey: boolean;
   onReply: (m: ChatMessage) => void;
   onRetry: (m: ChatMessage) => void;
@@ -142,7 +142,7 @@ function MessageRow(props: RowProps) {
 function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">) {
   const target = m.reply_to ? byId.get(m.reply_to) : undefined;
   if (!m.reply_to) return null;
-  const who = target ? (target.role === "assistant" ? "Claude" : (names.get(target.author_id ?? "") ?? "Someone")) : "an earlier message";
+  const who = target ? (target.role === "assistant" ? modelName(target.model) : (names.get(target.author_id ?? "") ?? "Someone")) : "an earlier message";
   return (
     <div className="quoted">
       <CornerUpLeft size={12} strokeWidth={STROKE} aria-hidden />
@@ -171,14 +171,14 @@ function UserMessage(props: RowProps) {
         <QuotedReply m={m} byId={props.byId} names={names} />
         <div className={`bubble ${own ? "own" : "other"} ${waiting ? "queued" : ""} ${m.seq === OPTIMISTIC_SEQ ? "sending" : ""}`}>{body}</div>
         {waiting && <div className="msg-note muted">In line · next after this reply</div>}
-        {!waiting && m.status === "processing" && own && <div className="msg-note muted">Claude is on it</div>}
+        {!waiting && m.status === "processing" && own && <div className="msg-note muted">The AI is on it</div>}
         {m.skip_reason === "mention" && <div className="msg-note muted">AI skipped</div>}
-        {m.skip_reason === "no_key" && <div className="msg-note muted">People only · no AI key{own ? ". Add a key so Claude can answer you" : ""}</div>}
+        {m.skip_reason === "no_key" && <div className="msg-note muted">People only · no AI key{own ? ". Add a key so the AI can answer you" : ""}</div>}
         {m.status === "error" && <div className="msg-note danger-text">Not answered</div>}
         {showKeylessCard && (
           <div className="inline-card">
             <div>
-              <b>Claude can't answer you yet.</b>
+              <b>The AI can't answer you yet.</b>
               <div className="small muted">Add your own AI key to use it. You can still chat with people.</div>
             </div>
             <Button size="sm" variant="primary" onClick={props.onAddKey}>
@@ -212,14 +212,14 @@ function AssistantMessage(props: RowProps) {
   const streaming = m.status === "streaming";
   const text = streaming ? (streamingText ?? m.content) : m.content;
   const failed = m.status === "error";
-  const metaParts = [modelLabel(m.model), asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, formatTime(m.created_at)].filter(Boolean);
+  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, formatTime(m.created_at)].filter(Boolean);
 
   return (
     <div className="msg ai">
-      <ClaudeAvatar size={28} />
+      <AiAvatar size={28} />
       <div className="msg-main">
         <div className="msg-meta">
-          <b className="ai-name">Claude</b> <span className="muted">{metaParts.join(" · ")}</span>
+          <b className="ai-name">{modelName(m.model)}</b> <span className="muted">{metaParts.join(" · ")}</span>
         </div>
         {failed ? (
           <FailedAnswer {...props} />
@@ -271,7 +271,7 @@ function FailedAnswer({ m, meId, onRetry, onUpdateKey }: RowProps) {
     <div className="bubble error">
       <div className="error-title">
         <Sparkles size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-        {code === "stopped" ? "Stopped" : code === "timeout" ? "Claude took too long to answer" : code === "no_credit" ? `Your ${provider ? PROVIDER_LABELS[provider] : "AI"} account is out of credit` : "Claude couldn't answer"}
+        {code === "stopped" ? "Stopped" : code === "timeout" ? "The AI took too long to answer" : code === "no_credit" ? `Your ${provider ? PROVIDER_LABELS[provider] : "AI"} account is out of credit` : "The AI couldn't answer"}
       </div>
       <div className="small">{m.content}</div>
       {forMe && (

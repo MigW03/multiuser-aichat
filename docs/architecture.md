@@ -35,7 +35,7 @@ the local file host.
 ## Projects, chats, people (built 2026-10-18)
 
 - A **project** has up to 10 people (pending invites count) with roles Host, Admin and Member, and many chats that
-  everyone in it can see. **Your chats** on the home screen are private to you and Claude until you invite someone.
+  everyone in it can see. **Your chats** on the home screen are private to you and the AI until you invite someone.
 - **Access:** clients read through RLS only (`projects`, `project_members`, `chats`, `messages`, ...). Every write goes
   to the server, which calls an `app_*` SQL function (service role only) with the acting user's id; the function checks
   the role and raises a short code the server turns into a message. `supabase/tests/` runs the migrations on a

@@ -53,7 +53,7 @@ chat invite links and the per-chat model columns. Existing chats become "Your ch
 - **Clients** read chats and messages straight from Supabase and subscribe to the private channel `chat:<id>`.
 - **Projects** hold shared chats for up to 10 people (pending invites count). Roles are Host, Admin and Member.
   Invites are one email address each, last 7 days and only work for that address. **Your chats** on the home screen
-  start private (you and Claude); you can invite people into one, and it becomes a shared chat.
+  start private (you and the AI); you can invite people into one, and it becomes a shared chat.
 - **Sending** goes to `POST /api/chats/:id/messages` on the server, which checks membership and that the sender has
   a key, saves the message as `pending`, and runs the AI queue (`server/src/run-queue.ts`): one run per chat at a
   time, each answering one person's messages with that person's key and model. The reply streams to everyone as

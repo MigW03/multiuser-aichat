@@ -1,4 +1,4 @@
-import { DEFAULT_REASONING, type ModelChoice, type Person, type ProjectSummary, type Reasoning } from "@mc/shared";
+import { DEFAULT_REASONING, modelName, type ModelChoice, type Person, type ProjectSummary, type Reasoning } from "@mc/shared";
 import { Check, KeyRound, MessageSquarePlus, PanelLeftOpen, Sparkles, Users } from "lucide-react";
 import { useRef } from "react";
 import { api } from "../api.ts";
@@ -16,11 +16,11 @@ export function EmptyChat({ shared, hasKey, onAddKey }: { shared: boolean; hasKe
       <span className="empty-icon" aria-hidden>
         <Sparkles size={22} strokeWidth={STROKE} />
       </span>
-      <h2>{shared ? "Say hi to the team" : "Ask Claude anything"}</h2>
+      <h2>{shared ? "Say hi to the team" : "Ask the AI anything"}</h2>
       <p className="muted">
         {shared
-          ? "Claude answers every message unless you tag a person with @. Then it stays quiet and the message is just for them."
-          : "Write a message below. Claude answers right away."}
+          ? "The AI answers every message unless you tag a person with @. Then it stays quiet and the message is just for them."
+          : "Write a message below. The AI answers right away."}
       </p>
       {!hasKey && (
         <Button variant="primary" onClick={onAddKey}>
@@ -34,7 +34,7 @@ export function EmptyChat({ shared, hasKey, onAddKey }: { shared: boolean; hasKe
 function Checklist({ hasKey, hasChat, hasProject }: { hasKey: boolean; hasChat: boolean; hasProject: boolean }) {
   const { openAddKey } = useApp();
   const steps = [
-    { done: hasKey, title: "Add your AI key", text: "Claude answers with your own account.", action: hasKey ? null : <Button size="sm" variant="primary" onClick={openAddKey}>Add key</Button> },
+    { done: hasKey, title: "Add your AI key", text: "The AI answers with your own account.", action: hasKey ? null : <Button size="sm" variant="primary" onClick={openAddKey}>Add key</Button> },
     { done: hasChat, title: "Send your first message", text: "Type below. Nobody else sees a chat in Your chats unless you invite them." },
     { done: hasProject, title: "Create a project for your team", text: "Shared chats for up to 10 people." },
   ];
@@ -141,12 +141,12 @@ export function Landing({
             {first ? `, ${first}` : ""}
           </h2>
           <p className="muted">
-            {project ? `Start a chat in ${project.name}. Everyone in the project can see it.` : "Start a chat. Only you and Claude see it until you invite someone."}
+            {project ? `Start a chat in ${project.name}. Everyone in the project can see it.` : "Start a chat. Only you and the AI see it until you invite someone."}
           </p>
           {!hasKey && keys && (
             <div className="inline-card">
               <div>
-                <b>Add your AI key to use Claude.</b>
+                <b>Add your AI key to use the AI.</b>
                 <div className="small muted">Without one you can still chat with people.</div>
               </div>
               <Button size="sm" variant="primary" onClick={openAddKey}>
@@ -168,7 +168,7 @@ export function Landing({
         onStop={() => undefined}
         onTyping={() => undefined}
         onSend={send}
-        placeholder={project ? "Write the first message" : "Message Claude"}
+        placeholder={project ? "Write the first message" : choice ? `Message ${modelName(choice.model)}` : "Message the AI"}
         focusKey={project?.id ?? "home"}
       />
     </section>

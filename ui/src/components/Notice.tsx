@@ -56,7 +56,7 @@ export function NoticeBody({ title, items, confirmLabel, cancelLabel, busy, erro
 
 const claudeItem: Item = {
   icon: <Sparkles size={ICON} strokeWidth={STROKE} />,
-  title: "Claude reads the messages too",
+  title: "The AI reads the messages too",
   text: "Replies run on a member's AI key, so the text goes to that key's provider.",
 };
 const secretsItem: Item = {

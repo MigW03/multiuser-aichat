@@ -57,6 +57,8 @@ export const DEFAULT_REASONING: Reasoning = "medium";
 /** Limits enforced by both the server and the database. */
 export const LIMITS = {
   messageChars: 16_000,
+  /** A highlighted excerpt kept with a reply. Small: it lives in the 1 KB meta column. */
+  quoteChars: 200,
   titleChars: 80,
   projectNameChars: 60,
   displayNameChars: 60,
@@ -90,7 +92,23 @@ export type MessageMeta = {
   since?: string;
   // error answers
   error?: AiErrorCode;
+  // a reply to a highlighted part of an answer: the excerpt
+  quote?: string;
 };
+
+const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+/**
+ * True when the words of `quote` appear in `source` in the same order. Loose on purpose: the quote is picked from the
+ * rendered answer, so list numbers, link addresses and markdown marks of the raw text may sit between its words.
+ */
+export function isExcerptOf(quote: string, source: string): boolean {
+  const q = words(quote.replace(/…$/, ""));
+  if (q.length === 0) return false;
+  let i = 0;
+  for (const w of words(source)) if (w === q[i] && ++i === q.length) return true;
+  return false;
+}
 
 export type ChatMessage = {
   id: string;
@@ -182,6 +200,8 @@ export type SendMessageRequest = {
   /** People tagged with @. A message that tags someone is not answered by the AI. */
   mentions?: string[];
   replyTo?: string;
+  /** With replyTo: the part of that answer the reply is about. */
+  quote?: string;
 };
 export type SendMessageResponse = { id: string; skipped: SkipReason | null };
 export type SummarizeRequest = { id: string; scope: SummaryScope; provider: ProviderId; model: string; reasoning?: Reasoning };

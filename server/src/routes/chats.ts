@@ -1,4 +1,4 @@
-import { isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
@@ -30,6 +30,7 @@ const sendBody = z.object({
   reasoning: modelBody.reasoning,
   mentions: z.array(z.uuid()).max(10).optional(),
   replyTo: z.uuid().optional(),
+  quote: z.string().trim().min(1).max(LIMITS.quoteChars).optional(),
 });
 // For "unread" the client passes the read marker it had when the chat was opened (the live marker moves as it reads).
 const summarizeBody = z.object({ id: z.uuid(), scope: z.enum(["unread", "day", "all"]), fromSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1).optional(), ...modelBody });
@@ -87,7 +88,7 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   const parsed = sendBody.safeParse(await c.req.json().catch(() => null));
   if (!uuid.safeParse(chatId).success || !parsed.success) return c.json({ error: "Invalid message" }, 400);
   const userId = c.get("userId");
-  const { id, content, provider, model, reasoning, replyTo } = parsed.data;
+  const { id, content, provider, model, reasoning, replyTo, quote } = parsed.data;
 
   if (!(await canAccess(userId, chatId))) return c.json({ error: NOT_FOUND }, 404);
   const { data: chat } = await admin.from("chats").select("id, title, project_id").eq("id", chatId).single();
@@ -98,9 +99,13 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   const mentions = [...new Set(parsed.data.mentions ?? [])].filter((m) => m !== userId);
   if (mentions.some((m) => !members.has(m))) return c.json({ error: "You can only tag people who are in this chat." }, 400);
 
+  // An excerpt is kept only when it really comes from the answer being replied to, so it can't put words in the AI's mouth.
+  let meta: MessageMeta = {};
   if (replyTo) {
-    const { data: target } = await admin.from("messages").select("id").eq("id", replyTo).eq("chat_id", chatId).maybeSingle();
+    const { data: target } = await admin.from("messages").select("id, role, content").eq("id", replyTo).eq("chat_id", chatId).maybeSingle();
     if (!target) return c.json({ error: "The message you are replying to is gone." }, 400);
+    // the meta column holds under 1 KB; 700 bytes of quote leaves room for the JSON around it
+    if (quote && Buffer.byteLength(quote) <= 700 && target.role === "assistant" && isExcerptOf(quote, target.content)) meta = { quote };
   }
 
   // The AI answers only with the sender's own key. Without one the message is still delivered to the people.
@@ -121,6 +126,7 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
     reasoning: reasoning ?? null,
     mentions,
     reply_to: replyTo ?? null,
+    meta,
     skip_reason: skip,
   });
   if (error) return c.json({ error: "Could not send the message" }, 400);

@@ -7,7 +7,7 @@ import { copyText, setPinned } from "../lib/actions.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
 import { supabase } from "../supabase.ts";
-import { Composer, type OutgoingMessage } from "./Composer.tsx";
+import { Composer, type OutgoingMessage, type ReplyTarget } from "./Composer.tsx";
 import { DeleteChatDialog, RenameDialog, SummarizeDialog } from "./Dialogs.tsx";
 import { EmptyChat } from "./EmptyStates.tsx";
 import { MessageList, OPTIMISTIC_SEQ } from "./Messages.tsx";
@@ -40,7 +40,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const room = useChatRoom(chat.id, me.id);
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
   const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name }]);
-  const [reply, setReply] = useState<{ message: ChatMessage; who: string } | null>(null);
+  const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [dialog, setDialog] = useState<"rename" | "delete" | "summarize" | null>(null);
   const [extraNames, setExtraNames] = useState<Map<string, string>>(new Map());
   const asked = useRef(new Set<string>());
@@ -101,7 +101,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       for_user_id: null,
       key_user_id: null,
       run_id: null,
-      meta: {},
+      meta: out.quote ? { quote: out.quote } : {},
     });
     setReply(null);
     try {
@@ -110,7 +110,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         content: out.content,
         ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
         mentions: out.mentions,
-        ...(out.replyTo ? { replyTo: out.replyTo } : {}),
+        ...(out.replyTo ? { replyTo: out.replyTo, ...(out.quote ? { quote: out.quote } : {}) } : {}),
       });
       return true;
     } catch (e) {
@@ -132,8 +132,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     toast.push((await copyText(m.content)) ? "Copied" : "Could not copy", "info");
   }
 
-  function replyTo(m: ChatMessage) {
-    setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone") });
+  function replyTo(m: ChatMessage, quote?: string) {
+    setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
   }
 
   const pickModel = (c: Pick<ModelChoice, "provider" | "model">) => setChoice({ ...c, reasoning: choice?.reasoning ?? DEFAULT_REASONING });

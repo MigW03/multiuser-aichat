@@ -25,6 +25,7 @@ type Row = {
   mentions: string[];
   reply_to: string | null;
   skip_reason: string | null;
+  meta: MessageMeta;
   created_at: string;
   seq: number;
 };
@@ -36,7 +37,7 @@ const HISTORY_CHAR_BUDGET = 100_000;
 const MESSAGE_CHAR_LIMIT = 20_000;
 const LOCK_SECONDS = 300;
 const BROADCAST_EVERY_MS = 120;
-const ROW_COLUMNS = "id, role, author_id, kind, content, mentions, reply_to, skip_reason, created_at, seq";
+const ROW_COLUMNS = "id, role, author_id, kind, content, mentions, reply_to, skip_reason, meta, created_at, seq";
 
 /** The run that is answering in each chat right now, so its asker can stop it. One server instance. */
 const active = new Map<string, { askerId: string; controller: AbortController }>();
@@ -72,6 +73,9 @@ Keep each bullet to one line. Use people's names. Leave out a section's bullets 
 /** Display names are typed by users and end up in the prompt: no brackets, line breaks or control characters, so a name can't pose as another speaker. */
 const promptName = (name: string) => name.replace(/[\[\]\p{C}\u2028\u2029]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Someone";
 
+/** A highlighted excerpt typed by a user ends up in the prompt: no quotes, brackets or line breaks, so it can't close its own quote or pose as another speaker. */
+const promptQuote = (text: string) => text.replace(/[\[\]"\p{C}\u2028\u2029]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+
 const clip = (text: string) => (text.length > MESSAGE_CHAR_LIMIT ? `${text.slice(0, MESSAGE_CHAR_LIMIT)}… [truncated]` : text);
 
 /** Newest-first within the budget, then merged so roles alternate (some providers require it). */
@@ -93,7 +97,8 @@ function toModelMessages(rows: Row[], names: Map<string, string>): ModelMessage[
       const tagged = r.mentions.map((id) => names.get(id)).filter(Boolean);
       const replied = r.reply_to ? byId.get(r.reply_to) : undefined;
       const parts = [who];
-      if (replied) parts.push(`replying to ${replied.role === "assistant" ? "your earlier answer" : "an earlier message"} "${clip(replied.content).slice(0, 160).replace(/\s+/g, " ")}"`);
+      if (replied && replied.role === "assistant" && r.meta.quote) parts.push(`replying to this part of your earlier answer: "${promptQuote(r.meta.quote)}"`);
+      else if (replied) parts.push(`replying to ${replied.role === "assistant" ? "your earlier answer" : "an earlier message"} "${clip(replied.content).slice(0, 160).replace(/\s+/g, " ")}"`);
       if (r.skip_reason === "mention" && tagged.length) parts.push(`to ${tagged.map((n) => `@${n}`).join(", ")}, not for you`);
       text = `[${parts.join(", ")}]: ${r.content}`;
     }

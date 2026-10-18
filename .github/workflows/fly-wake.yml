@@ -35,6 +35,8 @@ jobs:
       - name: ${{ env.ACTION }} the server machine
         run: |
           set -euo pipefail
+          # Until the Fly app and this secret exist, the daily run should not fail.
+          if [ -z "${FLY_API_TOKEN:-}" ] && [ "${{ github.event_name }}" = schedule ]; then echo "FLY_API_TOKEN not set, skipping"; exit 0; fi
           app=$(sed -n 's/^app = "\([^"]*\)".*/\1/p' fly.toml)
           ids=$(flyctl machine list --app "$app" --json | jq -r '.[].id')
           [ -n "$ids" ] || { echo "no machines found for $app"; exit 1; }

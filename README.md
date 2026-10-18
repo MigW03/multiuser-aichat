@@ -84,14 +84,15 @@ Later deploys are `fly deploy`. Check `fly status`: it must list exactly one mac
 
 **Night shutdown.** The machine is off from 23:00 to 06:00 in Brasília (02:00-09:00 UTC, Brazil has no daylight
 saving) to save cost. Fly has no cron stop/start, so two [cron-job.org](https://cron-job.org) jobs call the Fly Machines
-API: stop at 23:00 and start at 06:00. `.github/workflows/fly-wake.yml` is a backup start at 06:10 and a manual
-start/stop button (Actions tab > fly-wake > Run workflow). `auto_start_machines` is off in `fly.toml`; otherwise the
+API: stop at 23:00 and start at 06:00. `.github/workflows/fly-wake.yml` is only a manual
+start/stop button (Actions tab > fly-wake > Run workflow; needs the `FLY_API_TOKEN` secret). `auto_start_machines` is off in `fly.toml`; otherwise the
 first request at night would wake the machine and save nothing.
 
 Set it up once, after the first deploy:
 
 1. Token: `fly tokens create deploy -a multiuser-chat-server`. It is scoped to this app. Paste it only into the
-   cron-job.org headers below and the GitHub secret `FLY_API_TOKEN` (Settings > Secrets and variables > Actions).
+   cron-job.org headers below and, for the manual button, the GitHub secret `FLY_API_TOKEN` (Settings > Secrets and
+   variables > Actions).
    Never into the repo, chat or `fly.toml`.
 2. Machine id: `fly machine list -a multiuser-chat-server` (a 14-character id like `148e2d1b9e4528`). It stays the
    same across `fly deploy`; if the machine is ever destroyed and recreated, update both jobs.
@@ -110,8 +111,7 @@ Supabase directly). Stopping drops open connections and the in-memory queue: an 
 off (it shows "The reply was interrupted"), and at boot `recoverRuns` puts messages that were waiting or being
 answered back in the queue.
 
-GitHub starts scheduled runs a few minutes late and pauses them after 60 days without repo activity, which is why the
-main schedule is on cron-job.org. `fly deploy` starts a stopped machine, so a deploy at night keeps it on until the
+`fly deploy` starts a stopped machine, so a deploy at night keeps it on until the
 next 23:00 stop; stop it by hand with the fly-wake workflow if that matters.
 
 ## Supabase setup

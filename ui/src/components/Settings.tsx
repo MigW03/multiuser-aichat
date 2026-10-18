@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
-import { PlanUsage } from "./PlanUsage.tsx";
+import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
@@ -355,6 +355,7 @@ function KeyTab() {
                 <b>{PROVIDER_LABELS[k.provider]}</b>
                 <div className="small muted">{isPlanProvider(k.provider) ? `Connected · ${k.hint}` : `Saved · ends in ${k.hint}`}</div>
                 {isPlanProvider(k.provider) && <PlanUsage />}
+                {k.provider === "openrouter" && <OpenRouterKeyUsage />}
               </div>
               <Button size="sm" variant="ghost" busy={busy === k.provider} onClick={() => void remove(k.provider)}>
                 {isPlanProvider(k.provider) ? "Disconnect" : "Remove"}

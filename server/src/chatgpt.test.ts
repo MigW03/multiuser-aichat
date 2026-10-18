@@ -218,6 +218,74 @@ describe("plan usage", () => {
   });
 });
 
+describe("openrouter usage", () => {
+  it("uses the budget that blocks first, drops the key label, and shows spend only for an uncapped key", async () => {
+    const or = await import("./openrouter-usage.ts");
+    const withCap = or.normalizeKeyUsage(
+      {
+        data: {
+          label: "sk-or-v1-abc...xyz",
+          limit: 50,
+          limit_remaining: 20,
+          limit_reset: "monthly",
+          usage: 30,
+          usage_daily: 1.5,
+          usage_weekly: "4",
+          usage_monthly: 12,
+          effective_budget: { limit_usd: 25, spend_usd: 10, remaining_usd: 15, reset_interval: "weekly", resets_at: "2026-10-19T00:00:00Z" },
+        },
+      },
+      null,
+      0,
+    );
+    assert.deepEqual(withCap.budget, { limit: 25, spent: 10, remaining: 15, resetInterval: "weekly", resetsAt: Date.parse("2026-10-19T00:00:00Z") / 1000 });
+    assert.deepEqual(withCap.spend, { day: 1.5, week: 4, month: 12, total: 30 });
+    assert.ok(!JSON.stringify(withCap).includes("sk-or"));
+
+    const keyOnly = or.normalizeKeyUsage({ data: { limit: 50, limit_remaining: 20, limit_reset: "monthly", usage: 30 } }, null, 0);
+    assert.deepEqual(keyOnly.budget, { limit: 50, spent: 30, remaining: 20, resetInterval: "monthly", resetsAt: null });
+
+    const uncapped = or.normalizeKeyUsage({ data: { limit: null, limit_remaining: null, usage: 3.2, usage_daily: 0.1 } }, null, 0);
+    assert.equal(uncapped.budget, null);
+    assert.equal(uncapped.spend.total, 3.2);
+    assert.equal(or.normalizeKeyUsage("junk", null, 0).spend.total, 0);
+  });
+
+  it("reads the key's own usage, tries the account balance only for uncapped keys, and ignores a refused balance", async () => {
+    const or = await import("./openrouter-usage.ts");
+    handler = (call) => {
+      if (call.url.endsWith("/api/v1/key")) return json({ data: { limit: null, usage: 3, usage_daily: 1, usage_weekly: 2, usage_monthly: 3 } });
+      if (call.url.endsWith("/api/v1/credits")) return json({ error: "management key required" }, 403);
+      return json({}, 404);
+    };
+    const first = await or.getOpenRouterUsage("or-user", "sk-or-key");
+    assert.equal(first.credits, null);
+    assert.equal(calls[0]!.headers.authorization, "Bearer sk-or-key");
+    assert.deepEqual(calls.map((x) => x.url), ["https://openrouter.ai/api/v1/key", "https://openrouter.ai/api/v1/credits"]);
+
+    await or.getOpenRouterUsage("or-user", "sk-or-key");
+    assert.equal(calls.length, 2, "cached");
+
+    handler = (call) => (call.url.endsWith("/credits") ? json({ data: { total_credits: 100, total_usage: 25 } }) : json({ data: { limit: null, usage: 3 } }));
+    const fresh = await or.getOpenRouterUsage("or-user", "sk-or-key", true);
+    assert.deepEqual(fresh.credits, { total: 100, used: 25 });
+
+    handler = () => json({ data: { limit: 10, usage: 1 } });
+    calls = [];
+    const capped = await or.getOpenRouterUsage("or-user-2", "sk-or-key");
+    assert.equal(capped.budget?.limit, 10);
+    assert.equal(calls.length, 1, "no balance call when the key has its own limit");
+  });
+
+  it("turns failures into messages that are safe to show", async () => {
+    const or = await import("./openrouter-usage.ts");
+    handler = () => json({}, 401);
+    await assert.rejects(or.getOpenRouterUsage("or-user-3", "sk-or-key"), /Update it in Settings/);
+    handler = () => json({}, 500);
+    await assert.rejects(or.getOpenRouterUsage("or-user-3", "sk-or-key"), /could not report usage \(500\)/);
+  });
+});
+
 describe("disconnect", () => {
   it("asks OpenAI to revoke the refresh token, forgets the login, and still forgets it if OpenAI is unreachable", async () => {
     const store = memoryStore();

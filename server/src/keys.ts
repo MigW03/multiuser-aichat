@@ -2,6 +2,7 @@ import type { KeyHint, ProviderId } from "@mc/shared";
 import { disconnect, getAccessToken } from "./chatgpt.ts";
 import { supabaseLoginStore } from "./chatgpt-store.ts";
 import { decrypt, encrypt } from "./crypto.ts";
+import { forgetOpenRouterUsage } from "./openrouter-usage.ts";
 import { admin } from "./supabase.ts";
 
 // user_api_keys has RLS on and no client grants: only this server reads or writes it.
@@ -41,6 +42,7 @@ export async function getUserKey(userId: string, provider: ProviderId): Promise<
 
 export async function saveUserKey(userId: string, provider: ProviderId, apiKey: string): Promise<string> {
   const hint = apiKey.slice(-4);
+  if (provider === "openrouter") forgetOpenRouterUsage(userId); // a new key has its own numbers
   const { error } = await admin.from("user_api_keys").upsert({
     user_id: userId,
     provider,
@@ -54,5 +56,6 @@ export async function saveUserKey(userId: string, provider: ProviderId, apiKey: 
 
 export async function deleteUserKey(userId: string, provider: ProviderId): Promise<void> {
   if (provider === "chatgpt") return disconnect(supabaseLoginStore, userId);
+  if (provider === "openrouter") forgetOpenRouterUsage(userId);
   await admin.from("user_api_keys").delete().eq("user_id", userId).eq("provider", provider);
 }

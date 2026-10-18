@@ -216,6 +216,17 @@ export type UsageWindow = { label: string; usedPercent: number | null; resetsAt:
 export type UsageLimit = { name: string | null; reached: boolean | null; windows: UsageWindow[] };
 /** What ChatGPT says about the signed-in plan's limits. `main` is the ordinary limit, `extra` are model or feature specific ones. */
 export type ChatGptUsage = { plan: string | null; main: UsageLimit; extra: UsageLimit[]; fetchedAt: number };
+/**
+ * How much of an OpenRouter key is used, in USD credits. `budget` is the cap that stops requests first (null: the key
+ * has no cap, so only spend is shown). `credits` is the account balance, known only when OpenRouter allows reading it.
+ * `resetsAt` is a Unix time in seconds.
+ */
+export type OpenRouterUsage = {
+  budget: { limit: number; spent: number; remaining: number | null; resetInterval: string | null; resetsAt: number | null } | null;
+  spend: { day: number; week: number; month: number; total: number };
+  credits: { total: number; used: number } | null;
+  fetchedAt: number;
+};
 export type ChatGptPollResponse ={ status: "pending" } | { status: "connected"; hint: string };
 export type ApiError = { error: string };
 

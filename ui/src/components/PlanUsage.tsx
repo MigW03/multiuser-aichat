@@ -1,10 +1,10 @@
-import type { ChatGptUsage, UsageLimit } from "@mc/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatGptUsage, OpenRouterUsage, ProviderId, UsageLimit } from "@mc/shared";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api.ts";
 import { Button } from "./kit.tsx";
 
-// How much of the signed-in ChatGPT plan's limits is used. Fetched from ChatGPT through our server and only ever
-// shown to the plan's owner: in Settings as bars, and in the chat as a small ring beside the model picker.
+// How much of the signed-in ChatGPT plan, or of the OpenRouter key's budget, is used. Fetched through our server and
+// only ever shown to the account's owner: in Settings as bars, and in the chat as a small ring beside the model picker.
 
 const POLL_MS = 60_000;
 
@@ -20,22 +20,28 @@ export function resetsIn(unixSeconds: number): string {
 
 const messageOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
 
-export function usePlanUsage(enabled: boolean) {
-  const [usage, setUsage] = useState<ChatGptUsage | null>(null);
+const money = (n: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: n >= 100 ? 0 : 2 }).format(n);
+
+/** Fetches a usage report now and every minute while `enabled`. `load(true)` skips the server's short cache. */
+function useUsage<T>(fetcher: (refresh: boolean) => Promise<T>, enabled: boolean) {
+  const [usage, setUsage] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (refresh: boolean) => {
-    setBusy(true);
-    try {
-      setUsage(await api.chatgptUsage(refresh));
-      setError(null);
-    } catch (err) {
-      setError(messageOf(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (refresh: boolean) => {
+      setBusy(true);
+      try {
+        setUsage(await fetcher(refresh));
+        setError(null);
+      } catch (err) {
+        setError(messageOf(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fetcher],
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -46,6 +52,33 @@ export function usePlanUsage(enabled: boolean) {
 
   return { usage, error, busy, load };
 }
+
+const fetchChatGpt = (refresh: boolean) => api.chatgptUsage(refresh);
+const fetchOpenRouter = (refresh: boolean) => api.openrouterUsage(refresh);
+const usePlanUsage = (enabled: boolean) => useUsage<ChatGptUsage>(fetchChatGpt, enabled);
+const useOpenRouterUsage = (enabled: boolean) => useUsage<OpenRouterUsage>(fetchOpenRouter, enabled);
+
+type State<T> = ReturnType<typeof useUsage<T>>;
+
+function Bar({ percent, label }: { percent: number; label: string }) {
+  return (
+    <div className="usage-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label={label}>
+      <div className={`usage-fill ${percent >= 90 ? "high" : ""}`} style={{ width: `${Math.min(100, percent)}%` }} />
+    </div>
+  );
+}
+
+function RefreshButton({ busy, load }: { busy: boolean; load: (refresh: boolean) => Promise<void> }) {
+  return (
+    <div>
+      <Button size="sm" variant="ghost" busy={busy} onClick={() => void load(true)}>
+        Refresh
+      </Button>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ ChatGPT plan
 
 function UsageRows({ limit }: { limit: UsageLimit }) {
   return (
@@ -62,18 +95,14 @@ function UsageRows({ limit }: { limit: UsageLimit }) {
             <b>{w.label}</b> · {w.usedPercent === null ? "usage unknown" : `${Math.round(w.usedPercent)}% used`}
             {w.resetsAt !== null && <span className="muted"> · resets {resetsIn(w.resetsAt)}</span>}
           </div>
-          {w.usedPercent !== null && (
-            <div className="usage-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(w.usedPercent)} aria-label={`${w.label} usage`}>
-              <div className={`usage-fill ${w.usedPercent >= 90 ? "high" : ""}`} style={{ width: `${w.usedPercent}%` }} />
-            </div>
-          )}
+          {w.usedPercent !== null && <Bar percent={w.usedPercent} label={`${w.label} usage`} />}
         </div>
       ))}
     </>
   );
 }
 
-function UsageBody({ usage, error, busy, load }: ReturnType<typeof usePlanUsage>) {
+function ChatGptBody({ usage, error, busy, load }: State<ChatGptUsage>) {
   if (error) return <div className="small muted">Usage unavailable: {error}</div>;
   if (!usage) return <div className="small muted">Checking your plan usage…</div>;
   return (
@@ -84,18 +113,9 @@ function UsageBody({ usage, error, busy, load }: ReturnType<typeof usePlanUsage>
         <UsageRows key={l.name ?? i} limit={l} />
       ))}
       {usage.main.windows.length === 0 && usage.extra.length === 0 && <div className="small muted">ChatGPT did not report any limits.</div>}
-      <div>
-        <Button size="sm" variant="ghost" busy={busy} onClick={() => void load(true)}>
-          Refresh
-        </Button>
-      </div>
+      <RefreshButton busy={busy} load={load} />
     </div>
   );
-}
-
-/** The usage block in Settings, under the connected account. */
-export function PlanUsage() {
-  return <UsageBody {...usePlanUsage(true)} />;
 }
 
 /** The most used of the ordinary limit's windows: the one that will stop the user first. */
@@ -104,26 +124,82 @@ function mostUsed(usage: ChatGptUsage | null): number | null {
   return values.length ? Math.max(...values) : null;
 }
 
+// ------------------------------------------------------------------ OpenRouter
+
+/** "daily" -> "every day (UTC)". Only the intervals OpenRouter documents get a nicer name. */
+const intervalText = (i: string) => ({ daily: "every day (UTC)", weekly: "every week (UTC)", monthly: "every month (UTC)" })[i] ?? i;
+
+function OpenRouterBody({ usage, error, busy, load }: State<OpenRouterUsage>) {
+  if (error) return <div className="small muted">Usage unavailable: {error}</div>;
+  if (!usage) return <div className="small muted">Checking your key usage…</div>;
+  const { budget, spend, credits } = usage;
+  const budgetPercent = budget ? (budget.spent / budget.limit) * 100 : null;
+  const creditsPercent = credits && credits.total > 0 ? (credits.used / credits.total) * 100 : null;
+  return (
+    <div className="usage">
+      <div className="small muted">Your OpenRouter key · usage from OpenRouter</div>
+      {budget && budgetPercent !== null ? (
+        <div className="usage-row">
+          <div className="small">
+            <b>Key limit</b> · {money(budget.spent)} of {money(budget.limit)} used
+            {budget.resetsAt !== null ? <span className="muted"> · resets {resetsIn(budget.resetsAt)}</span> : budget.resetInterval && <span className="muted"> · resets {intervalText(budget.resetInterval)}</span>}
+          </div>
+          <Bar percent={budgetPercent} label="Key limit usage" />
+        </div>
+      ) : (
+        <div className="small muted">This key has no spending limit.</div>
+      )}
+      {credits && creditsPercent !== null && (
+        <div className="usage-row">
+          <div className="small">
+            <b>Account credits</b> · {money(Math.max(0, credits.total - credits.used))} left of {money(credits.total)}
+          </div>
+          <Bar percent={creditsPercent} label="Account credits used" />
+        </div>
+      )}
+      <div className="small">
+        <b>Spent</b> · {money(spend.day)} today · {money(spend.week)} this week · {money(spend.month)} this month · {money(spend.total)} in total
+      </div>
+      <RefreshButton busy={busy} load={load} />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Settings
+
+/** The ChatGPT usage block in Settings, under the connected account. */
+export function PlanUsage() {
+  return <ChatGptBody {...usePlanUsage(true)} />;
+}
+
+/** The OpenRouter usage block in Settings, under the saved key. */
+export function OpenRouterKeyUsage() {
+  return <OpenRouterBody {...useOpenRouterUsage(true)} />;
+}
+
+// ------------------------------------------------------------------ the ring
+
 const R = 8;
 const CIRC = 2 * Math.PI * R;
 
-/** A small ring beside the model picker that fills as the ChatGPT plan's limit is used. Click for the details. */
-export function UsageRing({ enabled, answering }: { enabled: boolean; answering: boolean }) {
-  const state = usePlanUsage(enabled);
-  // An answer just finished, so the plan has been used a bit more: look again right away.
+/**
+ * A small free-standing ring that fills as the limit is used, with the details in a panel that stays open while the
+ * pointer is over it. `used` null draws the empty track only (nothing to measure against).
+ */
+function Ring({ used, reached, label, answering, reload, children }: { used: number | null; reached: boolean; label: string; answering: boolean; reload: () => void; children: ReactNode }) {
+  // An answer just finished, so something was used: look again right away.
   const wasAnswering = useRef(false);
-  const { load } = state;
   useEffect(() => {
-    if (enabled && wasAnswering.current && !answering) void load(true);
+    if (wasAnswering.current && !answering) reload();
     wasAnswering.current = answering;
-  }, [answering, enabled, load]);
+  }, [answering, reload]);
+
   // The details open while the pointer (or keyboard focus) is on the ring, and close a moment after it leaves,
   // so the pointer can cross the small gap into the panel. A tap opens it on touch screens.
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hovered = useRef(false);
   useEffect(() => () => clearTimeout(closeTimer.current), []);
-  if (!enabled) return null;
   const show = () => {
     clearTimeout(closeTimer.current);
     setOpen(true);
@@ -146,10 +222,7 @@ export function UsageRing({ enabled, answering }: { enabled: boolean; answering:
     if (!hovered.current && !e.currentTarget.contains(e.relatedTarget as Node | null)) hideSoon();
   };
 
-  const used = mostUsed(state.usage);
-  const reached = state.usage?.main.reached === true || (used !== null && used >= 100);
   const tone = reached ? "full" : used !== null && used >= 80 ? "warn" : "";
-  const label = used === null ? (state.error ? "Plan usage unavailable" : "Plan usage") : `Plan usage: ${Math.round(used)}% used`;
   return (
     <div className="menu-wrap" onMouseEnter={enter} onMouseLeave={leave} onFocus={show} onBlur={blur} onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
       <button type="button" className="usage-ring-btn" aria-label={label} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -171,10 +244,43 @@ export function UsageRing({ enabled, answering }: { enabled: boolean; answering:
         </svg>
       </button>
       {open && (
-        <div className="popover above end usage-popover" role="dialog" aria-label="Plan usage">
-          <UsageBody {...state} />
+        <div className="popover above end usage-popover" role="dialog" aria-label="Usage">
+          {children}
         </div>
       )}
     </div>
   );
+}
+
+function ChatGptRing({ answering }: { answering: boolean }) {
+  const state = usePlanUsage(true);
+  const { load } = state;
+  const used = mostUsed(state.usage);
+  const label = used === null ? (state.error ? "Plan usage unavailable" : "Plan usage") : `Plan usage: ${Math.round(used)}% used`;
+  return (
+    <Ring used={used} reached={state.usage?.main.reached === true || (used !== null && used >= 100)} label={label} answering={answering} reload={() => void load(true)}>
+      <ChatGptBody {...state} />
+    </Ring>
+  );
+}
+
+function OpenRouterRing({ answering }: { answering: boolean }) {
+  const state = useOpenRouterUsage(true);
+  const { load } = state;
+  const u = state.usage;
+  // The key's own cap if it has one, else the account balance if OpenRouter lets us read it, else nothing to measure.
+  const used = u?.budget ? (u.budget.spent / u.budget.limit) * 100 : u?.credits && u.credits.total > 0 ? (u.credits.used / u.credits.total) * 100 : null;
+  const label = used !== null ? `OpenRouter usage: ${Math.round(used)}% used` : u ? `OpenRouter spend: ${money(u.spend.total)}` : state.error ? "OpenRouter usage unavailable" : "OpenRouter usage";
+  return (
+    <Ring used={used} reached={used !== null && used >= 100} label={label} answering={answering} reload={() => void load(true)}>
+      <OpenRouterBody {...state} />
+    </Ring>
+  );
+}
+
+/** The ring beside the model picker for the provider in use. Providers with no usage report show nothing. */
+export function UsageRing({ provider, answering }: { provider: ProviderId | null; answering: boolean }) {
+  if (provider === "chatgpt") return <ChatGptRing answering={answering} />;
+  if (provider === "openrouter") return <OpenRouterRing answering={answering} />;
+  return null;
 }

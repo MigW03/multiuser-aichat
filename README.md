@@ -34,6 +34,34 @@ The desktop app loads the web dev server, so it always needs the web app running
 
 For the desktop app from a production build: `npm run build`, then `npm start -w desktop`.
 
+## Desktop app: installers
+
+The installed app is the same web build, packaged with electron-builder. It talks to the live server
+(`https://multiuser-chat-server.fly.dev`, baked in at build time; override with `DESKTOP_SERVER_URL`), not localhost.
+Build from the repo root (needs `.env.local` for the Supabase values):
+
+| What | Command | Output |
+| --- | --- | --- |
+| Mac disk image | `npm run dist:mac -w desktop` | `desktop/release/Multiuser Chat-<version>-<arch>.dmg` |
+| Windows installer (not tested yet) | `npm run dist:win -w desktop` | `desktop/release/` |
+| Unpacked app for a quick look | `npm run pack -w desktop` | `desktop/release/` |
+
+The web build for the installer goes to `desktop/web-dist`, so `web/dist` (the website) is untouched. Set
+`DESKTOP_WEB_URL` (https) at build time to make "Copy link to chat" give website links; unset, it gives
+`multiuserchat://open#/...` links that only work for people who have the desktop app.
+
+**Not signed yet.** The Mac app is ad-hoc signed only (no Apple Developer ID, no notarization). Opening a downloaded
+copy shows "Apple could not verify..." or "is damaged": right-click the app > Open, or System Settings > Privacy &
+Security > Open Anyway, or run `xattr -dr com.apple.quarantine "/Applications/Multiuser Chat.app"` once. A copy you
+built yourself opens without that. Windows shows a SmartScreen "unknown publisher" warning the same way.
+
+**Email links.** The app registers `multiuserchat://`. Confirmation and password-reset emails sent from the desktop
+app point to `multiuserchat://auth`, which opens the app and signs in. Add `multiuserchat://auth` to Supabase >
+Authentication > URL Configuration > Redirect URLs. Until it is listed, Supabase falls back to the Site URL (the
+website): the link still confirms the account and you log in on the desktop app with your password. Invite links
+point at the website; in the desktop app use **Join with a link** and paste the link. Deep links only work in an
+installed build, not in `npm run dev:desktop`.
+
 ## Deploy the web app (Vercel)
 
 The web app is a static Vite build; the server (`server/`) is a separate Node service and does not go on Vercel.

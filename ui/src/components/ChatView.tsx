@@ -6,6 +6,7 @@ import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
+import { shareBaseUrl } from "../config.ts";
 import { supabase } from "../supabase.ts";
 import { Composer, type OutgoingMessage, type ReplyTarget } from "./Composer.tsx";
 import { DeleteChatDialog, RenameDialog, SummarizeDialog } from "./Dialogs.tsx";
@@ -145,7 +146,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     { label: "Rename", icon: <Pencil size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => setDialog("rename") },
     ...(!project ? [{ label: "Invite someone", icon: <UserPlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openInvite({ kind: "chat", chatId: chat.id }) }] : []),
     ...(project
-      ? [{ label: "Copy link to chat", icon: <Link2 size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => void copyText(`${location.origin}${location.pathname}#/p/${project.id}/c/${chat.id}`).then((ok) => toast.push(ok ? "Link copied" : "Could not copy")) }]
+      ? [{ label: "Copy link to chat", icon: <Link2 size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => void copyText(`${shareBaseUrl()}#/p/${project.id}/c/${chat.id}`).then((ok) => toast.push(ok ? "Link copied" : "Could not copy")) }]
       : []),
     ...(canDelete ? ["divider" as const, { label: "Delete chat", danger: true, icon: <Trash2 size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => setDialog("delete") }] : []),
   ];

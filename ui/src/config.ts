@@ -23,5 +23,22 @@ export const configError = !config.supabaseUrl || !config.supabaseAnonKey
     ? "VITE_SERVER_URL is not set for this deploy. Add it in the host's environment variables (the chat server's https address) and redeploy."
     : null;
 
+/** Set by the desktop app's preload script. Absent in a browser. */
+type DesktopBridge = { platform: string; authRedirect?: string; shareBase?: string };
+const desktop = (globalThis as { desktop?: DesktopBridge }).desktop;
+
+/**
+ * Where the links in confirmation and password-reset emails come back to. In a browser that is this page; in the
+ * desktop app (whose own address, app://desktop, means nothing outside it) it is the app's multiuserchat:// link.
+ */
+export const authRedirectUrl = (): string => desktop?.authRedirect ?? `${location.origin}${location.pathname}`;
+
+/** The address a "copy link" button builds on, followed by #/p/... In the desktop app, VITE_WEB_URL (if set) else its own link. */
+export const shareBaseUrl = (): string => {
+  const web = (env.VITE_WEB_URL as string | undefined)?.trim().replace(/\/$/, "");
+  if (desktop) return web || desktop.shareBase || `${location.origin}${location.pathname}`;
+  return `${location.origin}${location.pathname}`;
+};
+
 /** Shown in the app. The product name is not final. */
 export const APP_NAME = "Multiuser Chat";

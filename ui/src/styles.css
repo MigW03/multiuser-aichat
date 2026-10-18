@@ -364,7 +364,7 @@ h1, h2, h3, p { margin: 0; }
 .error-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .summary-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .mention { color: var(--p-text); font-weight: 600; background: var(--t12); border-radius: 4px; padding: 0 3px; }
-.quoted { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-left: 2px solid var(--t40); border-radius: 4px; color: var(--muted-fg); font: var(--text-small); }
+.quoted { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-left: 2px solid var(--t40); color: var(--muted-fg); font: var(--text-small); }
 .quoted b { color: var(--fg); font-weight: 600; margin-right: 2px; }
 .msg-note { font: var(--text-small); }
 .danger-text { color: var(--danger); }

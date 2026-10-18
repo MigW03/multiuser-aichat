@@ -1,3 +1,4 @@
+import type { ProviderId } from "@mc/shared";
 import { notifyChanged } from "../data.tsx";
 import { supabase } from "../supabase.ts";
 
@@ -8,6 +9,20 @@ export async function setPinned(chatId: string, userId: string, pinned: boolean)
     : await supabase.from("chat_pins").delete().eq("user_id", userId).eq("chat_id", chatId);
   if (!error) notifyChanged();
   return !error;
+}
+
+/** Stars or unstars a model for the signed-in person only. RLS limits every row to its owner. */
+export async function setFavoriteModel(userId: string, provider: ProviderId, model: string, starred: boolean): Promise<boolean> {
+  const { error } = starred
+    ? await supabase.from("user_favorite_models").upsert({ user_id: userId, provider, model }, { onConflict: "user_id,provider,model", ignoreDuplicates: true })
+    : await supabase.from("user_favorite_models").delete().eq("user_id", userId).eq("provider", provider).eq("model", model);
+  return !error;
+}
+
+export async function fetchFavoriteModels(userId: string, provider: ProviderId): Promise<string[]> {
+  const { data, error } = await supabase.from("user_favorite_models").select("model").eq("user_id", userId).eq("provider", provider).order("created_at");
+  if (error || !data) throw new Error("Could not load your starred models.");
+  return data.map((r) => r.model);
 }
 
 export async function copyText(text: string): Promise<boolean> {

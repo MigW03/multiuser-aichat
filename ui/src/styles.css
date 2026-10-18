@@ -411,7 +411,14 @@ h1, h2, h3, p { margin: 0; }
 .tab { height: 30px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; font: var(--text-small); font-weight: 600; color: var(--muted-fg); }
 .tab.on { color: var(--p-text); border-bottom-color: var(--p); }
 .model-popover .search-field { margin: 8px; height: 42px; }
-.model-list { overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; }
+/* The popover is a capped flex column: without this the search box and tabs shrink as the list grows. */
+.model-popover > :not(.model-list) { flex-shrink: 0; }
+.model-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; }
+.model-row { display: flex; align-items: center; gap: 2px; }
+.model-row .model-item { flex: 1; min-width: 0; }
+.star-btn { width: 28px; height: 28px; }
+.star-btn.on { color: var(--p-text); }
+.model-group { padding: 8px 8px 4px; }
 .model-item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 7px; background: none; text-align: left; font: var(--text-row); }
 .model-item:hover { background: var(--hover-row); }
 .model-item.selected { background: var(--t8); color: var(--p-text); }

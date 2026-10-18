@@ -1,31 +1,37 @@
 // Types and constants shared by the server and both clients.
 
-export const PROVIDER_IDS = ["anthropic", "openai", "openrouter"] as const;
+export const PROVIDER_IDS = ["anthropic", "openai", "openrouter", "chatgpt"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  chatgpt: "ChatGPT plan",
 };
 
-/** Where a user creates an API key for each provider. */
+/** Where a user creates an API key for each provider. ChatGPT plan has no key: the user signs in instead. */
 export const PROVIDER_KEY_URLS: Record<ProviderId, string> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   openai: "https://platform.openai.com/api-keys",
   openrouter: "https://openrouter.ai/keys",
+  chatgpt: "https://chatgpt.com/",
 };
 
-/** Where a user adds credit, for the "out of credit" error. */
+/** Where a user adds credit (or checks plan usage), for the "out of credit" error. */
 export const PROVIDER_BILLING_URLS: Record<ProviderId, string> = {
   anthropic: "https://console.anthropic.com/settings/billing",
   openai: "https://platform.openai.com/settings/organization/billing/overview",
   openrouter: "https://openrouter.ai/settings/credits",
+  chatgpt: "https://chatgpt.com/",
 };
 
 export function isProvider(value: unknown): value is ProviderId {
   return typeof value === "string" && (PROVIDER_IDS as readonly string[]).includes(value);
 }
+
+/** Providers the user connects by signing in to their own subscription, not by pasting an API key. */
+export const isPlanProvider = (provider: ProviderId): boolean => provider === "chatgpt";
 
 // Lowest to highest. Which of these a model offers comes from the provider (see ModelInfo.reasoning).
 export const REASONING_LEVELS = ["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -183,6 +189,14 @@ export type KeyHint = { provider: ProviderId; hint: string };
 export type KeysResponse = { keys: KeyHint[] };
 export type SaveKeyRequest = { apiKey: string };
 export type ModelsResponse = { models: ModelInfo[] };
+/** ChatGPT plan sign-in (device flow): the user types `userCode` at `verificationUri`, the client polls with `flow`. */
+export type ChatGptStartResponse = { flow: string; userCode: string; verificationUri: string; intervalSeconds: number; expiresInSeconds: number };
+/** How much of one rate limit window a ChatGPT plan has used. `resetsAt` is a Unix time in seconds. */
+export type UsageWindow = { label: string; usedPercent: number | null; resetsAt: number | null };
+export type UsageLimit = { name: string | null; reached: boolean | null; windows: UsageWindow[] };
+/** What ChatGPT says about the signed-in plan's limits. `main` is the ordinary limit, `extra` are model or feature specific ones. */
+export type ChatGptUsage = { plan: string | null; main: UsageLimit; extra: UsageLimit[]; fetchedAt: number };
+export type ChatGptPollResponse ={ status: "pending" } | { status: "connected"; hint: string };
 export type ApiError = { error: string };
 
 export type InviteScope = "project" | "chat";

@@ -61,6 +61,12 @@ chat invite links and the per-chat model columns. Existing chats become "Your ch
   neither is one from a person without a key. Summaries run in the same queue with the requester's key.
 - **API keys** are sent once to `PUT /api/keys/:provider`, checked with the provider, encrypted with AES-256-GCM and
   stored in `user_api_keys`, which only the server can read. Clients only ever see the last 4 characters.
+- **ChatGPT plan** (unofficial): instead of a key, a user can sign in to their own ChatGPT subscription with the device
+  code flow the Codex CLI uses (`server/src/chatgpt.ts`). The tokens are encrypted the same way and stored in
+  `user_chatgpt_auth` (server-only). Refresh tokens rotate, so one server at a time refreshes, claimed with a lease
+  row. Requests go to ChatGPT's Codex backend, not the OpenAI API. It is not an official integration for apps like
+  this one: it can break at any time and may go against OpenAI's terms, and the sign-in screen says so. Each run
+  uses the plan of the person who sent the message, never another member's.
 
 ## Security notes
 

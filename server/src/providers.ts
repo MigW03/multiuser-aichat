@@ -3,9 +3,16 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isReasoning, PROVIDER_LABELS, REASONING_LEVELS, type ModelInfo, type ProviderId, type Reasoning } from "@mc/shared";
 import type { LanguageModel } from "ai";
+import { chatgptModel, listChatGptModels } from "./chatgpt.ts";
+import { ProviderError } from "./provider-error.ts";
 
+export { ProviderError };
+
+/** `apiKey` is the credential from getUserKey: an API key, or for ChatGPT plan the current access token. */
 export function languageModel(provider: ProviderId, apiKey: string, modelId: string): LanguageModel {
   switch (provider) {
+    case "chatgpt":
+      return chatgptModel(apiKey, modelId);
     case "openrouter":
       return createOpenAICompatible({ name: "openrouter", baseURL: "https://openrouter.ai/api/v1", apiKey })(modelId);
     case "anthropic":
@@ -24,9 +31,6 @@ export function reasoningOptions(provider: ProviderId, level: Reasoning | null) 
   }
   return { reasoning: level === "off" ? ("none" as const) : level === "on" ? ("medium" as const) : level };
 }
-
-/** A problem the user can act on (bad key, provider down). The message is safe to show. */
-export class ProviderError extends Error {}
 
 async function getJson(url: string, headers: Record<string, string>, provider: ProviderId) {
   let res: Response;
@@ -108,6 +112,7 @@ const OPENAI_NOT_CHAT = /(audio|realtime|transcribe|tts|image|embedding|moderati
 
 /** The models this key can use. Also works as the key check for Anthropic and OpenAI. */
 export async function listModels(provider: ProviderId, apiKey: string): Promise<ModelInfo[]> {
+  if (provider === "chatgpt") return listChatGptModels(apiKey);
   if (provider === "anthropic") {
     const json = await getJson("https://api.anthropic.com/v1/models?limit=1000", { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, provider);
     return ((json.data ?? []) as AnthropicModel[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id, reasoning: anthropicLevels(m.capabilities) }));
@@ -133,6 +138,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
 
 /** OpenRouter's model list is public, so it can't tell whether a key works; /key can. */
 export async function verifyKey(provider: ProviderId, apiKey: string): Promise<void> {
+  if (provider === "chatgpt") throw new ProviderError("ChatGPT plan is connected by signing in, not with a key.");
   if (provider === "openrouter") {
     await getJson("https://openrouter.ai/api/v1/key", { authorization: `Bearer ${apiKey}` }, provider);
     return;

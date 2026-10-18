@@ -1,17 +1,30 @@
 import type { KeyHint, ProviderId } from "@mc/shared";
+import { disconnect, getAccessToken } from "./chatgpt.ts";
+import { supabaseLoginStore } from "./chatgpt-store.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { admin } from "./supabase.ts";
 
 // user_api_keys has RLS on and no client grants: only this server reads or writes it.
 // Keys are write-only from the client's point of view; the API returns the last 4 characters at most.
+// A ChatGPT plan is not a key: its sign-in lives in user_chatgpt_auth (see chatgpt.ts) and shows up here as the
+// "key" of the provider "chatgpt", whose hint is a masked account label.
 
 export async function listKeyHints(userId: string): Promise<KeyHint[]> {
-  const { data, error } = await admin.from("user_api_keys").select("provider, key_hint").eq("user_id", userId);
-  if (error) throw new Error("Could not load your keys");
-  return (data ?? []).map((r) => ({ provider: r.provider as ProviderId, hint: r.key_hint as string }));
+  const [keys, plan] = await Promise.all([
+    admin.from("user_api_keys").select("provider, key_hint").eq("user_id", userId),
+    admin.from("user_chatgpt_auth").select("hint").eq("user_id", userId).maybeSingle(),
+  ]);
+  if (keys.error) throw new Error("Could not load your keys");
+  // A broken ChatGPT plan lookup (for example the migration is not applied yet) must not hide the API keys.
+  if (plan.error) console.error("[keys] could not read the ChatGPT plan sign-in:", plan.error.message);
+  const hints = (keys.data ?? []).map((r) => ({ provider: r.provider as ProviderId, hint: r.key_hint as string }));
+  if (plan.data) hints.push({ provider: "chatgpt", hint: plan.data.hint as string });
+  return hints;
 }
 
+/** The credential to call `provider` with: an API key, or for ChatGPT plan a fresh access token. Null when not connected. */
 export async function getUserKey(userId: string, provider: ProviderId): Promise<string | null> {
+  if (provider === "chatgpt") return getAccessToken(supabaseLoginStore, userId);
   const { data } = await admin
     .from("user_api_keys")
     .select("ciphertext")
@@ -40,5 +53,6 @@ export async function saveUserKey(userId: string, provider: ProviderId, apiKey: 
 }
 
 export async function deleteUserKey(userId: string, provider: ProviderId): Promise<void> {
+  if (provider === "chatgpt") return disconnect(supabaseLoginStore, userId);
   await admin.from("user_api_keys").delete().eq("user_id", userId).eq("provider", provider);
 }

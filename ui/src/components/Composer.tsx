@@ -5,6 +5,7 @@ import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
 import { useModelReasoning } from "../lib/models.ts";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
+import { UsageRing } from "./PlanUsage.tsx";
 import { Avatar, Button, ICON, ICON_SM, STROKE } from "./kit.tsx";
 
 export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null };
@@ -144,6 +145,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
           )}
           {status}
           <span className="grow" />
+          <UsageRing enabled={choice?.provider === "chatgpt"} answering={canStop} />
           <ModelPicker choice={choice} onChoose={onModel} />
           <ReasoningPicker levels={thinking.levels} value={thinking.effective} onChange={onReasoning} disabled={!choice} />
         </div>

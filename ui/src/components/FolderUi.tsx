@@ -54,9 +54,14 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
     <section className="side-card folder-card" aria-label="Files">
       <header className="side-card-head">
         <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-        <b className="grow truncate">Files</b>
-        <FolderInfo />
-        <span className="side-card-status small muted">
+        <span className="side-card-title grow">
+          <b className="truncate">Files</b>
+          <FolderInfo />
+        </span>
+        <span
+          className="side-card-status small muted"
+          title={folder.data.online ? "Online: the host's app is running, so the files can be read." : "Offline: the host's app is closed, so the files can't be read right now."}
+        >
           <StatusDot on={folder.data.online} />
           {folder.data.online ? "Online" : "Offline"}
         </span>

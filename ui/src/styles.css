@@ -488,6 +488,7 @@ h1, h2, h3, p { margin: 0; }
 .folder-card { flex: 1; }
 .side-card-head { display: flex; align-items: center; gap: 8px; height: 40px; flex: none; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .side-card-head > svg { flex: none; color: var(--muted-fg); }
+.side-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .side-card-status { display: inline-flex; align-items: center; gap: 5px; flex: none; }
 .icon-btn.sm { width: 26px; height: 26px; }
 .side-card-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }

@@ -106,6 +106,7 @@ in the database and picked up again at boot, but two machines would both run the
 | `KEY_ENCRYPTION_SECRET` | `openssl rand -base64 32`; losing or changing it makes stored API keys unreadable |
 | `ALLOWED_ORIGINS` | Comma-separated web origins, e.g. `https://chat.example.com,app://desktop` |
 | `APP_URL` | The web app's public address (https), used in invite links |
+| `SERVER_URL` | Optional. This server's own public address (https), the redirect for OAuth sign-in to remote MCP servers. Unset: OAuth sign-in is off |
 | `RESEND_API_KEY`, `MAIL_FROM` | Optional, to email invites |
 
 `PORT`, `HOST` and `TRUST_PROXY` are already set in `fly.toml`. The web app gets the server's address at build time

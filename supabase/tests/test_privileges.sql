@@ -68,6 +68,13 @@ begin
   -- the invites table and the key table are not readable by clients at all
   if has_table_privilege('authenticated', 'public.invites', 'select') then raise exception 'invites readable by clients'; end if;
   if has_table_privilege('authenticated', 'public.user_api_keys', 'select') then raise exception 'user_api_keys readable by clients'; end if;
+  -- remote MCP servers (header values, OAuth tokens): no client access of any kind
+  if has_table_privilege('authenticated', 'public.user_mcp_servers', 'select')
+     or has_table_privilege('authenticated', 'public.user_mcp_servers', 'insert')
+     or has_table_privilege('authenticated', 'public.user_mcp_servers', 'update')
+     or has_table_privilege('authenticated', 'public.user_mcp_servers', 'delete') then
+    raise exception 'user_mcp_servers accessible by clients';
+  end if;
   -- ChatGPT plan sign-in tokens: no client access of any kind
   if has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'select')
      or has_table_privilege('authenticated', 'public.user_chatgpt_auth', 'insert')

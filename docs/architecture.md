@@ -194,9 +194,43 @@ chat server only relays.
   and confirms its exact command, per-server and per-tool switches, small tool lists, fenced results, call limits, tools
   shown under the answer. What a tool returns lands in the chat, so everyone in that chat can read it; Settings and the
   confirm window say so. Keys belong in the environment field: the command itself is stored and shown as typed.
-- **Next:** remote servers over HTTP with headers (and whether they should run on the chat server so they also work in
-  the web app: needs a table and a decision), then OAuth (opencode's flow), then polish (list-changed, reconnect,
-  resources and prompts).
+- **Next:** polish (tools list-changed, reconnect button for local servers, resources and prompts, importing a config file).
+
+### Remote MCP servers (second PR, built 2026-10-19)
+
+Tool servers at an https address, called by the chat server for the person who added them, so they work in the web and
+desktop apps alike and when the person's computer is off. Same rules as local ones: the AI uses the asker's own servers
+only, on its own initiative, with no per-call approval; results are fenced as data. Settings > MCP servers shows two
+sections: Remote servers (everywhere) and On this computer (desktop).
+
+- **Storage** (migration 0014, `user_mcp_servers`): like `user_api_keys`, RLS on with no policies and no client grants, so
+  only the server reads or writes it. A header value and the OAuth blob (client registration, tokens, PKCE verifier) are
+  encrypted with the same AES-256-GCM key as AI keys and write-only: the page gets name, address, status, tool list and the
+  last 4 characters of a header value. At most 10 per person (a trigger with an advisory lock, so races can't exceed it),
+  names unique per person, https only.
+- **Connecting** (`mcp-remote.ts`): the MCP SDK client, Streamable HTTP with a fallback to the older SSE transport, 15 s to
+  connect, 60 s per call, one connection per server kept 5 minutes after the last use, tool lists and results cleaned
+  like local ones (`shared/mcp-text.ts`). Failures show one fixed sentence (could not reach, blocked address, token
+  rejected, sign in needed, not an MCP server); the server's own error text only goes to our log.
+- **What the server refuses** (`ssrf.ts`): not https, credentials in the address, localhost and local-looking names, and any
+  address that resolves to a private, loopback, link-local (cloud metadata), carrier-grade NAT, documentation, multicast or
+  reserved range, IPv4 and IPv6 (mapped, NAT64, 6to4, Teredo included). The name is resolved by our own lookup at every
+  new connection and the connection is refused if ANY answer is blocked, so a name that turns private after being added
+  (DNS rebinding) is caught too. Only redirects within the same origin are followed (the SDK's default), responses are
+  capped at 8 MB, and all OAuth discovery and token traffic goes through the same guarded fetch.
+- **Header sign-in:** one header (name and value) sent with every request; reserved headers (Host, Content-Type, Cookie,
+  the MCP session headers and others) and line breaks are refused.
+- **OAuth** (`mcp-oauth.ts`, opencode's flow done by the server so it is the same on web and desktop): discovery, dynamic
+  client registration, PKCE. Sign in returns the provider's page, which opens in a new tab (the desktop app hands https
+  pages to the system browser). The provider redirects to `GET /api/mcp/oauth/callback` on this server, which has no bearer
+  token, so the proof is a random single-use state tied to one row and valid 10 minutes; a reused, expired, unknown or
+  malformed state gets a plain page that repeats nothing from the request. Needs `SERVER_URL` (this server's public
+  address); without it OAuth is off and the Add dialog says so. Sign out and Remove delete the tokens.
+- **Run:** `run-queue.ts` asks `remoteMcp.state(asker)` (waits up to 8 s for connections that are starting) next to the
+  local tools; tool names stay `<server>_<tool>` and never replace a built-in or an earlier tool.
+- **Risk, in plain words:** our server holds the person's tokens, encrypted. A breach of the server (or of
+  `KEY_ENCRYPTION_SECRET`) would expose them, which local servers avoid by keeping secrets only on the person's computer.
+  A remote server sees everything the AI sends it. Prompt injection and chat visibility are as for local servers.
 
 Later: compaction, live co-editing (Yjs, Zed's model).
 

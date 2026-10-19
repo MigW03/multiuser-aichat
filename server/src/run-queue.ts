@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
 import { mcpRelay } from "./mcp.ts";
+import { remoteMcp } from "./mcp-servers.ts";
 import { folderAccess, relay } from "./folders.ts";
 import type { CallOptions, RelayRequest } from "./folder-relay.ts";
 import type { McpCallOptions, McpRequest } from "./mcp-relay.ts";
@@ -288,12 +289,18 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         }
       }
 
-      // The asker's own connected tools (MCP), in any chat: nobody else's tools are ever offered for this answer. A built-in
-      // tool keeps its name.
-      const state = mcpRelay.tools(authorId);
-      if (state.servers.length) {
-        const call = (req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts);
-        connected = { tools: mcpTools(call, state, { reserved: Object.keys(folder?.tools ?? {}), signal: controller.signal, used: mcpUsed }), state };
+      // The asker's own connected tools (MCP), in any chat: nobody else's tools are ever offered for this answer. Local servers
+      // run on their computer (their desktop app answers); remote ones are called from here. A built-in tool keeps its name.
+      const localState = mcpRelay.tools(authorId);
+      const remoteState = await remoteMcp.state(authorId).catch((e) => {
+        console.error("[run] remote MCP tools unavailable:", e instanceof Error ? e.message : e);
+        return { servers: [] } as McpState;
+      });
+      if (localState.servers.length || remoteState.servers.length) {
+        const reserved = Object.keys(folder?.tools ?? {});
+        const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
+        const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
+        connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
         if (runSeconds < LOCK_SECONDS_EDIT) {
           runSeconds = LOCK_SECONDS_EDIT;
           await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);

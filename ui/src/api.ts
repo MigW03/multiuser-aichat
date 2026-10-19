@@ -12,6 +12,9 @@ import type {
   OpenRouterUsage,
   InvitePreview,
   KeysResponse,
+  McpRemoteAuthInput,
+  McpRemoteList,
+  McpRemoteServer,
   ModelsResponse,
   PendingInvite,
   ProviderId,
@@ -55,6 +58,15 @@ export type InviteRow = Omit<PendingInvite, "token"> & { link: string };
 export type InviteCreated = { id: string; link: string; expires_at: string; emailed: boolean };
 
 export const api = {
+  // Remote MCP servers (connected tools the chat server calls for you; secrets are write-only)
+  mcpServers: () => call<McpRemoteList>("GET", "/api/mcp/servers"),
+  mcpAdd: (body: { name: string; url: string; auth: McpRemoteAuthInput }) => call<McpRemoteServer>("POST", "/api/mcp/servers", body),
+  mcpSet: (id: string, body: { enabled?: boolean; tool?: { name: string; enabled: boolean } }) => call<McpRemoteServer>("PATCH", `/api/mcp/servers/${id}`, body),
+  mcpToken: (id: string, value: string) => call<McpRemoteServer>("PUT", `/api/mcp/servers/${id}/token`, { value }),
+  mcpDelete: (id: string) => call<{ ok: true }>("DELETE", `/api/mcp/servers/${id}`),
+  mcpRetry: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/retry`),
+  mcpSignIn: (id: string) => call<{ url: string | null }>("POST", `/api/mcp/servers/${id}/oauth/start`),
+  mcpSignOut: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/signout`),
   keys: () => call<KeysResponse>("GET", "/api/keys"),
   saveKey: (provider: ProviderId, apiKey: string) => call<{ hint: string }>("PUT", `/api/keys/${provider}`, { apiKey }),
   deleteKey: (provider: ProviderId) => call<{ ok: true }>("DELETE", `/api/keys/${provider}`),

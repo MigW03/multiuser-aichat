@@ -421,28 +421,7 @@ export type FolderResponse = { id: string; ok: true; result: unknown } | { id: s
 // server (/api/mcp-host) and reports which tools exist; the server checks the list again. Once a server is added and
 // on, the AI uses its tools without asking each time: the person decided when they added it.
 
-export const MCP_LIMITS = {
-  /** Servers per person, characters in a server name, tools handed to the AI in all. */
-  servers: 10,
-  nameChars: 32,
-  tools: 50,
-  toolNameChars: 64,
-  /** A tool's description (cut) and its input schema (a tool with a bigger one is left out), in characters. */
-  descriptionChars: 1_000,
-  schemaChars: 8_192,
-  /** One call: arguments the AI may send (JSON characters), result text kept, how long to wait for it. */
-  argChars: 100_000,
-  resultChars: 50_000,
-  callDefaultMs: 60_000,
-  /** Calls one AI answer may make, and calls one person's tools may take per ten minutes. */
-  runCalls: 25,
-  windowCalls: 120,
-  /** Adding a server: parts of the command line, characters in one, environment variables, characters in one value. */
-  commandParts: 32,
-  partChars: 500,
-  envVars: 20,
-  envValueChars: 2_000,
-} as const;
+export { MCP_LIMITS } from "./mcp-limits.ts";
 
 export type McpToolInfo = { name: string; description: string; inputSchema: Record<string, unknown> };
 /** What the host's app reports once a server is running: its name and the tools the host left switched on. */
@@ -450,6 +429,33 @@ export type McpServerState = { name: string; tools: McpToolInfo[] };
 export type McpState = { servers: McpServerState[] };
 /** What a tool returned, as text. `isError` is the tool's own error flag. */
 export type McpCallResult = { text: string; isError: boolean; truncated: boolean };
+
+// ---- Remote MCP servers: tool servers at an https address, called by the chat server for the person who added them, so
+// they work in the web and desktop apps alike. The server holds their sign-in (a header value or OAuth tokens), encrypted
+// and write-only: the page only gets this view.
+
+export type McpRemoteAuthInput = { kind: "none" } | { kind: "header"; name: string; value: string } | { kind: "oauth" };
+export type McpRemoteStatus = "connecting" | "ready" | "needs_sign_in" | "failed" | "off";
+export type McpToolView = { name: string; description: string; enabled: boolean; usable: boolean; note?: string };
+export type McpRemoteServer = {
+  id: string;
+  name: string;
+  url: string;
+  authKind: "none" | "header" | "oauth";
+  /** header: the header's name and the last 4 characters of its value. */
+  headerName?: string;
+  secretHint?: string;
+  enabled: boolean;
+  status: McpRemoteStatus;
+  /** One plain sentence when status is failed or needs_sign_in. */
+  error?: string;
+  tools: McpToolView[];
+};
+export type McpRemoteList = {
+  servers: McpRemoteServer[];
+  /** false when this chat server has no public address configured, so OAuth sign-in cannot work. */
+  oauthAvailable: boolean;
+};
 
 /** The one row the server keeps for a project's shared folder: a name and whether the host's app is serving it. Never the path. */
 export type ProjectFolder = { project_id: string; name: string; linked_by: string; linked_at: string; online: boolean };
@@ -478,3 +484,5 @@ const FLAGS: { kind: CommandFlag["kind"]; label: string; re: RegExp }[] = [
 export function classifyCommand(command: string): CommandFlag[] {
   return FLAGS.filter((f) => f.re.test(command)).map(({ kind, label }) => ({ kind, label }));
 }
+
+export * from "./mcp-text.ts";

@@ -2,7 +2,8 @@ import { FOLDER_LIMITS as L, type ChangePreview, type ExecResult } from "@mc/sha
 import { spawn } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { FolderError, isHiddenName, redactSecrets } from "./folder-fs.ts";
+import { cleanOutput, redactSecrets } from "@mc/shared";
+import { FolderError, isHiddenName } from "./folder-fs.ts";
 import { resolve, type Item } from "./folder-items.ts";
 
 // Shell commands the AI proposes. Every one is shown to the host and runs only after the host clicks Approve in this app
@@ -36,21 +37,7 @@ export function execEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.Process
   return { ...env, TERM: "dumb", CI: "1", NO_COLOR: "1", PAGER: "cat", GIT_PAGER: "cat", GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true", EDITOR: "true" };
 }
 
-/** Removes terminal escape sequences and control characters other than line breaks and tabs. */
-export function cleanOutput(text: string): string {
-  return (
-    text
-      // eslint-disable-next-line no-control-regex
-      .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "") // CSI sequences (colors, cursor moves)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "") // OSC sequences (titles, links)
-      .replaceAll("\r\n", "\n")
-      // eslint-disable-next-line no-control-regex
-      .replace(/\r(?!\n)/g, "\n")
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/g, "")
-  );
-}
+export { cleanOutput } from "@mc/shared";
 
 /** Keeps the start and the end of what a command printed. */
 class Tail {

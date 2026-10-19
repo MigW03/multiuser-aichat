@@ -30,6 +30,8 @@ export const env = {
   allowedOrigins,
   /** The web app's address, used in invite links (https://app.example.com or http://localhost:5173). */
   appUrl: (process.env.APP_URL?.trim() || allowedOrigins.find((o) => o.startsWith("http")) || "http://localhost:5173").replace(/\/$/, ""),
+  /** Optional: this server's own public address (https://chat.example.com), used as the OAuth redirect for remote MCP servers. Without it, OAuth sign-in is off. */
+  serverUrl: process.env.SERVER_URL?.trim().replace(/\/$/, "") || null,
   /** Optional: sends invite emails through Resend. Without it the link is shown to copy. */
   resendApiKey: process.env.RESEND_API_KEY?.trim() || null,
   mailFrom: process.env.MAIL_FROM?.trim() || null,
@@ -42,5 +44,8 @@ if (!env.supabaseUrl.startsWith("https://") && !env.supabaseUrl.startsWith("http
 }
 if (!/^https:\/\//.test(env.appUrl) && !/^http:\/\/localhost(:\d+)?$/.test(env.appUrl)) {
   throw new Error("APP_URL must use https:// (http://localhost is allowed for development)");
+}
+if (env.serverUrl && !/^https:\/\//.test(env.serverUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(env.serverUrl)) {
+  throw new Error("SERVER_URL must use https:// (http://localhost is allowed for development)");
 }
 if (env.resendApiKey && !env.mailFrom) throw new Error("MAIL_FROM is required when RESEND_API_KEY is set");

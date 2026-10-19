@@ -1,36 +1,47 @@
-import type { ChangePreview, FolderCaps, ProjectFolder } from "@mc/shared";
+import type { ChangePreview, FolderCaps, ProjectShare, ProjectShareHost } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
 import { supabase } from "../supabase.ts";
 
-// The project's shared folder, as the app sees it: the folders and files the host shares. The row (name, online) comes
-// from the database and is live for everyone in the project. Sharing and serving only exist in the desktop app; in a
-// browser `folderBridge()` is null and the folder can be browsed but not shared.
+// A project's shared files, as the app sees them: folders and files that people share from their own computers. What is
+// shared, by whom, whether it was approved and whether the owner's app is online come from the database and are live for
+// everyone in the project. Sharing and serving only exist in the desktop app; in a browser `folderBridge()` is null and
+// the files can be browsed but not shared.
 
 export type SharedItem = { name: string; kind: "dir" | "file" };
-export type LocalFolder = { linked: boolean; name: string | null; items: SharedItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth"; caps?: FolderCaps };
+/** An item shared from this computer. `syncing`: the server has not answered for it yet. `pending`: waiting for the host or an admin. */
+export type LocalItem = SharedItem & { key: string; status: "syncing" | "pending" | "active" };
+export type LocalFolder = { linked: boolean; name: string | null; items: LocalItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth"; caps?: FolderCaps; /** Why the server refused this computer's items, when it did. */ error?: string | null };
+
+/** What the desktop app tells the page about something dropped on the files panel: names only. */
+export type Dropped = { ok: true; items: SharedItem[]; skipped: string[] } | { ok: false; error: string };
+export type PickResult = { ok: true; name: string; items: LocalItem[]; skipped: string[] } | { ok: false; error: string | null };
 
 /** An AI change waiting for this computer's owner. The diff comes from the app itself, not from the chat server. */
 export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number };
 
 /** What the desktop app's preload script offers. The page never gets a path or a file, only these calls. */
 export type FolderBridge = {
-  setSession: (session: { serverUrl: string; token: string; userId: string; hostProjects: string[] } | null) => Promise<void>;
+  setSession: (session: { serverUrl: string; token: string; userId: string; projects: string[] } | null) => Promise<void>;
   get: (projectId: string) => Promise<LocalFolder>;
   /** Opens the native dialog to add folders or files. `skipped` names picks that couldn't be shared. */
-  pick: (projectId: string, kind: "folder" | "files") => Promise<{ ok: true; name: string; items: SharedItem[]; skipped: string[] } | { ok: false; error: string | null }>;
-  /** Stops sharing one item; the new name, or null when nothing is left. */
+  pick: (projectId: string, kind: "folder" | "files") => Promise<PickResult>;
+  /** Stops sharing one item of this computer's, by the name the project gave it. The new name, or null when nothing is left. */
   remove: (projectId: string, name: string) => Promise<{ name: string | null }>;
-  /** Starts serving a linked folder now (after it was registered with the server). */
-  connect: (projectId: string) => Promise<void>;
-  unlink: (projectId: string) => Promise<void>;
+  /** Something was dragged onto an element marked data-files-drop. Only names arrive; the paths stay in the app until dropCommit. Absent in older builds of the app. */
+  onDrop?: (callback: (projectId: string, dropped: Dropped) => void) => () => void;
+  /** Shares what was dropped, after the page showed the notice when one is due. */
+  dropCommit?: (projectId: string) => Promise<PickResult>;
+  dropCancel?: (projectId: string) => Promise<void>;
+  /** The server refused what this computer reported, for example too many items in the project. */
+  onItemsError?: (callback: (projectId: string, code: string) => void) => () => void;
   onChange: (callback: (projectId: string) => void) => () => void;
-  /** The host's switch for AI changes to files (off by default). Absent in older builds of the app. */
+  /** This person's switch for AI changes to what they share (off by default). Absent in older builds of the app. */
   setCaps?: (projectId: string, caps: Partial<FolderCaps>) => Promise<unknown>;
-  /** AI changes waiting for the host's decision. */
+  /** AI changes waiting for this person's decision. */
   approvals?: () => Promise<PendingChange[]>;
-  /** The host's click. The file is written by this call and by nothing else. */
+  /** This person's click. The file is written by this call and by nothing else. */
   decide?: (projectId: string, id: string, approve: boolean) => Promise<boolean>;
   onApproval?: (callback: (view: PendingChange) => void) => () => void;
   onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
@@ -96,14 +107,24 @@ export function useMcpHost(userId: string) {
 
 export const folderBridge = (): FolderBridge | null => (globalThis as { desktop?: { folder?: FolderBridge } }).desktop?.folder ?? null;
 
-/** The project's shared folder row, kept current by realtime. undefined while loading, null when none is shared. */
-export function useProjectFolder(projectId: string | null) {
-  return useLive<ProjectFolder | null>(async () => {
-    if (!projectId) return null;
-    const { data, error } = await supabase.from("project_folders").select("project_id, name, linked_by, linked_at, online").eq("project_id", projectId).maybeSingle();
-    // Before the folder migration exists on the database there is no table: treat it as "nothing shared".
-    if (error) return null;
-    return (data as ProjectFolder | null) ?? null;
+/** An item someone shares, with the name of the person and whether their app is online. */
+export type ShareRow = ProjectShare & { owner_name: string; online: boolean };
+
+/**
+ * The project's shared items, kept current by realtime: approved ones for everyone, and requests for the person who made
+ * them and the people who decide (the database decides who sees what). undefined while loading; empty when nothing is shared
+ * or before the sharing migration exists on the database.
+ */
+export function useProjectShares(projectId: string | null) {
+  return useLive<ShareRow[]>(async () => {
+    if (!projectId) return [];
+    const [shares, hosts] = await Promise.all([
+      supabase.from("project_shares").select("id, project_id, owner_id, name, kind, status, created_at, owner:profiles!owner_id(display_name)").eq("project_id", projectId).order("created_at"),
+      supabase.from("project_share_hosts").select("project_id, owner_id, online, linked_at").eq("project_id", projectId),
+    ]);
+    if (shares.error || hosts.error) return [];
+    const online = new Map(((hosts.data ?? []) as ProjectShareHost[]).map((h) => [h.owner_id, h.online]));
+    return ((shares.data ?? []) as unknown as (ProjectShare & { owner: { display_name: string } | null })[]).map(({ owner, ...s }) => ({ ...s, owner_name: owner?.display_name ?? "Someone", online: online.get(s.owner_id) === true }));
   }, [projectId]);
 }
 
@@ -126,19 +147,19 @@ export function useLocalFolder(projectId: string | null): LocalFolder | null {
 }
 
 /**
- * Tells the desktop app who is signed in and which projects they host, and keeps it current as the access token
- * is refreshed. The app then serves the folders linked on this computer for those projects.
+ * Tells the desktop app who is signed in and which projects they belong to, and keeps it current as the access token
+ * is refreshed. The app then serves what this person shares on this computer in those projects.
  */
-export function useFolderHost(userId: string, hostProjectIds: string[] | undefined) {
-  const key = hostProjectIds ? [...hostProjectIds].sort().join(",") : null;
+export function useFolderHost(userId: string, projectIds: string[] | undefined) {
+  const key = projectIds ? [...projectIds].sort().join(",") : null;
   const ids = useRef<string[]>([]);
-  ids.current = hostProjectIds ?? [];
+  ids.current = projectIds ?? [];
 
   const push = useCallback(
     (token: string | undefined) => {
       const bridge = folderBridge();
       if (!bridge || !token) return;
-      void bridge.setSession({ serverUrl: config.serverUrl, token, userId, hostProjects: ids.current }).catch(() => undefined);
+      void bridge.setSession({ serverUrl: config.serverUrl, token, userId, projects: ids.current }).catch(() => undefined);
     },
     [userId],
   );

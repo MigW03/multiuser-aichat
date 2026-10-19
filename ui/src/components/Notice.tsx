@@ -1,4 +1,4 @@
-import { Eye, EyeOff, FolderLock, HardDrive, ShieldAlert, Sparkles } from "lucide-react";
+import { Eye, EyeOff, FolderLock, HardDrive, ShieldAlert, ShieldCheck, Sparkles } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, ICON, STROKE } from "./kit.tsx";
 
@@ -111,11 +111,14 @@ export const joinChatNotice = (chat: string, alreadyIn: number): Pick<NoticeProp
   ],
 });
 
-/** Before the host first shares folders or files from their computer. */
-export const shareFolderNotice = (project: string): Pick<NoticeProps, "title" | "items" | "always"> => ({
+/** Before someone first shares folders or files from their computer in a project. A member's request waits for the host or an admin. */
+export const shareFolderNotice = (project: string, needsApproval = false): Pick<NoticeProps, "title" | "items" | "always"> => ({
   title: `Before you share files with ${project}`,
   always: true,
   items: [
+    ...(needsApproval
+      ? [{ icon: <ShieldCheck size={ICON} strokeWidth={STROKE} />, title: "The host or an admin approves it first", text: "Nobody else can see what you pick until the host or an admin says yes. Until then it shows as waiting, and you can cancel it." }]
+      : []),
     { icon: <Eye size={ICON} strokeWidth={STROKE} />, title: "Everyone in the project can browse it", text: "Every member can open and read the folders and files you pick, as long as your desktop app is running. Members cannot change them." },
     { icon: <Sparkles size={ICON} strokeWidth={STROKE} />, title: "The AI can read it too", text: "When someone in a project chat asks about the files, the AI opens them. The text it reads goes to that person's AI provider. The AI can only propose changes if you allow it, and you approve each one." },
     { icon: <HardDrive size={ICON} strokeWidth={STROKE} />, title: "Files stay on your computer", text: "Nothing is uploaded or stored. Files are read from your computer when someone asks, and they go offline when you quit the app or sign out." },

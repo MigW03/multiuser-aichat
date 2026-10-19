@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { Button, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import type { Proposal } from "./useChatRoom.ts";
 
-// AI changes to the shared files. Everybody in the chat sees what the AI proposes (a diff). Only the host decides, and
+// AI changes to the shared files. Everybody in the chat sees what the AI proposes (a diff). Only the person who shares the files decides, and
 // only in the desktop app on the computer that holds the files: the dock below is the one place with buttons, and it
 // is fed by the app itself, not by the chat server, so a message in the chat can't make a change look different.
 
@@ -75,7 +75,7 @@ function Stats({ change }: { change: ChangePreview }) {
 
 const OUTCOME: Record<NonNullable<Proposal["outcome"]>, string> = {
   applied: "Approved and written",
-  denied: "Declined by the host",
+  denied: "Declined by the owner",
   expired: "Not approved in time",
   failed: "Not written",
 };
@@ -96,7 +96,7 @@ export function ProposalCards({ proposals }: { proposals: Proposal[] }) {
             <span className={`chip ${p.outcome === "applied" ? "accent" : ""}`}>
               {p.outcome ? (p.outcome === "applied" && (p.change.kind === "git" || p.change.kind === "exec") ? "Approved and run" : OUTCOME[p.outcome]) : (
                 <>
-                  <Hourglass size={12} strokeWidth={STROKE} aria-hidden /> Waiting for the host
+                  <Hourglass size={12} strokeWidth={STROKE} aria-hidden /> Waiting for the owner
                 </>
               )}
             </span>

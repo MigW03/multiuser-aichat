@@ -85,12 +85,14 @@ export const api = {
   inviteToProject: (projectId: string, email: string, role: AssignableRole) => call<InviteCreated>("POST", `/api/projects/${projectId}/invites`, { email, role }),
   projectInvites: (projectId: string) => call<{ invites: InviteRow[] }>("GET", `/api/projects/${projectId}/invites`),
 
-  linkFolder: (projectId: string, name: string) => call<{ ok: true }>("PUT", `/api/projects/${projectId}/folder`, { name }),
-  unlinkFolder: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/folder`),
+  /** The host or an admin answers a member's request to share something. */
+  decideShare: (projectId: string, shareId: string, approve: boolean) => call<{ ok: true }>("POST", `/api/projects/${projectId}/shares/${shareId}/decision`, { approve }),
+  /** Stops sharing one item: its owner, the host or an admin. */
+  removeShare: (projectId: string, shareId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/shares/${shareId}`),
   folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
   folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
 
-  /** Read-only git for the project (404 with code git_off when the host has not switched git on). */
+  /** Read-only git for the project (404 with code git_off when no owner has switched git on). */
   gitStatus: (projectId: string) => call<GitStatusResult>("GET", `/api/projects/${projectId}/folder/git/status`),
   gitDiff: (projectId: string, path: string, target: "worktree" | "staged" | "head" = "head") =>
     call<GitTextResult>("GET", `/api/projects/${projectId}/folder/git/diff?${new URLSearchParams({ path, target })}`),

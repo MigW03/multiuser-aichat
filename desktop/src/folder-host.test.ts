@@ -7,7 +7,7 @@ import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { globFiles, grepFiles } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
 import { FolderConn, originOf, serverSocketUrl, type FolderState } from "./folder-host.ts";
-import { answer, nameItems, summaryName, type Item, type Search } from "./folder-items.ts";
+import { answer, nameItems, servedItems, summaryName, type Item, type ItemSpec, type Search } from "./folder-items.ts";
 
 const grep: Search = { glob: (t, p, o) => globFiles(t, p, o), grep: (t, p, o) => grepFiles(t, p, o) };
 
@@ -56,16 +56,41 @@ describe("page origins", () => {
   });
 });
 
+describe("servedItems", () => {
+  const specs: ItemSpec[] = [
+    { abs: "/a", kind: "dir", key: "k1" },
+    { abs: "/b", kind: "dir", key: "k2" },
+    { abs: "/c", kind: "file", key: "k3" },
+    { abs: "/d", kind: "dir" },
+  ];
+  test("only approved items are served, under the names the project gave them", () => {
+    const assigned = new Map([
+      ["k1", { name: "alpha (2)", status: "active" as const }],
+      ["k2", { name: "beta", status: "pending" as const }],
+    ]);
+    assert.deepEqual(servedItems(specs, assigned).map((i) => [i.abs, i.name]), [["/a", "alpha (2)"]]);
+  });
+  test("nothing is served before the server has answered, or for an item without a key", () => {
+    assert.deepEqual(servedItems(specs, undefined), []);
+    assert.deepEqual(servedItems(specs, new Map()), []);
+  });
+});
+
 describe("answer", () => {
-  test("one folder is shared as is: list, read, glob, grep", async () => {
-    const list = await answer(items, { id: "1", op: "list", path: "" }, grep);
+  test("one folder is a top level of one name too: list, read, glob, grep", async () => {
+    const top = await answer(items, { id: "0", op: "list", path: "" }, grep);
+    assert.deepEqual(top?.ok && (top.result as { entries: { name: string }[] }).entries.map((e) => e.name), ["my-app"]);
+    const list = await answer(items, { id: "1", op: "list", path: "my-app" }, grep);
     assert.ok(list?.ok && (list.result as { entries: { name: string }[] }).entries.some((e) => e.name === "src"));
-    const read = await answer(items, { id: "2", op: "read", path: "src/a.ts" }, grep);
+    const read = await answer(items, { id: "2", op: "read", path: "my-app/src/a.ts" }, grep);
     assert.ok(read?.ok && (read.result as { text: string; path: string }).text === "hello\nneedle");
     const glob = await answer(items, { id: "3", op: "glob", pattern: "*.ts" }, grep);
-    assert.deepEqual(glob?.ok && (glob.result as { paths: string[] }).paths, ["src/a.ts"]);
+    assert.deepEqual(glob?.ok && (glob.result as { paths: string[] }).paths, ["my-app/src/a.ts"]);
     const found = await answer(items, { id: "4", op: "grep", pattern: "needle" }, grep);
     assert.ok(found?.ok && (found.result as { matches: unknown[] }).matches.length === 1);
+    // without the folder's name the path points at nothing
+    const bare = await answer(items, { id: "5", op: "read", path: "src/a.ts" }, grep);
+    assert.ok(bare && !bare.ok);
     assert.equal(summaryName(items), "my-app");
   });
   test("several items: a top level of names, each item under its own name", async () => {
@@ -103,10 +128,10 @@ describe("answer", () => {
   });
   test("errors carry a code and no local paths", async () => {
     for (const req of [
-      { id: "a", op: "read", path: ".env" },
+      { id: "a", op: "read", path: "my-app/.env" },
       { id: "b", op: "read", path: "../x" },
-      { id: "c", op: "read", path: "missing.txt" },
-      { id: "d", op: "list", path: "src/a.ts" },
+      { id: "c", op: "read", path: "my-app/missing.txt" },
+      { id: "d", op: "list", path: "my-app/src/a.ts" },
       { id: "e", op: "nope" },
     ]) {
       const res = await answer(items, req, grep);
@@ -121,7 +146,15 @@ describe("answer", () => {
   });
 });
 
-const noChanges = { getCaps: () => ({ edit: false, git: false, exec: false }), propose: async () => null, cancel: () => undefined, cancelAll: () => undefined };
+const noChanges = {
+  getCaps: () => ({ edit: false, git: false, exec: false }),
+  propose: async () => null,
+  cancel: () => undefined,
+  cancelAll: () => undefined,
+  getReport: () => [] as { key: string; name: string; kind: "dir" | "file" }[],
+  onItems: () => undefined,
+  onItemsError: () => undefined,
+};
 
 describe("connection", () => {
   let wss: WebSocketServer;
@@ -140,7 +173,7 @@ describe("connection", () => {
         const msg = JSON.parse(String(raw)) as Record<string, unknown>;
         if (msg.type === "hello") {
           hellos.push(msg);
-          ws.send(JSON.stringify({ type: "ready", name: "x" }));
+          ws.send(JSON.stringify({ type: "ready", items: [] }));
         }
         respond(ws, msg);
       });
@@ -157,13 +190,13 @@ describe("connection", () => {
     const states: FolderState[] = [];
     const conn = new FolderConn({ projectId: "p1", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: (s) => states.push(s), ...noChanges });
     await until(() => conn.state === "connected");
-    assert.deepEqual(hellos.at(-1), { type: "hello", token: "tok", projectId: "p1" });
+    assert.deepEqual(hellos.at(-1), { type: "hello", token: "tok", projectId: "p1", items: [] });
 
     const replies: Record<string, unknown>[] = [];
     respond = (_ws, msg) => msg.type === "res" && replies.push(msg.res as Record<string, unknown>);
     const ws = sockets.at(-1)!;
-    ws.send(JSON.stringify({ type: "req", req: { id: "r1", op: "read", path: "src/a.ts" } }));
-    ws.send(JSON.stringify({ type: "req", req: { id: "r2", op: "read", path: ".env" } }));
+    ws.send(JSON.stringify({ type: "req", req: { id: "r1", op: "read", path: "my-app/src/a.ts" } }));
+    ws.send(JSON.stringify({ type: "req", req: { id: "r2", op: "read", path: "my-app/.env" } }));
     await until(() => replies.length === 2);
     assert.equal(replies.find((r) => r.id === "r1")?.ok, true);
     assert.equal(replies.find((r) => r.id === "r2")?.ok, false);
@@ -178,7 +211,7 @@ describe("connection", () => {
     const before = sockets.length;
     respond = (ws, msg) => {
       if (msg.type === "hello") {
-        ws.send(JSON.stringify({ type: "error", code: "not_host" }));
+        ws.send(JSON.stringify({ type: "error", code: "not_found" }));
         ws.close();
       }
     };
@@ -187,6 +220,62 @@ describe("connection", () => {
     await new Promise((r) => setTimeout(r, 1500));
     assert.equal(sockets.length, before + 1);
     assert.equal(conn.state, "rejected");
+    assert.equal(conn.error, "not_found");
+    conn.close();
+  });
+
+  test("reports what is shared, hears what the project calls it, and keeps only well-formed answers", async () => {
+    const heard: unknown[] = [];
+    const errors: string[] = [];
+    respond = (ws, msg) => {
+      if (msg.type === "hello") {
+        ws.send(
+          JSON.stringify({
+            type: "ready",
+            items: [
+              { key: "k1", name: "my-app (2)", status: "active" },
+              { key: "k2", name: "notes", status: "pending" },
+              { key: "k3", name: "x", status: "maybe" },
+              { key: "k".repeat(65), name: "x", status: "active" },
+              { name: "no key", status: "active" },
+              "junk",
+            ],
+          }),
+        );
+      }
+    };
+    const conn = new FolderConn({
+      projectId: "p4",
+      wsUrl: `ws://127.0.0.1:${port}`,
+      getToken: () => "tok",
+      getItems: () => items,
+      search: grep,
+      onState: () => undefined,
+      ...noChanges,
+      getReport: () => [{ key: "k1", name: "my-app", kind: "dir" }],
+      onItems: (i, initial) => heard.push({ i, initial }),
+      onItemsError: (c) => errors.push(c),
+    });
+    await until(() => conn.state === "connected");
+    assert.deepEqual(hellos.at(-1), { type: "hello", token: "tok", projectId: "p4", items: [{ key: "k1", name: "my-app", kind: "dir" }] });
+    // (the shared server stub above also answers every hello with an empty ready, which comes first)
+    await until(() => heard.length >= 2);
+    assert.deepEqual(heard[0], { i: [], initial: true });
+    assert.deepEqual(heard[1], { i: [{ key: "k1", name: "my-app (2)", status: "active" }, { key: "k2", name: "notes", status: "pending" }], initial: true });
+
+    // an app that picks something sends the whole list again; the answer and refusals come back as messages
+    const ws = sockets.at(-1)!;
+    const sent: Record<string, unknown>[] = [];
+    respond = (_w, msg) => msg.type === "items" && sent.push(msg);
+    conn.reportItems();
+    await until(() => sent.length === 1);
+    assert.deepEqual(sent[0], { type: "items", items: [{ key: "k1", name: "my-app", kind: "dir" }] });
+    ws.send(JSON.stringify({ type: "items", items: [{ key: "k1", name: "my-app (2)", status: "active" }] }));
+    ws.send(JSON.stringify({ type: "items_error", code: "too_many" }));
+    ws.send(JSON.stringify({ type: "items_error", code: 5 }));
+    await until(() => errors.length === 2);
+    assert.deepEqual(errors, ["too_many", "failed"]);
+    assert.deepEqual(heard.at(-1), { i: [{ key: "k1", name: "my-app (2)", status: "active" }], initial: false });
     conn.close();
   });
 

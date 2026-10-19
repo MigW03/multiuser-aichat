@@ -170,11 +170,8 @@ function useShare(project: ProjectSummary, bridge: FolderBridge | null, shared: 
 }
 
 function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary; folder: ProjectFolder; host: boolean; bridge: FolderBridge | null }) {
-  const toast = useToast();
   const local = useLocalFolder(host ? project.id : null);
   const share = useShare(project, bridge, true);
-  const [confirmStop, setConfirmStop] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function remove(name: string) {
@@ -193,26 +190,11 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
     }
   }
 
-  async function stop() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.unlinkFolder(project.id);
-      await bridge?.unlink(project.id);
-      notifyChanged();
-      toast.push("Stopped sharing");
-      setConfirmStop(false);
-    } catch (e) {
-      setError(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const manage = host && !!bridge && typeof bridge.remove === "function";
-  // Several items (or one file) are listed at the top under their own names, and each gets a Remove menu. A single folder is shown from the inside, so it has no row of its own: Stop sharing covers it.
+  // Several items (or one file) are listed at the top under their own names, and each gets a Remove menu. A single folder is shown from the inside, so it gets a row of its own above the list.
   const itemsHere = manage && local?.linked ? local.items : [];
   const removable = itemsHere.length > 1 || (itemsHere.length === 1 && itemsHere[0]!.kind === "file") ? new Set(itemsHere.map((i) => i.name)) : null;
+  const lone = itemsHere.length === 1 && itemsHere[0]!.kind === "dir" ? itemsHere[0]!.name : null;
   const notHere = host && !!bridge && !!local && !local.linked;
   const refused = host && !!bridge && local?.linked && local.state === "rejected";
 
@@ -235,6 +217,7 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
       )}
       {manage && (
         <div className="side-card-actions">
+          <div className="grow" />
           <Menu
             label="Share from this computer"
             items={[
@@ -250,36 +233,16 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
         </div>
       )}
       {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}
-      {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} removable={removable} onRemove={(name) => void remove(name)} /> : <div className="grow" />}
+      {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} removable={removable} lone={lone} onRemove={(name) => void remove(name)} /> : <div className="grow" />}
       {folder.online && <GitChanges key={`git-${folder.linked_at}`} projectId={project.id} />}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
-      {manage && (
-        <div className="side-card-actions">
-          <div className="grow" />
-          <Button size="sm" variant="ghost" onClick={() => setConfirmStop(true)}>
-            Stop sharing
-          </Button>
-        </div>
-      )}
       {share.dialog}
-      {confirmStop && (
-        <Dialog title="Stop sharing these files?" onClose={() => setConfirmStop(false)}>
-          <p className="lead">Members and the AI can no longer read anything shared in {project.name}. Nothing on your computer is changed or deleted.</p>
-          {error && <ErrorLine>{error}</ErrorLine>}
-          <div className="dialog-actions">
-            <Button onClick={() => setConfirmStop(false)}>Cancel</Button>
-            <Button variant="danger" busy={busy} onClick={() => void stop()}>
-              Stop sharing
-            </Button>
-          </div>
-        </Dialog>
-      )}
     </div>
   );
 }
 
 /** Browse the shared folder, one level at a time, and read a file. All of it goes through the server to the host's app. */
-function FolderBrowser({ projectId, removable, onRemove }: { projectId: string; removable: Set<string> | null; onRemove: (name: string) => void }) {
+function FolderBrowser({ projectId, removable, lone, onRemove }: { projectId: string; removable: Set<string> | null; lone: string | null; onRemove: (name: string) => void }) {
   const [path, setPath] = useState("");
   const [file, setFile] = useState<string | null>(null);
   const [dir, setDir] = useState<FolderListResult | null>(null);
@@ -333,6 +296,13 @@ function FolderBrowser({ projectId, removable, onRemove }: { projectId: string; 
           ))}
         </nav>
       )}
+      {lone && path === "" && file === null && (
+        <div className="folder-root-row">
+          <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+          <span className="grow truncate strong">{lone}</span>
+          <RemoveMenu name={lone} placement="below" onRemove={onRemove} />
+        </div>
+      )}
       {error && <ErrorLine>{error}</ErrorLine>}
       {file !== null ? (
         <div className="file-view">
@@ -362,18 +332,7 @@ function FolderBrowser({ projectId, removable, onRemove }: { projectId: string; 
                 {e.type === "file" && e.size !== undefined && <span className="small muted">{sizeLabel(e.size)}</span>}
               </button>
               {path === "" && removable?.has(e.name) && (
-                <Menu
-                  label={`Options for ${e.name}`}
-                  align="end"
-                  placement={dir.entries.length > 3 && i === dir.entries.length - 1 ? "above" : "below"}
-                  className="folder-row-menu"
-                  items={[{ label: "Remove", title: "Stops sharing it. Nothing is deleted from your computer.", icon: <X size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => onRemove(e.name) }]}
-                  trigger={({ toggle, open }) => (
-                    <button type="button" className={`icon-btn row-more folder-row-more ${open ? "open" : ""}`} aria-label={`Options for ${e.name}`} title="Options (removing only stops sharing)" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
-                      <MoreHorizontal size={ICON_SM} strokeWidth={STROKE} />
-                    </button>
-                  )}
-                />
+                <RemoveMenu name={e.name} placement={dir.entries.length > 3 && i === dir.entries.length - 1 ? "above" : "below"} className="folder-row-menu" onRemove={onRemove} />
               )}
             </li>
           ))}
@@ -383,6 +342,24 @@ function FolderBrowser({ projectId, removable, onRemove }: { projectId: string; 
         <div className="folder-loading small"><Spinner /> Loading…</div>
       ) : null}
     </div>
+  );
+}
+
+/** The three-dot menu of a shared item. Remove only stops sharing it. */
+function RemoveMenu({ name, placement, className, onRemove }: { name: string; placement: "above" | "below"; className?: string; onRemove: (name: string) => void }) {
+  return (
+    <Menu
+      label={`Options for ${name}`}
+      align="end"
+      placement={placement}
+      className={className}
+      items={[{ label: "Remove", title: "Stops sharing it. Nothing is deleted from your computer.", icon: <X size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => onRemove(name) }]}
+      trigger={({ toggle, open }) => (
+        <button type="button" className={`icon-btn row-more folder-row-more ${open ? "open" : ""}`} aria-label={`Options for ${name}`} title="Options (removing only stops sharing)" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+          <MoreHorizontal size={ICON_SM} strokeWidth={STROKE} />
+        </button>
+      )}
+    />
   );
 }
 

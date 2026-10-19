@@ -6,7 +6,7 @@ import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectFolder, type FolderBridge } from "../lib/folder.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
-import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, useToast } from "./kit.tsx";
+import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared folder lives in the right column of a project's chats, as the approved hi-fi boards draw it
 // ("Hi-fi · light": a 320 px column, the shared folder card on top, Notes under it later). The chat header's
@@ -58,13 +58,13 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
           <b className="truncate">Files</b>
           <FolderInfo />
         </span>
-        <span
+        <Tip
           className="side-card-status small muted"
-          title={folder.data.online ? "Online: the host's app is running, so the files can be read." : "Offline: the host's app is closed, so the files can't be read right now."}
+          text={folder.data.online ? "Online: the host's app is running, so the files can be read." : "Offline: the host's app is closed, so the files can't be read right now."}
         >
           <StatusDot on={folder.data.online} />
           {folder.data.online ? "Online" : "Offline"}
-        </span>
+        </Tip>
         <IconButton label="Hide files" onClick={onClose} className="sm">
           <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>

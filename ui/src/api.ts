@@ -6,6 +6,8 @@ import type {
   ChatGptStartResponse,
   ChatGptUsage,
   FolderListResult,
+  GitStatusResult,
+  GitTextResult,
   FolderReadResult,
   OpenRouterUsage,
   InvitePreview,
@@ -75,6 +77,11 @@ export const api = {
   unlinkFolder: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/folder`),
   folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
   folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
+
+  /** Read-only git for the project (404 with code git_off when the host has not switched git on). */
+  gitStatus: (projectId: string) => call<GitStatusResult>("GET", `/api/projects/${projectId}/folder/git/status`),
+  gitDiff: (projectId: string, path: string, target: "worktree" | "staged" | "head" = "head") =>
+    call<GitTextResult>("GET", `/api/projects/${projectId}/folder/git/diff?${new URLSearchParams({ path, target })}`),
 
   createChat: (projectId: string | null) => call<{ id: string }>("POST", "/api/chats", { projectId }),
   renameChat: (id: string, title: string) => call<{ title: string }>("PATCH", `/api/chats/${id}`, { title }),

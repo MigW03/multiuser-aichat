@@ -121,7 +121,7 @@ describe("answer", () => {
   });
 });
 
-const noChanges = { getCaps: () => ({ edit: false }), propose: async () => null, cancel: () => undefined, cancelAll: () => undefined };
+const noChanges = { getCaps: () => ({ edit: false, git: false }), propose: async () => null, cancel: () => undefined, cancelAll: () => undefined };
 
 describe("connection", () => {
   let wss: WebSocketServer;

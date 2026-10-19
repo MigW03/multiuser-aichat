@@ -1,5 +1,5 @@
 import type { ChangePreview } from "@mc/shared";
-import { Check, FilePen, FilePlus, Hourglass, Maximize2, Minimize2, ShieldCheck, X } from "lucide-react";
+import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { folderBridge, useHostApprovals, type PendingChange } from "../lib/folder.ts";
 import { createPortal } from "react-dom";
@@ -12,18 +12,22 @@ import type { Proposal } from "./useChatRoom.ts";
 
 /** A unified diff, one line per row, added and removed lines tinted. Text only: nothing in a diff is rendered as markup. */
 export function DiffView({ diff, cut }: { diff: string; cut?: boolean }) {
+  // The lines between "diff --git" and the first "@@" are git's file header (index, ---, +++), not changes.
+  let header = false;
   return (
     <pre className="diff" tabIndex={0}>
       {/* One inner block as wide as the longest line, so every row's tint spans the full scroll width. */}
       <span className="diff-lines">
         {diff.split("\n").map((line, i) => {
-          const kind = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : "";
+          if (line.startsWith("diff --git")) header = true;
+          else if (line.startsWith("@@")) header = false;
+          const kind = header || line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "";
           const marker = kind === "add" || kind === "del" || (kind === "" && line.startsWith(" ")) ? line[0]! : "";
           return (
             <span key={i} className={`dl ${kind}`}>
               {/* the +/- stays at the left edge while the text scrolls */}
               <span className="mk" aria-hidden>{marker || " "}</span>
-              <span className="tx">{marker || kind === "hunk" ? line.slice(marker ? 1 : 0) : line}{"\n"}</span>
+              <span className="tx">{marker ? line.slice(1) : line}{"\n"}</span>
             </span>
           );
         })}
@@ -64,19 +68,20 @@ export function ProposalCards({ proposals }: { proposals: Proposal[] }) {
       {proposals.map((p) => (
         <details key={p.change.id} className={`proposal ${p.outcome ?? "waiting"}`} open={!p.outcome}>
           <summary>
-            {p.change.created ? <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <FilePen size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+            {p.change.kind === "git" ? <GitBranch size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : p.change.created ? <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <FilePen size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
             <span className="grow truncate">
-              <b>{p.change.path}</b> {p.change.created ? "(new file)" : ""}
+              <b>{p.change.path}</b> {p.change.kind === "git" ? "" : p.change.created ? "(new file)" : ""}
             </span>
             <Stats change={p.change} />
             <span className={`chip ${p.outcome === "applied" ? "accent" : ""}`}>
-              {p.outcome ? OUTCOME[p.outcome] : (
+              {p.outcome ? (p.outcome === "applied" && p.change.kind === "git" ? "Approved and run" : OUTCOME[p.outcome]) : (
                 <>
                   <Hourglass size={12} strokeWidth={STROKE} aria-hidden /> Waiting for the host
                 </>
               )}
             </span>
           </summary>
+          {p.change.command && <code className="git-command">{p.change.command}</code>}
           <DiffView diff={p.change.diff} cut={p.change.cut} />
         </details>
       ))}
@@ -146,7 +151,7 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
       <header>
         <ShieldCheck size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         <span className="grow">
-          <b>{item.askedBy}</b>'s AI wants to {c.created ? "create" : "change"} <b>{c.path}</b> in {projectName}
+          <b>{item.askedBy}</b>'s AI wants to {c.kind === "git" ? "run" : c.created ? "create" : "change"} <b>{c.path}</b> in {projectName}
         </span>
         <Stats change={c} />
         {expanded ? (
@@ -164,18 +169,24 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
           </IconButton>
         )}
       </header>
-      {RISKY.test(c.path) && (
+      {c.command && <code className="git-command">{c.command}</code>}
+      {c.destructive && (
+        <p className="small risky" role="note">
+          <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> This throws away uncommitted changes. They cannot be brought back. The diff below is what would be lost.
+        </p>
+      )}
+      {c.kind !== "git" && RISKY.test(c.path) && (
         <p className="small risky" role="note">
           This file can run code when the project is built, installed or pushed. Read the whole diff before approving.
         </p>
       )}
       <DiffView diff={c.diff} cut={c.cut} />
       <p className="small muted">
-        It read {item.readFiles} {item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing is written until you approve. Time left: {left}.
+        It read {item.readFiles} {item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing {c.kind === "git" ? "runs" : "is written"} until you approve. Time left: {left}.
       </p>
       <div className="row dock-actions">
         <Button size="sm" variant="primary" busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide(true)}>
-          <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Approve and write
+          <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {c.kind === "git" ? "Approve and run" : "Approve and write"}
         </Button>
         <Button size="sm" busy={busy === "deny"} disabled={busy !== null} onClick={() => void decide(false)}>
           <X size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Decline

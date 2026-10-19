@@ -222,7 +222,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
-    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; canChange: boolean } | null = null;
+    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; caps: { edit: boolean; git: boolean } } | null = null;
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -260,8 +260,9 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       if (projectId && access?.ok) {
         folderName = access.name;
         const use: FolderUse = { files: new Set(), offline: false, edits: [] };
-        // AI changes are on only when the host switched them on in their app. Every one still needs the host's approval there.
-        const canChange = relay.caps(projectId).edit;
+        // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
+        const caps = relay.caps(projectId);
+        const canChange = caps.edit || caps.git;
         const changes = canChange
           ? {
               askedBy: asker,
@@ -270,7 +271,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
               done: (id: string, outcome: ApprovalDoneEvent["outcome"]) => void channel.httpSend("approval_done", { messageId: assistant.id, id, outcome } satisfies ApprovalDoneEvent),
             }
           : undefined;
-        folder = { tools: folderTools((req, opts) => relay.call(projectId, req as never, opts), use, changes), use, canChange };
+        folder = { tools: folderTools((req, opts) => relay.call(projectId, req as never, opts), use, changes, caps), use, caps };
         if (canChange) {
           runSeconds = LOCK_SECONDS_EDIT;
           await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
@@ -293,11 +294,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.canChange)}` : instructions,
+        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git)}` : instructions,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.canChange ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
+        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.caps.edit || folder.caps.git ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });

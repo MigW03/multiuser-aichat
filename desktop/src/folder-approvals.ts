@@ -1,5 +1,6 @@
 import { FOLDER_LIMITS as L, type ChangePreview, type FolderResponse } from "@mc/shared";
 import { commitStaged, type Staged } from "./folder-changes.ts";
+import type { GitStaged } from "./folder-git.ts";
 import { FolderError } from "./folder-fs.ts";
 
 // Proposals waiting for the host. A proposal lives only in this app's memory: the chat server can ask for one and can
@@ -10,7 +11,7 @@ export type PendingView = { projectId: string; id: string; change: ChangePreview
 
 type Entry = {
   view: PendingView;
-  staged: Staged;
+  staged: Staged | GitStaged;
   timer: ReturnType<typeof setTimeout>;
   settle: (res: FolderResponse) => void;
 };
@@ -20,8 +21,8 @@ export type ApprovalHooks = {
   onAdd: (view: PendingView) => void;
   /** It was settled (approved, denied, expired, cancelled, or the connection ended). */
   onGone: (projectId: string, id: string) => void;
-  /** Allowed to be called once more: false when the host switched AI changes off meanwhile. */
-  stillAllowed: (projectId: string) => boolean;
+  /** Allowed to be called once more: false when the host switched what this kind of change needs off meanwhile. */
+  stillAllowed: (projectId: string, kind: "files" | "git") => boolean;
 };
 
 const key = (projectId: string, id: string) => `${projectId}\n${id}`;
@@ -43,7 +44,7 @@ export class Approvals {
   }
 
   /** Waits for the host's decision. Resolves with the answer to send back to the server. */
-  propose(projectId: string, staged: Staged, ctx: { askedBy: string; readFiles: number }): Promise<FolderResponse> {
+  propose(projectId: string, staged: Staged | GitStaged, ctx: { askedBy: string; readFiles: number }): Promise<FolderResponse> {
     const k = key(projectId, staged.id);
     if (this.pending.has(k)) return Promise.resolve({ id: staged.id, ok: false, code: "bad_request", message: "That request is already open." });
     return new Promise((resolve) => {
@@ -74,13 +75,17 @@ export class Approvals {
     let res: FolderResponse;
     if (!approve) {
       res = { id, ok: false, code: "denied", message: "The host declined this change." };
-    } else if (!this.hooks.stillAllowed(projectId)) {
+    } else if (!this.hooks.stillAllowed(projectId, "git" in e.staged ? "git" : "files")) {
       res = { id, ok: false, code: "disabled", message: "The host turned off AI changes before this was approved." };
     } else {
       try {
-        await commitStaged(e.staged);
-        const { path, created, added, removed } = e.staged.change;
-        res = { id, ok: true, result: { path, created, added, removed } };
+        if ("git" in e.staged) {
+          res = { id, ok: true, result: await e.staged.apply() };
+        } else {
+          await commitStaged(e.staged);
+          const { path, created, added, removed } = e.staged.change;
+          res = { id, ok: true, result: { path, created, added, removed } };
+        }
       } catch (err) {
         if (err instanceof FolderError) res = { id, ok: false, code: err.code, message: err.message };
         else {
@@ -99,8 +104,12 @@ export class Approvals {
     this.end(key(projectId, id), { id, ok: false, code: "expired", message: "The request was cancelled." });
   }
 
-  closeProject(projectId: string, message = "The host's app disconnected.") {
-    for (const [k, e] of this.pending) if (e.view.projectId === projectId) this.end(k, { id: e.view.id, ok: false, code: "expired", message });
+  closeProject(projectId: string, message = "The host's app disconnected.", only?: "files" | "git") {
+    for (const [k, e] of this.pending) {
+      if (e.view.projectId !== projectId) continue;
+      if (only && ("git" in e.staged ? "git" : "files") !== only) continue;
+      this.end(k, { id: e.view.id, ok: false, code: "expired", message });
+    }
   }
 
   closeAll() {

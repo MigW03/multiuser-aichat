@@ -122,7 +122,7 @@ export class FolderConn {
         this.set(msg.code === "unauthorized" ? "auth" : "rejected");
       } else if (msg.type === "req" && this.state === "connected") {
         const op = (msg.req as { op?: unknown } | null)?.op;
-        if (op === "edit" || op === "write") this.propose(msg.req);
+        if (op === "edit" || op === "write" || op === "git_change") this.propose(msg.req);
         else this.enqueue(msg.req);
       } else if (msg.type === "cancel" && typeof msg.id === "string" && msg.id.length <= 64) {
         this.o.cancel(msg.id);
@@ -201,7 +201,7 @@ export class FolderConn {
     while (this.inFlight < MAX_IN_FLIGHT && this.queue.length > 0) {
       const req = this.queue.shift();
       this.inFlight++;
-      void answer(this.o.getItems(), req, this.o.search)
+      void answer(this.o.getItems(), req, this.o.search, this.o.getCaps())
         .then((res) => res && this.send(res))
         .finally(() => {
           this.inFlight--;

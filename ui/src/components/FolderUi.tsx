@@ -1,9 +1,10 @@
-import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type ProjectFolder, type ProjectSummary } from "@mc/shared";
-import { ArrowLeft, ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, PanelRightClose, PanelRightOpen, TriangleAlert, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { api } from "../api.ts";
+import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectFolder, type ProjectSummary } from "@mc/shared";
+import { ArrowLeft, ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, PanelRightClose, PanelRightOpen, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectFolder, type FolderBridge } from "../lib/folder.ts";
+import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Spinner, STROKE, useToast } from "./kit.tsx";
 
@@ -231,6 +232,7 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
       )}
       {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}
       {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} rootName={folder.name} /> : <div className="grow" />}
+      {folder.online && <GitChanges key={`git-${folder.linked_at}`} projectId={project.id} />}
       {manage && local?.linked && (
         <div className="shared-items">
           <div className="small muted">Shared from this computer</div>
@@ -368,5 +370,84 @@ function FolderBrowser({ projectId, rootName }: { projectId: string; rootName: s
         <div className="folder-loading small"><Spinner /> Loading…</div>
       ) : null}
     </div>
+  );
+}
+
+const GIT_LETTER: Record<string, string> = { M: "M", A: "A", D: "D", R: "R", C: "C", "?": "new", U: "!" };
+
+/** What changed in the shared folder's git repository. Shown only when the host switched git on and the folder is a repository. */
+function GitChanges({ projectId }: { projectId: string }) {
+  const [status, setStatus] = useState<GitStatusResult | null>(null);
+  const [off, setOff] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [diff, setDiff] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.gitStatus(projectId).then(
+      (r) => {
+        setStatus(r);
+        setError(null);
+        setOff(false);
+      },
+      (e: unknown) => {
+        // Not switched on, not a repository, several folders shared, or a repository git is not used on: no section at all.
+        if (e instanceof ApiRequestError && ["git_off", "no_repo", "git_unsafe", "disabled", "bad_request"].includes(e.code ?? "")) setOff(true);
+        else setError(messageOf(e));
+      },
+    );
+  }, [projectId]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 20_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  useEffect(() => {
+    setDiff(null);
+    if (open === null) return;
+    let live = true;
+    api.gitDiff(projectId, open, "head").then(
+      (r) => live && setDiff(r.text),
+      (e: unknown) => live && setDiff(messageOf(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [projectId, open]);
+
+  if (off || (!status && !error)) return null;
+  const files = status?.files ?? [];
+  return (
+    <section className="git-changes" aria-label="Git changes">
+      <div className="row">
+        <GitBranch size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+        <span className="small strong grow truncate">{status?.branch ?? "No branch"}</span>
+        <span className="small muted">{files.length === 0 ? "clean" : `${files.length}${status?.truncated ? "+" : ""} changed`}</span>
+        <IconButton label="Refresh git changes" className="sm" onClick={load}>
+          <RefreshCw size={ICON_SM} strokeWidth={STROKE} />
+        </IconButton>
+      </div>
+      {error && <ErrorLine>{error}</ErrorLine>}
+      {files.length > 0 && (
+        <ul className="git-files">
+          {files.map((f) => {
+            const code = f.worktree !== " " ? f.worktree : f.index;
+            const untracked = f.index === "?" && f.worktree === "?";
+            return (
+              <li key={f.path}>
+                <button type="button" onClick={() => setOpen(open === f.path ? null : f.path)} aria-expanded={open === f.path}>
+                  <span className={`git-letter ${code === "?" ? "new" : code}`}>{GIT_LETTER[code] ?? code}</span>
+                  <span className="grow truncate">{f.path}</span>
+                  {f.index !== " " && f.index !== "?" && <span className="small muted">staged</span>}
+                </button>
+                {open === f.path && (untracked ? <p className="small muted pad">New file, not tracked yet.</p> : diff === null ? <div className="folder-loading small"><Spinner /> Loading…</div> : <DiffView diff={diff} />)}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

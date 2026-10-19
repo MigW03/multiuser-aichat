@@ -292,6 +292,13 @@ export const FOLDER_LIMITS = {
   writeChars: 500_000,
   /** Longest diff shown on an approval card, in characters. */
   diffChars: 40_000,
+  /** Output of one git read, in characters, and how long it may run. */
+  gitChars: 50_000,
+  gitMs: 10_000,
+  /** Status entries returned, paths in one add / restore, commit message length. */
+  gitFiles: 500,
+  gitPaths: 50,
+  gitMessageChars: 4_000,
 } as const;
 
 export type FolderEntry = { name: string; type: "file" | "dir"; size?: number };
@@ -322,17 +329,31 @@ export type FolderErrorCode =
   | "stale" // the file changed after the diff was made
   | "denied" // the host said no
   | "expired" // nobody decided in time, or the request was cancelled
-  | "exists"; // write to a path that already holds a file
+  | "exists" // write to a path that already holds a file
+  // git
+  | "no_repo" // the shared folder is not a git repository
+  | "git_unsafe" // the repository's own config runs programs, so git is not used on it
+  | "git_failed" // git refused; the message says why in words that hold no paths from the host's computer
+  | "nothing"; // nothing to add, commit or restore
 
 /** What the host allows the AI to propose in this project. Off by default; kept on the host's computer. */
-export type FolderCaps = { edit: boolean };
+export type FolderCaps = {
+  /** Propose edits and new files (each approved by the host). */
+  edit: boolean;
+  /** Use git: status, diff, log and show freely; add, commit, restore and new branches as proposals the host approves. */
+  git: boolean;
+};
 
 /** One proposed change as everybody sees it: a unified diff and who asked. The host decides in the desktop app. */
 export type ChangePreview = {
   id: string;
-  kind: "edit" | "write";
-  /** Path inside the shared folder. */
+  kind: "edit" | "write" | "git";
+  /** Path inside the shared folder; for git, the short name of the action ("git commit"). */
   path: string;
+  /** git only: the exact command that will run on the host's computer. */
+  command?: string;
+  /** git only: the action throws work away (restore). */
+  destructive?: boolean;
   /** true when the file does not exist yet. */
   created: boolean;
   added: number;
@@ -354,7 +375,20 @@ export type FolderRequest =
   | { id: string; op: "glob"; pattern: string; path?: string; hidden?: boolean; limit?: number }
   | { id: string; op: "grep"; pattern: string; path?: string; include?: string; literal?: boolean; caseSensitive?: boolean; limit?: number }
   | { id: string; op: "edit"; path: string; oldString: string; newString: string; replaceAll?: boolean; askedBy: string; readFiles: number }
-  | { id: string; op: "write"; path: string; content: string; hadRead: boolean; askedBy: string; readFiles: number };
+  | { id: string; op: "write"; path: string; content: string; hadRead: boolean; askedBy: string; readFiles: number }
+  | { id: string; op: "git"; sub: "status" }
+  | { id: string; op: "git"; sub: "diff"; target?: "worktree" | "staged" | "head"; path?: string }
+  | { id: string; op: "git"; sub: "log"; path?: string; limit?: number }
+  | { id: string; op: "git"; sub: "show"; rev: string; path?: string }
+  | { id: string; op: "git_change"; action: "add" | "restore"; paths: string[]; askedBy: string; readFiles: number }
+  | { id: string; op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
+  | { id: string; op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number };
+
+export type GitStatusFile = { path: string; /** index column of `git status --porcelain` */ index: string; /** worktree column */ worktree: string };
+export type GitStatusResult = { branch: string | null; files: GitStatusFile[]; truncated: boolean };
+export type GitTextResult = { text: string; truncated: boolean };
+/** What a host-approved git action did. */
+export type GitChangeResult = { command: string; output: string };
 
 export type FolderResponse = { id: string; ok: true; result: unknown } | { id: string; ok: false; code: FolderErrorCode; message: string };
 

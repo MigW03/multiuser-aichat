@@ -242,15 +242,16 @@ describe("AI changes", () => {
   test("caps are nothing until the host's app says so, then follow it", async () => {
     const c = await connect("host-token", P2);
     await c.first();
-    assert.deepEqual(relay.caps(P2), { edit: false });
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true } }));
-    await until(() => relay.caps(P2).edit);
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: "yes" } })); // junk is ignored
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: false } }));
-    await until(() => !relay.caps(P2).edit);
+    assert.deepEqual(relay.caps(P2), { edit: false, git: false });
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true, git: true } }));
+    await until(() => relay.caps(P2).edit && relay.caps(P2).git);
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: "yes", git: true } })); // junk is ignored
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true } })); // an old app that does not know git is ignored too
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: false, git: false } }));
+    await until(() => !relay.caps(P2).edit && !relay.caps(P2).git);
     c.ws.close();
     await c.closed;
-    assert.deepEqual(relay.caps(P2), { edit: false });
+    assert.deepEqual(relay.caps(P2), { edit: false, git: false });
   });
 
   test("the preview arrives once, then the host's decision, with a long wait allowed", async () => {
@@ -337,6 +338,40 @@ describe("AI changes", () => {
     for (let i = 0; i < 30; i++) await relay.call(P2, edit);
     await assert.rejects(relay.call(P2, edit), (e: unknown) => e instanceof RelayError && e.kind === "busy" && /Too many/.test(e.message));
     await relay.call(P2, { op: "list", path: "" }).catch(() => undefined); // reads are not limited
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("git reads come back checked, as a status or as text", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    c.ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw)) as { type: string; req?: { id: string; sub: string } };
+      if (msg.type !== "req") return;
+      const result = msg.req!.sub === "status" ? { branch: "main", files: [{ path: "src/a.ts", index: " ", worktree: "M" }], truncated: false } : msg.req!.sub === "diff" ? { text: "@@ -1 +1 @@", truncated: false } : { files: "junk" };
+      c.ws.send(JSON.stringify({ type: "res", res: { id: msg.req!.id, ok: true, result } }));
+    });
+    assert.deepEqual(await relay.call(P1, { op: "git", sub: "status" }), { branch: "main", files: [{ path: "src/a.ts", index: " ", worktree: "M" }], truncated: false });
+    assert.deepEqual(await relay.call(P1, { op: "git", sub: "diff" }), { text: "@@ -1 +1 @@", truncated: false });
+    await assert.rejects(relay.call(P1, { op: "git", sub: "log" }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("a git action is a proposal: preview with its command, then the host's decision", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    c.ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw)) as { type: string; req?: { id: string } };
+      if (msg.type !== "req") return;
+      const id = msg.req!.id;
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: { id, kind: "git", path: "git commit", command: 'git commit -m "x"', destructive: false, created: false, added: 1, removed: 0, diff: "@@ commit message @@", cut: false } }));
+      c.ws.send(JSON.stringify({ type: "res", res: { id, ok: true, result: { command: 'git commit -m "x"', output: "[main abc] x" } } }));
+    });
+    const seen: string[] = [];
+    const res = await relay.call(P1, { op: "git_change", action: "commit", message: "x", askedBy: "Ana", readFiles: 1 }, { onPreview: (ch) => seen.push(`${ch.kind} ${ch.command}`) });
+    assert.deepEqual(res, { command: 'git commit -m "x"', output: "[main abc] x" });
+    assert.deepEqual(seen, ['git git commit -m "x"']);
     c.ws.close();
     await c.closed;
   });

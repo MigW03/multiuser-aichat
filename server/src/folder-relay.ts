@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -38,7 +38,14 @@ export type RelayRequest =
   | { op: "glob"; pattern: string; path?: string; hidden?: boolean; limit?: number }
   | { op: "grep"; pattern: string; path?: string; include?: string; literal?: boolean; caseSensitive?: boolean; limit?: number }
   | { op: "edit"; path: string; oldString: string; newString: string; replaceAll?: boolean; askedBy: string; readFiles: number }
-  | { op: "write"; path: string; content: string; hadRead: boolean; askedBy: string; readFiles: number };
+  | { op: "write"; path: string; content: string; hadRead: boolean; askedBy: string; readFiles: number }
+  | { op: "git"; sub: "status" }
+  | { op: "git"; sub: "diff"; target?: "worktree" | "staged" | "head"; path?: string }
+  | { op: "git"; sub: "log"; path?: string; limit?: number }
+  | { op: "git"; sub: "show"; rev: string; path?: string }
+  | { op: "git_change"; action: "add" | "restore"; paths: string[]; askedBy: string; readFiles: number }
+  | { op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
+  | { op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number };
 
 /** The host's answer once a proposed change was approved and written. */
 export type ChangeResult = { path: string; created: boolean; added: number; removed: number };
@@ -55,7 +62,7 @@ export type CallOptions = {
 const uuid = z.uuid();
 const hello = z.object({ type: z.literal("hello"), token: z.string().min(1).max(4096), projectId: uuid });
 const tokenMsg = z.object({ type: z.literal("token"), token: z.string().min(1).max(4096) });
-const capsMsg = z.object({ type: z.literal("caps"), caps: z.object({ edit: z.boolean() }) });
+const capsMsg = z.object({ type: z.literal("caps"), caps: z.object({ edit: z.boolean(), git: z.boolean() }) });
 
 // eslint-disable-next-line no-control-regex
 const clean = (max: number) => z.string().max(max).refine((s) => !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(s), "control characters");
@@ -64,8 +71,10 @@ const entry = z.object({ name: clean(255).min(1), type: z.enum(["file", "dir"]),
 
 const changePreview = z.object({
   id: z.string().max(64),
-  kind: z.enum(["edit", "write"]),
+  kind: z.enum(["edit", "write", "git"]),
   path: clean(L.pathChars),
+  command: z.string().max(1200).optional(),
+  destructive: z.boolean().optional(),
   created: z.boolean(),
   added: z.number().int().nonnegative(),
   removed: z.number().int().nonnegative(),
@@ -78,6 +87,15 @@ const changeDone = z.object({ path: clean(L.pathChars), created: z.boolean(), ad
 const results = {
   edit: changeDone,
   write: changeDone,
+  git_change: z.object({ command: z.string().max(1200), output: z.string().max(600) }),
+  git: z.union([
+    z.object({
+      branch: clean(120).nullable(),
+      files: z.array(z.object({ path: clean(L.pathChars), index: z.string().max(1), worktree: z.string().max(1) })).max(L.gitFiles),
+      truncated: z.boolean(),
+    }),
+    z.object({ text: z.string().max(L.gitChars + 100), truncated: z.boolean() }),
+  ]),
   list: z.object({ path: clean(L.pathChars), entries: z.array(entry).max(L.listEntries), truncated: z.boolean() }),
   read: z.object({
     path: clean(L.pathChars),
@@ -96,7 +114,7 @@ const results = {
 
 const ERROR_CODES = [
   "invalid_path", "not_found", "excluded", "too_large", "binary", "not_a_file", "not_a_directory", "bad_request", "timeout", "busy", "failed",
-  "disabled", "no_match", "ambiguous", "secrets", "stale", "denied", "expired", "exists",
+  "disabled", "no_match", "ambiguous", "secrets", "stale", "denied", "expired", "exists", "no_repo", "git_unsafe", "git_failed", "nothing",
 ] as const satisfies readonly FolderErrorCode[];
 const response = z.discriminatedUnion("ok", [
   z.object({ id: z.string().max(64), ok: z.literal(true), result: z.unknown() }),
@@ -217,7 +235,7 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
           clearTimeout(helloTimer);
           authedAt = Date.now();
           const previous = hosts.get(parsed.data.projectId);
-          conn = { ws, userId, projectId: parsed.data.projectId, pending: new Map(), proposed: [], caps: { edit: false } };
+          conn = { ws, userId, projectId: parsed.data.projectId, pending: new Map(), proposed: [], caps: { edit: false, git: false } };
           hosts.set(parsed.data.projectId, conn);
           if (previous) {
             // Another copy of the host's app took over: the older one is dropped without marking the folder offline.
@@ -295,7 +313,7 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
     },
 
     /** What the host allows the AI to propose in this project. Nothing while the host's app is offline. */
-    caps: (projectId: string): FolderCaps => hosts.get(projectId)?.caps ?? { edit: false },
+    caps: (projectId: string): FolderCaps => hosts.get(projectId)?.caps ?? { edit: false, git: false },
 
     /** Asks the host's app. Callers must already have checked that the asker belongs to the project. */
     call<K extends RelayRequest["op"]>(
@@ -303,13 +321,25 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
       req: Extract<RelayRequest, { op: K }>,
       opts: CallOptions = {},
     ): Promise<
-      K extends "list" ? FolderListResult : K extends "read" ? FolderReadResult : K extends "glob" ? FolderGlobResult : K extends "grep" ? FolderSearchResult : ChangeResult
+      K extends "list"
+        ? FolderListResult
+        : K extends "read"
+          ? FolderReadResult
+          : K extends "glob"
+            ? FolderGlobResult
+            : K extends "grep"
+              ? FolderSearchResult
+              : K extends "git"
+                ? GitStatusResult | GitTextResult
+                : K extends "git_change"
+                  ? GitChangeResult
+                  : ChangeResult
     > {
       const conn = hosts.get(projectId);
       if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "The project host's desktop app is offline."));
       if (conn.pending.size >= MAX_PENDING) return Promise.reject(new RelayError("busy", "The shared folder is busy. Try again in a moment."));
-      const isChange = req.op === "edit" || req.op === "write";
-      if (isChange && [...conn.pending.values()].filter((p) => p.op === "edit" || p.op === "write").length >= L.proposals) {
+      const isChange = req.op === "edit" || req.op === "write" || req.op === "git_change";
+      if (isChange && [...conn.pending.values()].filter((p) => p.op === "edit" || p.op === "write" || p.op === "git_change").length >= L.proposals) {
         return Promise.reject(new RelayError("busy", "Several changes are already waiting for the host. Wait for them to be decided."));
       }
       if (isChange) {

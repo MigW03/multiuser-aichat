@@ -253,8 +253,8 @@ function AssistantMessage(props: RowProps) {
         {!streaming && !failed && m.meta.edits?.length ? (
           <div className="folder-note small muted">
             <Pencil size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-            <span className="truncate" title={m.meta.edits.map((e) => `${e.ok ? "Changed" : "Not changed"}: ${e.p}`).join("\n")}>
-              {m.meta.edits.filter((e) => e.ok).length > 0 ? `Changed ${m.meta.edits.filter((e) => e.ok).map((e) => e.p).join(", ")}` : "No file was changed"}
+            <span className="truncate" title={m.meta.edits.map((e) => `${e.ok ? "Done" : "Not done"}: ${e.p}`).join("\n")}>
+              {m.meta.edits.filter((e) => e.ok).length > 0 ? `Done: ${m.meta.edits.filter((e) => e.ok).map((e) => e.p).join(", ")}` : "Nothing was changed"}
               {m.meta.edits.some((e) => !e.ok) ? ` · ${m.meta.edits.filter((e) => !e.ok).length} declined or not approved` : ""}
             </span>
           </div>

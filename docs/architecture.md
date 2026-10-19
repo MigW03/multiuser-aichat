@@ -74,7 +74,7 @@ names (`my-app/src/index.ts`, `notes.md`).
   top, Notes under it later), shown and hidden from the chat header. The card shows status, a read-only browser, and
   for the host in the desktop app: add folders or files, remove one, stop sharing. The web app shows status and browses.
 
-## AI file edits (built 2026-10-19; git and commands are later phases)
+## AI file edits (built 2026-10-19; git below; commands are the next phase)
 
 Follows opencode's `edit` and `write` tools (names, inputs, tolerant matching) with one forced difference: opencode asks
 the person at the terminal, but here several people share a chat and the files sit on the host's computer. So a change
@@ -101,8 +101,30 @@ is only a **proposal**, and the host's desktop app is the only thing that can wr
 - **Visible.** The answer shows "Changed src/a.ts" (kept in the answer's meta, within its 1 KB jsonb check) next to
   "Read N files". Cards for files that run code (CI config, `package.json`, shell scripts) carry an extra warning.
 
-Later: git tracking (read-only git without a prompt, git writes as approved proposals), running commands (every call
-asks, native confirm window), compaction, live co-editing (Yjs, Zed's model).
+## Git (built 2026-10-19)
+
+A second host switch, "Let the AI use git" (Project settings), also off by default and stored on the host's computer.
+It covers the shared folder when it is a git repository (one shared folder, or `path` names which of several).
+
+- **Reads, no prompt:** `git_status`, `git_diff` (worktree, staged or head), `git_log`, `git_show`, and for members a
+  Changes list in the folder card (`GET /folder/git/status|diff`, same membership check as file reads). The AI never
+  writes a command: `desktop/src/folder-git.ts` builds every argument list from checked values and runs git directly
+  by its full path, with hooks, fsmonitor, pagers, external diff, textconv, signing and credential helpers forced off,
+  the user's and system git config not read, a minimal environment, a 10 s limit and a size cap. A repository whose own
+  config defines filters, diff/merge drivers, includes or a different work tree is refused (`git_unsafe`) because those
+  run programs and cannot be switched off from outside. Nothing hidden is shown (`.env`, keys, `.git`, `node_modules`,
+  build output): status entries and whole file sections of a diff are dropped (a header git had to quote is dropped
+  too); output passes the secret masking; `show` takes commits only (never a blob, which would print any file);
+  git's own error text never leaves the host's computer.
+- **Writes, always asked:** `git_add`, `git_commit`, `git_restore`, `git_branch` (a new branch, `switch -c`) are
+  proposals like edits: the host sees the exact command and what it changes (files to add; message and staged diff for
+  a commit; the diff that would be lost for a restore, flagged as destructive) and clicks Approve in the app. Sealed to
+  the state the host saw (the status, or HEAD plus the index, or the diff): a changed repository is refused. Add leaves
+  out hidden files, ignored files and symlinks; commit refuses when something staged is outside the shared folder or is
+  a hidden kind; hooks are off and `--no-verify`/`--no-gpg-sign` are set; the commit uses the host's own git identity.
+- **Not possible for the AI:** push, pull, fetch, checkout of other branches, reset, amend, delete, any other command.
+
+Later: running commands (every call asks, native confirm window), compaction, live co-editing (Yjs, Zed's model).
 
 ## Decisions
 

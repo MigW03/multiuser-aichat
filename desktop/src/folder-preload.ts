@@ -40,3 +40,23 @@ export const folderApi = {
     return () => void ipcRenderer.removeListener("folder:changed", listener);
   },
 };
+
+// Connected tools (MCP). They belong to the signed-in person, not a project. The page tells the app who is signed in and can
+// read the setup and change switches. Adding a server shows its command in a window the app opens itself; the page cannot
+// click it and never receives environment values.
+export const mcpApi = {
+  /** Who is signed in and a token for the chat server; null when signed out. */
+  setSession: (session: { serverUrl: string; token: string; userId: string } | null): Promise<void> => ipcRenderer.invoke("mcp:set-session", session),
+  get: (): Promise<unknown> => ipcRenderer.invoke("mcp:get"),
+  /** `command` is the command line as typed; `env` is KEY=value lines. The app splits them and shows the result for confirmation. */
+  add: (server: { name: string; command: string; env: string }): Promise<unknown> => ipcRenderer.invoke("mcp:add", server),
+  remove: (name: string): Promise<unknown> => ipcRenderer.invoke("mcp:remove", name),
+  setServer: (name: string, enabled: boolean): Promise<unknown> => ipcRenderer.invoke("mcp:set-server", name, enabled),
+  setTool: (name: string, tool: string, enabled: boolean): Promise<unknown> => ipcRenderer.invoke("mcp:set-tool", name, tool, enabled),
+  retry: (name: string): Promise<unknown> => ipcRenderer.invoke("mcp:retry", name),
+  onChange: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("mcp:changed", listener);
+    return () => void ipcRenderer.removeListener("mcp:changed", listener);
+  },
+};

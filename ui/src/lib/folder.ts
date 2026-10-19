@@ -36,6 +36,64 @@ export type FolderBridge = {
   onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
 };
 
+/** Connected tools (MCP), as the desktop app reports them. They belong to the signed-in person, not to a project. Environment values never reach the page, only their names. */
+export type McpTool = { name: string; description: string; enabled: boolean; usable: boolean; note?: string };
+export type McpServer = { name: string; command: string; envKeys: string[]; enabled: boolean; status: "off" | "starting" | "ready" | "failed"; error?: string; tools: McpTool[] };
+export type McpInfo = { servers: McpServer[]; secureStorage: boolean; /** The app's connection to the chat server: the AI can use the tools only while "connected". */ link: "off" | "connecting" | "connected" | "auth" };
+export type McpBridge = {
+  setSession: (session: { serverUrl: string; token: string; userId: string } | null) => Promise<void>;
+  get: () => Promise<McpInfo>;
+  /** `command` is the command line as typed and `env` is KEY=value lines; the app splits them and asks the person to confirm what will run, in its own window. error null = they cancelled. */
+  add: (server: { name: string; command: string; env: string }) => Promise<{ ok: true; info: McpInfo } | { ok: false; error: string | null }>;
+  remove: (name: string) => Promise<McpInfo>;
+  setServer: (name: string, enabled: boolean) => Promise<McpInfo>;
+  setTool: (name: string, tool: string, enabled: boolean) => Promise<McpInfo>;
+  retry: (name: string) => Promise<McpInfo>;
+  onChange: (callback: () => void) => () => void;
+};
+
+export const mcpBridge = (): McpBridge | null => (globalThis as { desktop?: { mcp?: McpBridge } }).desktop?.mcp ?? null;
+
+/** The person's connected tools, current as the app starts, stops and changes them. null in a browser or an older app. */
+export function useMcp(): { info: McpInfo | null; set: (info: McpInfo) => void } {
+  const [info, setInfo] = useState<McpInfo | null>(null);
+  const mcp = mcpBridge();
+  useEffect(() => {
+    if (!mcp) return setInfo(null);
+    let live = true;
+    const load = () => void mcp.get().then((v) => live && setInfo(v), () => undefined);
+    load();
+    const off = mcp.onChange(load);
+    return () => {
+      live = false;
+      off();
+    };
+  }, [mcp]);
+  return { info, set: setInfo };
+}
+
+/**
+ * Tells the desktop app who is signed in (and keeps its access token fresh) so it can start this person's MCP servers and
+ * connect them to the chat server. Signing out, or leaving the app screen, stops them.
+ */
+export function useMcpHost(userId: string) {
+  useEffect(() => {
+    const bridge = mcpBridge();
+    if (!bridge) return;
+    let live = true;
+    const push = (token: string | undefined) => {
+      if (live && token) void bridge.setSession({ serverUrl: config.serverUrl, token, userId }).catch(() => undefined);
+    };
+    void supabase.auth.getSession().then(({ data }) => push(data.session?.access_token));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => push(session?.access_token));
+    return () => {
+      live = false;
+      data.subscription.unsubscribe();
+      void bridge.setSession(null).catch(() => undefined);
+    };
+  }, [userId]);
+}
+
 export const folderBridge = (): FolderBridge | null => (globalThis as { desktop?: { folder?: FolderBridge } }).desktop?.folder ?? null;
 
 /** The project's shared folder row, kept current by realtime. undefined while loading, null when none is shared. */

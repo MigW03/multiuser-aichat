@@ -8,15 +8,20 @@ import {
   type ApprovalEvent,
   type ChangePreview,
   type MessageKind,
+  type McpState,
   type MessageMeta,
   type ProviderId,
   type Reasoning,
   type SummaryScope,
 } from "@mc/shared";
-import { APICallError, stepCountIs, streamText, type ModelMessage } from "ai";
+import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
+import { mcpRelay } from "./mcp.ts";
 import { folderAccess, relay } from "./folders.ts";
+import type { CallOptions, RelayRequest } from "./folder-relay.ts";
+import type { McpCallOptions, McpRequest } from "./mcp-relay.ts";
 import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
@@ -222,7 +227,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
-    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean } } | null = null;
+    let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean } } | null = null;
+    /** The asker's own connected tools (MCP), if their desktop app is online and has any switched on. */
+    let connected: { tools: ToolSet; state: McpState } | null = null;
+    /** "server: tool" for each connected tool this answer used, for the note under it. */
+    const mcpUsed = new Set<string>();
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -259,7 +268,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       const access = projectId ? await folderAccess(authorId, projectId) : null;
       if (projectId && access?.ok) {
         folderName = access.name;
-        const use: FolderUse = { files: new Set(), offline: false, edits: [] };
+        const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
         // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
         const caps = relay.caps(projectId);
         const canChange = caps.edit || caps.git || caps.exec;
@@ -271,8 +280,21 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
               done: (id: string, outcome: ApprovalDoneEvent["outcome"]) => void channel.httpSend("approval_done", { messageId: assistant.id, id, outcome } satisfies ApprovalDoneEvent),
             }
           : undefined;
-        folder = { tools: folderTools((req, opts) => relay.call(projectId, req as never, opts), use, changes, caps), use, caps };
+        const call = (req: RelayRequest, opts?: CallOptions) => relay.call(projectId, req as never, opts);
+        folder = { tools: folderTools(call, use, changes, caps), use, caps };
         if (canChange) {
+          runSeconds = LOCK_SECONDS_EDIT;
+          await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
+        }
+      }
+
+      // The asker's own connected tools (MCP), in any chat: nobody else's tools are ever offered for this answer. A built-in
+      // tool keeps its name.
+      const state = mcpRelay.tools(authorId);
+      if (state.servers.length) {
+        const call = (req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts);
+        connected = { tools: mcpTools(call, state, { reserved: Object.keys(folder?.tools ?? {}), signal: controller.signal, used: mcpUsed }), state };
+        if (runSeconds < LOCK_SECONDS_EDIT) {
           runSeconds = LOCK_SECONDS_EDIT;
           await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
         }
@@ -294,11 +316,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : instructions,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.caps.edit || folder.caps.git || folder.caps.exec ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
+        ...(withTools && (folder || connected) ? { tools: { ...connected?.tools, ...folder?.tools }, stopWhen: stepCountIs(folder?.caps.edit || folder?.caps.git || folder?.caps.exec || connected ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
@@ -321,15 +343,18 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let streamError = await attempt(true);
     // Some connections refuse tools (a model without tool support, or a ChatGPT plan backend that changed). Rather than
     // fail the answer, answer once more without the folder, and say why.
-    if (streamError && folder && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
-      console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder (${streamError.statusCode})`);
+    if (streamError && (folder || connected) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
+      console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder and connected tools (${streamError.statusCode})`);
       streamError = await attempt(false);
-      if (!streamError) folder.use.files.clear();
+      if (!streamError) {
+        folder?.use.files.clear();
+        mcpUsed.clear();
+      }
     }
     if (controller.signal.aborted) throw new UserFacing("stopped", "Stopped.");
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
-    if (folder) meta = { ...meta, ...fitFiles(folder.use) };
+    if (folder || mcpUsed.size) meta = { ...meta, ...fitFiles(folder?.use ?? { files: new Set(), offline: false, edits: [], mcp: mcpUsed }) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);
   } catch (err) {

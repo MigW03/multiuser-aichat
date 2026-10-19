@@ -14,7 +14,7 @@ import {
   type AppContextValue,
   type Me,
 } from "../data.tsx";
-import { useFolderHost } from "../lib/folder.ts";
+import { useFolderHost, useMcpHost } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { loadModels } from "../lib/models.ts";
@@ -132,6 +132,8 @@ export function Shell({ userId }: { userId: string }) {
   const online = useProjectPresence(projectId, userId);
   // The desktop app serves the shared folders of the projects this person hosts.
   useFolderHost(userId, projects.data?.filter((p) => p.my_role === "host").map((p) => p.id));
+  // And it runs this person's own connected tools (MCP servers) for the answers they ask for.
+  useMcpHost(userId);
 
   const narrow = useNarrow();
   const [collapsed, setCollapsed] = useState(() => readPref(PREF.leftCollapsed(userId), false));

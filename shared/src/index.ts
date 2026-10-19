@@ -100,6 +100,8 @@ export type MessageMeta = {
   folder_offline?: boolean;
   /** answers: changes the AI proposed to files (path, and whether the host approved it). Shares the column's 1 KB with `files`. */
   edits?: { p: string; ok: boolean }[];
+  /** answers: connected tools (MCP) the AI used, as "server: tool", distinct, as many as fit. Shares the column's 1 KB. */
+  mcp?: string[];
 };
 
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -342,7 +344,10 @@ export type FolderErrorCode =
   | "git_unsafe" // the repository's own config runs programs, so git is not used on it
   | "git_failed" // git refused; the message says why in words that hold no paths from the host's computer
   | "nothing" // nothing to add, commit or restore
-  | "exec_failed"; // the command could not be started
+  | "exec_failed" // the command could not be started
+  // connected tools (MCP); these travel on their own relay (see MCP_LIMITS below) but share the error type
+  | "mcp_unavailable" // the server is off, not running, or does not have that tool
+  | "mcp_failed"; // the tool server failed or did not answer
 
 /** What the host allows the AI to propose in this project. Off by default; kept on the host's computer. */
 export type FolderCaps = {
@@ -408,6 +413,43 @@ export type ExecResult = { command: string; exitCode: number | null; signal: str
 export type GitChangeResult = { command: string; output: string };
 
 export type FolderResponse = { id: string; ok: true; result: unknown } | { id: string; ok: false; code: FolderErrorCode; message: string };
+
+// ---- Connected tools (MCP). Tool servers are the USER's own: each person sets them up in the desktop app's settings
+// and they run on that person's computer, with that person's credentials. They are not tied to a project. When that
+// person asks the AI something, in any chat, the AI may use their connected tools; when someone else asks, it never
+// does (nobody borrows another person's tools). The chat server only relays: the app keeps its own connection to the
+// server (/api/mcp-host) and reports which tools exist; the server checks the list again. Once a server is added and
+// on, the AI uses its tools without asking each time: the person decided when they added it.
+
+export const MCP_LIMITS = {
+  /** Servers per person, characters in a server name, tools handed to the AI in all. */
+  servers: 10,
+  nameChars: 32,
+  tools: 50,
+  toolNameChars: 64,
+  /** A tool's description (cut) and its input schema (a tool with a bigger one is left out), in characters. */
+  descriptionChars: 1_000,
+  schemaChars: 8_192,
+  /** One call: arguments the AI may send (JSON characters), result text kept, how long to wait for it. */
+  argChars: 100_000,
+  resultChars: 50_000,
+  callDefaultMs: 60_000,
+  /** Calls one AI answer may make, and calls one person's tools may take per ten minutes. */
+  runCalls: 25,
+  windowCalls: 120,
+  /** Adding a server: parts of the command line, characters in one, environment variables, characters in one value. */
+  commandParts: 32,
+  partChars: 500,
+  envVars: 20,
+  envValueChars: 2_000,
+} as const;
+
+export type McpToolInfo = { name: string; description: string; inputSchema: Record<string, unknown> };
+/** What the host's app reports once a server is running: its name and the tools the host left switched on. */
+export type McpServerState = { name: string; tools: McpToolInfo[] };
+export type McpState = { servers: McpServerState[] };
+/** What a tool returned, as text. `isError` is the tool's own error flag. */
+export type McpCallResult = { text: string; isError: boolean; truncated: boolean };
 
 /** The one row the server keeps for a project's shared folder: a name and whether the host's app is serving it. Never the path. */
 export type ProjectFolder = { project_id: string; name: string; linked_by: string; linked_at: string; online: boolean };

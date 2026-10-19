@@ -1,5 +1,5 @@
 import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, Folder, Pencil, RotateCcw, Sparkles } from "lucide-react";
+import { Copy, CornerUpLeft, Folder, Pencil, Plug, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
@@ -256,6 +256,14 @@ function AssistantMessage(props: RowProps) {
             <span className="truncate" title={m.meta.edits.map((e) => `${e.ok ? "Done" : "Not done"}: ${e.p}`).join("\n")}>
               {m.meta.edits.filter((e) => e.ok).length > 0 ? `Done: ${m.meta.edits.filter((e) => e.ok).map((e) => e.p).join(", ")}` : "Nothing was changed"}
               {m.meta.edits.some((e) => !e.ok) ? ` · ${m.meta.edits.filter((e) => !e.ok).length} declined or not approved` : ""}
+            </span>
+          </div>
+        ) : null}
+        {!streaming && !failed && m.meta.mcp?.length ? (
+          <div className="folder-note small muted">
+            <Plug size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+            <span className="truncate" title={m.meta.mcp.join("\n")}>
+              Used connected {m.meta.mcp.length === 1 ? "tool" : "tools"}: {m.meta.mcp.join(", ")}
             </span>
           </div>
         ) : null}

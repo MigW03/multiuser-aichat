@@ -26,6 +26,7 @@ import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
 import { ApprovalDock } from "./Changes.tsx";
+import { ProjectSettings } from "./ProjectSettings.tsx";
 import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
@@ -138,10 +139,11 @@ export function Shell({ userId }: { userId: string }) {
   const left = useLeftWidth(userId);
   const right = useRightWidth(userId);
   const activeChatId = route.name === "homeChat" ? route.chatId : route.name === "project" ? route.chatId : null;
+  const settingsOpen = route.name === "project" && route.view === "settings";
   // On a small screen the list is the first thing you see until you open a chat.
   useEffect(() => {
-    if (narrow) setDrawer(activeChatId === null);
-  }, [narrow, activeChatId, route.name, projectId]);
+    if (narrow) setDrawer(activeChatId === null && !settingsOpen);
+  }, [narrow, activeChatId, settingsOpen, route.name, projectId]);
 
   // The right column (shared folder): open by default and remembered on wide screens; on a small screen a drawer that starts closed.
   const [folderPinned, setFolderPinned] = useState(() => readPref(PREF.folderOpen(userId), true));
@@ -228,6 +230,8 @@ export function Shell({ userId }: { userId: string }) {
     main = <NotFound text="This project doesn't exist, or you're not in it." />;
   } else if (projectId && !project) {
     main = <Loading />;
+  } else if (project && settingsOpen) {
+    main = <ProjectSettings key={project.id} project={project} leftCollapsed={narrow || collapsed} onShowLeft={() => (narrow ? setDrawer(true) : setCollapsedPersisted(false))} />;
   } else if (activeChatId) {
     main = chatMissing ? (
       <NotFound text="This chat doesn't exist anymore, or you don't have access to it." back={project ? { name: "project", projectId: project.id, chatId: null } : { name: "home" }} />

@@ -173,7 +173,6 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
   const local = useLocalFolder(host ? project.id : null);
   const share = useShare(project, bridge, true);
   const [confirmStop, setConfirmStop] = useState(false);
-  const [confirmEdit, setConfirmEdit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,16 +187,6 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
         await bridge.connect(project.id);
       }
       notifyChanged();
-    } catch (e) {
-      setError(messageOf(e));
-    }
-  }
-
-  async function setEdit(on: boolean) {
-    setError(null);
-    try {
-      await bridge?.setCaps?.(project.id, { edit: on });
-      setConfirmEdit(false);
     } catch (e) {
       setError(messageOf(e));
     }
@@ -258,29 +247,7 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
           </ul>
         </div>
       )}
-      {manage && local?.linked && typeof bridge?.setCaps === "function" && (
-        <label className="edit-switch small">
-          <input type="checkbox" checked={local.caps?.edit === true} onChange={(e) => (e.target.checked ? setConfirmEdit(true) : void setEdit(false))} />
-          <span>
-            <b>Let the AI propose changes to these files</b>
-            <span className="muted"> Off by default. You see every change as a diff and nothing is written until you approve it here.</span>
-          </span>
-        </label>
-      )}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
-      {confirmEdit && (
-        <Dialog title="Let the AI propose changes?" onClose={() => setConfirmEdit(false)}>
-          <p className="lead">
-            In {project.name}'s chats, the AI will be able to propose edits to the files you share, asked for by anyone in the project. Each proposal appears in this app as a diff. Nothing is written until you click Approve, and secrets like .env files and keys stay off limits. You can switch this off any time.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setConfirmEdit(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => void setEdit(true)}>
-              Allow proposals
-            </Button>
-          </div>
-        </Dialog>
-      )}
       {manage && (
         <div className="side-card-actions">
           <Button size="sm" onClick={() => share.start("folder")} busy={share.busy}>

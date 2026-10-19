@@ -80,7 +80,7 @@ Follows opencode's `edit` and `write` tools (names, inputs, tolerant matching) w
 the person at the terminal, but here several people share a chat and the files sit on the host's computer. So a change
 is only a **proposal**, and the host's desktop app is the only thing that can write it.
 
-- **Off by default.** The host switches "Let the AI propose changes to these files" on in the folder card. The choice
+- **Off by default.** The host switches "Let the AI propose file changes" on in Project settings (project menu > Project settings, a page that replaces the chat area; more settings go there later). The choice
   lives on the host's computer (same file as the folder link) and is reported to the server on connect. No database
   change. Only then do project chats get `edit` and `write`.
 - **Flow.** AI calls `edit` (read-first rule, as in opencode) -> server relay request (`edit` / `write`, long timeout) ->

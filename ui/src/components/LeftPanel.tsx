@@ -6,7 +6,7 @@ import { APP_NAME } from "../config.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setPinned } from "../lib/actions.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
-import { navigate } from "../lib/router.ts";
+import { navigate, openProjectSettings } from "../lib/router.ts";
 import { listTime } from "../lib/time.ts";
 import { supabase } from "../supabase.ts";
 import { BrandMark } from "./Auth.tsx";
@@ -86,6 +86,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
             align="end"
             items={[
               { label: "People", icon: <Users size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => setDialog("members") },
+              { label: "Project settings", icon: <Settings size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openProjectSettings(project.id) },
               ...(canManagePeople(project.my_role) ? [{ label: "Rename project", icon: <Pencil size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => setDialog("rename-project") }] : []),
               ...(project.my_role === "host" ? ["divider" as const, { label: "Delete project", danger: true, icon: <Trash2 size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => setDialog("delete-project") }] : []),
             ]}

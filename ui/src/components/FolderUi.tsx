@@ -48,6 +48,8 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const folder = useProjectFolder(project.id);
   const host = project.my_role === "host";
   const bridge = folderBridge();
+  const share = useShare(project, bridge, true);
+  const manage = host && !!bridge && typeof bridge.remove === "function";
   if (folder.data === undefined) return <section className="side-card folder-card"><div className="folder-loading"><Spinner /></div></section>;
   if (folder.data === null) return <FolderEmpty project={project} host={host} bridge={bridge} onClose={onClose} />;
   return (
@@ -65,11 +67,26 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
           <StatusDot on={folder.data.online} />
           {folder.data.online ? "Online" : "Offline"}
         </Tip>
+        {manage && (
+          <Menu
+            label="Share from this computer"
+            align="end"
+            items={[
+              { label: "Share folder", icon: <FolderPlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("folder") },
+              { label: "Share files", icon: <FilePlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("files") },
+            ]}
+            trigger={({ toggle, open }) => (
+              <Button size="sm" onClick={toggle} busy={share.busy} aria-haspopup="menu" aria-expanded={open}>
+                <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Share
+              </Button>
+            )}
+          />
+        )}
         <IconButton label="Hide files" onClick={onClose} className="sm">
           <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>
       </header>
-      <FolderBody project={project} folder={folder.data} host={host} bridge={bridge} />
+      <FolderBody project={project} folder={folder.data} host={host} bridge={bridge} manage={manage} share={share} />
     </section>
   );
 }
@@ -174,9 +191,8 @@ function useShare(project: ProjectSummary, bridge: FolderBridge | null, shared: 
   return { start, dialog, error: notice ? null : error, busy };
 }
 
-function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary; folder: ProjectFolder; host: boolean; bridge: FolderBridge | null }) {
+function FolderBody({ project, folder, host, bridge, manage, share }: { project: ProjectSummary; folder: ProjectFolder; host: boolean; bridge: FolderBridge | null; manage: boolean; share: ReturnType<typeof useShare> }) {
   const local = useLocalFolder(host ? project.id : null);
-  const share = useShare(project, bridge, true);
   const [error, setError] = useState<string | null>(null);
 
   async function remove(name: string) {
@@ -195,7 +211,6 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
     }
   }
 
-  const manage = host && !!bridge && typeof bridge.remove === "function";
   // Several items (or one file) are listed at the top under their own names, and each gets a Remove menu. A single folder is shown from the inside, so it gets a row of its own above the list.
   const itemsHere = manage && local?.linked ? local.items : [];
   const removable = itemsHere.length > 1 || (itemsHere.length === 1 && itemsHere[0]!.kind === "file") ? new Set(itemsHere.map((i) => i.name)) : null;
@@ -218,23 +233,6 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
         <div className="plan-warn" role="status">
           <TriangleAlert size={ICON} strokeWidth={STROKE} aria-hidden />
           <div className="small">The server doesn't accept this computer as the host. Add the files again to share them.</div>
-        </div>
-      )}
-      {manage && (
-        <div className="side-card-actions">
-          <div className="grow" />
-          <Menu
-            label="Share from this computer"
-            items={[
-              { label: "Share folder", icon: <FolderPlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("folder") },
-              { label: "Share files", icon: <FilePlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("files") },
-            ]}
-            trigger={({ toggle, open }) => (
-              <Button size="sm" onClick={toggle} busy={share.busy} aria-haspopup="menu" aria-expanded={open}>
-                <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Share
-              </Button>
-            )}
-          />
         </div>
       )}
       {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}

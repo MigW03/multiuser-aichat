@@ -1,5 +1,5 @@
 import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectFolder, type ProjectSummary } from "@mc/shared";
-import { ArrowLeft, ChevronLeft, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, MoreHorizontal, PanelRightClose, PanelRightOpen, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
@@ -233,18 +233,28 @@ function FolderBody({ project, folder, host, bridge }: { project: ProjectSummary
           <div className="small">The server doesn't accept this computer as the host. Add the files again to share them.</div>
         </div>
       )}
+      {manage && (
+        <div className="side-card-actions">
+          <Menu
+            label="Share from this computer"
+            items={[
+              { label: "Share folder", icon: <FolderPlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("folder") },
+              { label: "Share files", icon: <FilePlus size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => share.start("files") },
+            ]}
+            trigger={({ toggle, open }) => (
+              <Button size="sm" onClick={toggle} busy={share.busy} aria-haspopup="menu" aria-expanded={open}>
+                <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Share
+              </Button>
+            )}
+          />
+        </div>
+      )}
       {/* Keyed by when it was last shared: adding or removing an item starts browsing from the top again. */}
       {folder.online ? <FolderBrowser key={folder.linked_at} projectId={project.id} removable={removable} onRemove={(name) => void remove(name)} /> : <div className="grow" />}
       {folder.online && <GitChanges key={`git-${folder.linked_at}`} projectId={project.id} />}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
       {manage && (
         <div className="side-card-actions">
-          <Button size="sm" onClick={() => share.start("folder")} busy={share.busy}>
-            <FolderPlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Folder
-          </Button>
-          <Button size="sm" onClick={() => share.start("files")}>
-            <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Files
-          </Button>
           <div className="grow" />
           <Button size="sm" variant="ghost" onClick={() => setConfirmStop(true)}>
             Stop sharing

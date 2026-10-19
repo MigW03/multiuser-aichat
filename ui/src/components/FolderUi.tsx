@@ -2,7 +2,7 @@ import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type GitSt
 import { ArrowLeft, ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, PanelRightClose, PanelRightOpen, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
-import { notifyChanged, useApp } from "../data.tsx";
+import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectFolder, type FolderBridge } from "../lib/folder.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
@@ -382,11 +382,14 @@ function GitChanges({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
+  /** Counts successful status loads, so an open diff is fetched again with them. */
+  const [loads, setLoads] = useState(0);
 
   const load = useCallback(() => {
     api.gitStatus(projectId).then(
       (r) => {
         setStatus(r);
+        setLoads((n) => n + 1);
         setError(null);
         setOff(false);
       },
@@ -398,14 +401,26 @@ function GitChanges({ projectId }: { projectId: string }) {
     );
   }, [projectId]);
 
+  // Kept current without a button: every few seconds while the window is visible, at once when it comes back into
+  // view, and whenever something happens in the project (an answer that committed or edited arrives as a message).
   useEffect(() => {
     load();
-    const t = setInterval(load, 20_000);
-    return () => clearInterval(t);
+    const visible = () => document.visibilityState === "visible";
+    const t = setInterval(() => visible() && load(), 5_000);
+    const onShow = () => visible() && load();
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    const off = onChanged(load);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
+      off();
+    };
   }, [load]);
 
+  useEffect(() => setDiff(null), [projectId, open]);
   useEffect(() => {
-    setDiff(null);
     if (open === null) return;
     let live = true;
     api.gitDiff(projectId, open, "head").then(
@@ -415,7 +430,7 @@ function GitChanges({ projectId }: { projectId: string }) {
     return () => {
       live = false;
     };
-  }, [projectId, open]);
+  }, [projectId, open, loads]);
 
   if (off || (!status && !error)) return null;
   const files = status?.files ?? [];

@@ -23,6 +23,12 @@ export function notifyChanged() {
   pending = setTimeout(() => bus.dispatchEvent(new Event("changed")), 250);
 }
 
+/** Runs `callback` whenever the watched tables change (a message arrived, a chat or project changed). Returns the way to stop. */
+export function onChanged(callback: () => void): () => void {
+  bus.addEventListener("changed", callback);
+  return () => bus.removeEventListener("changed", callback);
+}
+
 export function useRealtimeLists(userId: string) {
   useEffect(() => {
     const channel = supabase.channel(`lists:${userId}`);

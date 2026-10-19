@@ -21,8 +21,11 @@ let repo = "";
 let items = nameItems([]);
 let n = 0;
 const id = () => `g${++n}`;
-const read = (req: object) => gitRead(items, req as never);
-const change = (req: object) => stageGitChange(items, { id: id(), ...req } as never);
+/** Paths inside the shared folder start with the folder's name. Escapes and absolute paths stay as they are. */
+const at = (path: string) => (path.startsWith("/") || path.startsWith("..") ? path : path === "" ? items[0]!.name : `${items[0]!.name}/${path}`);
+const scoped = <T extends { path?: string; paths?: string[] }>(req: T): T => ({ ...req, ...(req.path !== undefined ? { path: at(req.path) } : {}), ...(req.paths ? { paths: req.paths.map(at) } : {}) });
+const read = (req: object) => gitRead(items, scoped(req) as never);
+const change = (req: object) => stageGitChange(items, { id: id(), ...scoped(req) } as never);
 
 function makeRepo(dir: string) {
   mkdirSync(dir, { recursive: true });
@@ -158,7 +161,7 @@ describe("reads", () => {
     const it = nameItems([{ abs: r, kind: "dir" }]);
     await gitRead(it, { sub: "status" } as never);
     assert.equal(existsSync(marker), false, "fsmonitor ran");
-    const add = await stageGitChange(it, { id: id(), action: "add", paths: ["a.txt"] });
+    const add = await stageGitChange(it, { id: id(), action: "add", paths: [`${it[0]!.name}/a.txt`] });
     await add.apply();
     const commit = await stageGitChange(it, { id: id(), action: "commit", message: "hello" });
     await commit.apply();

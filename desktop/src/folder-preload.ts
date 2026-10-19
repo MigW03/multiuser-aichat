@@ -1,18 +1,54 @@
-import { ipcRenderer } from "electron";
+import { ipcRenderer, webUtils } from "electron";
 
-// What the page may do with the shared folder. It can say who is signed in, ask what is shared from this computer,
-// open the native "choose" dialog, remove an item and stop sharing. It cannot name a path or read a file.
+// What the page may do with the files this person shares. It can say who is signed in, ask what is shared from this
+// computer, open the native "choose" dialog, hear what was dropped on the files panel (names only), remove an item and
+// stop sharing. It cannot name a path or read a file.
+type Dropped = { ok: true; items: { name: string; kind: "dir" | "file" }[]; skipped: string[] } | { ok: false; error: string };
+const dropListeners = new Set<(projectId: string, dropped: Dropped) => void>();
+
+// A drop on an element marked data-files-drop="<project id>" hands the real paths of what was dragged in from the
+// person's file system to the app, which checks them and keeps them. webUtils reads a path only from a file that came
+// from the file system, so a page that builds its own File objects gets nothing, and a script cannot fake the event.
+window.addEventListener(
+  "drop",
+  (event) => {
+    const projectId = (event.target as Element | null)?.closest?.("[data-files-drop]")?.getAttribute("data-files-drop");
+    if (!event.isTrusted || !projectId) return;
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    const paths = files.slice(0, 50).map((f) => webUtils.getPathForFile(f)).filter((p) => p.length > 0);
+    void ipcRenderer.invoke("folder:drop-stage", projectId, paths).then((dropped: Dropped) => dropListeners.forEach((cb) => cb(projectId, dropped)));
+  },
+  true,
+);
+
 export const folderApi = {
-  /** Tells the app who is signed in and which projects they host, so it can serve their linked folders. null when signed out. */
-  setSession: (session: { serverUrl: string; token: string; userId: string; hostProjects: string[] } | null): Promise<void> => ipcRenderer.invoke("folder:set-session", session),
-  get: (projectId: string): Promise<{ linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: string }> =>
-    ipcRenderer.invoke("folder:get", projectId),
+  /** Tells the app who is signed in and which projects they belong to, so it can serve what they share there. null when signed out. */
+  setSession: (session: { serverUrl: string; token: string; userId: string; projects: string[] } | null): Promise<void> => ipcRenderer.invoke("folder:set-session", session),
+  get: (projectId: string): Promise<unknown> => ipcRenderer.invoke("folder:get", projectId),
   /** Opens the native dialog to add folders or files. */
-  pick: (projectId: string, kind: "folder" | "files"): Promise<{ ok: true; name: string; items: { name: string; kind: "dir" | "file" }[]; skipped: string[] } | { ok: false; error: string | null }> =>
-    ipcRenderer.invoke("folder:pick", projectId, kind),
+  pick: (projectId: string, kind: "folder" | "files"): Promise<unknown> => ipcRenderer.invoke("folder:pick", projectId, kind),
+  /** Something was dropped on a data-files-drop element: what it is called, nothing more. It waits in the app until dropCommit. */
+  onDrop: (callback: (projectId: string, dropped: Dropped) => void): (() => void) => {
+    dropListeners.add(callback);
+    return () => void dropListeners.delete(callback);
+  },
+  /** Shares what was dropped (after the page showed the notice, when one is due). */
+  dropCommit: (projectId: string): Promise<unknown> => ipcRenderer.invoke("folder:drop-commit", projectId),
+  dropCancel: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:drop-cancel", projectId),
+  /** The server refused what this app reported (for example too many items in the project). */
+  onItemsError: (callback: (projectId: string, code: string) => void): (() => void) => {
+    const listener = (_event: unknown, e: unknown) => {
+      const v = e as { projectId?: unknown; code?: unknown } | null;
+      if (typeof v?.projectId === "string" && typeof v.code === "string") callback(v.projectId, v.code);
+    };
+    ipcRenderer.on("folder:items-error", listener);
+    return () => void ipcRenderer.removeListener("folder:items-error", listener);
+  },
   /** Stops sharing one item. Resolves to the new name, or null when nothing is left. */
   remove: (projectId: string, name: string): Promise<{ name: string | null }> => ipcRenderer.invoke("folder:remove", projectId, name),
-  /** Starts serving a linked folder now (after the page registered it with the server). */
+  /** Reconnects a project now. */
   connect: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:connect", projectId),
   unlink: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:unlink", projectId),
   /** The host's switches for AI changes to files, git and commands (all off by default; turning on commands asks in a native window). Only the keys given change. */

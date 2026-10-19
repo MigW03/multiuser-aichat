@@ -4,11 +4,12 @@ import { basename, dirname } from "node:path";
 import { FolderError, folderName, listDir, readText, splitPath, type Target } from "./folder-fs.ts";
 import { gitRead } from "./folder-git.ts";
 
-// What a project shares: up to 20 folders and files, picked one by one by the host. One folder alone is shared as
-// is (paths start inside it, like src/index.ts). Anything else is shown as a top level made of the picked items,
-// each under its own name (my-app/src/index.ts, notes.md).
+// What this person shares in a project: up to 20 folders and files, picked one by one. The project sees them as a top
+// level made of the items, each under the name the server gave it (my-app/src/index.ts, notes.md), whoever shares
+// what: the server routes a path to the person whose item it starts with.
 
-export type ItemSpec = { abs: string; kind: "dir" | "file" };
+/** `key` is a random id the app makes for the item and reports to the server in place of its path. */
+export type ItemSpec = { abs: string; kind: "dir" | "file"; key?: string };
 export type Item = ItemSpec & { name: string };
 /** glob and grep, which the app runs in a worker thread it can stop (folder-grep.ts). */
 export type Search = {
@@ -28,14 +29,23 @@ export function nameItems(specs: ItemSpec[]): Item[] {
   });
 }
 
+/** What the server says about an item: the name the project calls it, and whether the host or an admin approved it. */
+export type ItemStatus = { name: string; status: "pending" | "active" };
+
+/** The items that may be served right now: approved ones, under the names the project gave them. Anything the server hasn't answered for yet is not served. */
+export function servedItems(specs: ItemSpec[], assigned: ReadonlyMap<string, ItemStatus> | undefined): Item[] {
+  return specs.flatMap((spec) => {
+    const a = spec.key ? assigned?.get(spec.key) : undefined;
+    return a && a.status === "active" ? [{ ...spec, name: a.name }] : [];
+  });
+}
+
 /** The name the project sees for everything shared: the item's name, or "first + N more". */
 export function summaryName(items: Item[]): string {
   if (items.length === 0) return "Shared files";
   const first = items[0]!.name;
   return (items.length === 1 ? first : `${first} + ${items.length - 1} more`).slice(0, L.nameChars);
 }
-
-const transparent = (items: Item[]) => items.length === 1 && items[0]!.kind === "dir";
 
 export const itemTarget = (item: Item, rest: string[]): Target => {
   if (item.kind === "dir") return { root: item.abs, start: rest, prefix: item.name };
@@ -46,7 +56,6 @@ export const itemTarget = (item: Item, rest: string[]): Target => {
 /** Where a path points: the shared top level, or a place inside one item. */
 export function resolve(items: Item[], path: unknown): Target | "top" {
   const parts = splitPath(path ?? "");
-  if (transparent(items)) return { root: items[0]!.abs, start: parts, prefix: "" };
   if (parts.length === 0) return "top";
   const item = items.find((i) => i.name === parts[0]);
   if (!item) throw new FolderError("not_found", "That file or folder doesn't exist in the shared folder.");

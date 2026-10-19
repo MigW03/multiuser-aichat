@@ -20,7 +20,7 @@ import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, 
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
 import { mcpRelay } from "./mcp.ts";
 import { remoteMcp } from "./mcp-servers.ts";
-import { folderAccess, relay } from "./folders.ts";
+import { folderAccess, hub } from "./folders.ts";
 import type { CallOptions, RelayRequest } from "./folder-relay.ts";
 import type { McpCallOptions, McpRequest } from "./mcp-relay.ts";
 import { chatgptProviderOptions } from "./chatgpt.ts";
@@ -271,7 +271,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         folderName = access.name;
         const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
         // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
-        const caps = relay.caps(projectId);
+        const caps = await hub.caps(projectId);
         const canChange = caps.edit || caps.git || caps.exec;
         const changes = canChange
           ? {
@@ -281,7 +281,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
               done: (id: string, outcome: ApprovalDoneEvent["outcome"]) => void channel.httpSend("approval_done", { messageId: assistant.id, id, outcome } satisfies ApprovalDoneEvent),
             }
           : undefined;
-        const call = (req: RelayRequest, opts?: CallOptions) => relay.call(projectId, req as never, opts);
+        const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
         folder = { tools: folderTools(call, use, changes, caps), use, caps };
         if (canChange) {
           runSeconds = LOCK_SECONDS_EDIT;

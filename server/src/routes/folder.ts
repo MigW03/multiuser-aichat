@@ -5,16 +5,18 @@ import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
 import { RelayError } from "../folder-relay.ts";
-import { folderAccess, relay } from "../folders.ts";
+import { folderAccess, hub, pushOwnerItems } from "../folders.ts";
 import { admin } from "../supabase.ts";
 
-// The project's shared folder: the host links and unlinks it, every member can browse it (read only). Reads go to the
-// host's desktop app through the relay; the server stores no file contents.
+// The project's shared files: several folders and files, each shared by one person from their own computer. Every member
+// can browse them (read only), the host and admins approve what members ask to share, and an item's owner (or the host
+// or an admin) can stop sharing it. Sharing itself starts in the owner's desktop app, over its connection (folder-relay.ts).
+// Reads go to the owner's app through the hub; the server stores no file contents.
 
 export const folder = new Hono<AuthVars>();
 
 const uuid = z.uuid();
-const nameBody = z.object({ name: z.string().trim().min(1).max(L.nameChars) });
+const decisionBody = z.object({ approve: z.boolean() });
 const pathParam = z.string().max(L.pathChars).default("");
 const listQuery = z.object({ path: pathParam });
 const readQuery = z.object({ path: z.string().min(1).max(L.pathChars), offset: z.coerce.number().int().min(1).max(10_000_000).optional(), limit: z.coerce.number().int().min(1).max(L.readLines).optional() });
@@ -27,7 +29,7 @@ const HOST_STATUS: Record<string, ContentfulStatusCode> = {
 /** Maps a failed relay call to a response whose message is safe to show to any project member. */
 export function relayFailure(c: Context, e: unknown) {
   if (e instanceof RelayError) {
-    if (e.kind === "offline") return c.json({ error: "The project host's desktop app is offline, so the shared folder is unavailable right now.", code: "folder_offline" }, 503);
+    if (e.kind === "offline") return c.json({ error: "The desktop app of the person who shares this is offline, so it is unavailable right now.", code: "folder_offline" }, 503);
     if (e.kind === "busy") return c.json({ error: e.message, code: "folder_busy" }, 503);
     if (e.kind === "timeout") return c.json({ error: e.message, code: "folder_timeout" }, 504);
     if (e.kind === "host") return c.json({ error: e.message, code: e.code ?? "failed" }, HOST_STATUS[e.code ?? "failed"] ?? 502);
@@ -37,19 +39,26 @@ export function relayFailure(c: Context, e: unknown) {
   return c.json({ error: "Something went wrong" }, 500);
 }
 
-folder.put("/:id/folder", rateLimit("folder-link", 20, 60 * 60_000), async (c) => {
-  const parsed = nameBody.safeParse(await c.req.json().catch(() => null));
-  if (!uuid.safeParse(c.req.param("id")).success || !parsed.success) return c.json({ error: "Invalid request" }, 400);
-  const { error } = await admin.rpc("app_link_folder", { p_user: c.get("userId"), p_project: c.req.param("id"), p_name: parsed.data.name });
-  return error ? dbError(c, error) : c.json({ ok: true });
+// The host or an admin answers a member's request to share something.
+folder.post("/:id/shares/:share/decision", rateLimit("share-decide", 60, 60 * 60_000), async (c) => {
+  const parsed = decisionBody.safeParse(await c.req.json().catch(() => null));
+  const id = uuid.safeParse(c.req.param("id"));
+  const share = uuid.safeParse(c.req.param("share"));
+  if (!id.success || !share.success || !parsed.success) return c.json({ error: "Invalid request" }, 400);
+  const { data, error } = await admin.rpc("app_share_decide", { p_user: c.get("userId"), p_project: id.data, p_share: share.data, p_approve: parsed.data.approve });
+  if (error) return dbError(c, error);
+  if (typeof data === "string") await pushOwnerItems(id.data, data).catch((e) => console.error("[folder] could not update the owner's app:", e));
+  return c.json({ ok: true });
 });
 
-folder.delete("/:id/folder", async (c) => {
-  const id = c.req.param("id");
-  if (!uuid.safeParse(id).success) return c.json({ error: "Invalid request" }, 400);
-  const { error } = await admin.rpc("app_unlink_folder", { p_user: c.get("userId"), p_project: id });
+// Stops sharing one item: its owner may, and so may the host and admins. The owner's app stops serving it at once.
+folder.delete("/:id/shares/:share", rateLimit("share-remove", 60, 60 * 60_000), async (c) => {
+  const id = uuid.safeParse(c.req.param("id"));
+  const share = uuid.safeParse(c.req.param("share"));
+  if (!id.success || !share.success) return c.json({ error: "Invalid request" }, 400);
+  const { data, error } = await admin.rpc("app_share_remove", { p_user: c.get("userId"), p_project: id.data, p_share: share.data });
   if (error) return dbError(c, error);
-  relay.disconnect(id); // the host's app stops serving at once
+  if (typeof data === "string") await pushOwnerItems(id.data, data).catch((e) => console.error("[folder] could not update the owner's app:", e));
   return c.json({ ok: true });
 });
 
@@ -70,7 +79,7 @@ folder.get("/:id/folder/list", async (c) => {
   const q = listQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
-    return c.json(await relay.call(c.req.param("id"), { op: "list", path: q.data.path }));
+    return c.json(await hub.call(c.req.param("id"), { op: "list", path: q.data.path }));
   } catch (e) {
     return relayFailure(c, e);
   }
@@ -80,17 +89,17 @@ folder.get("/:id/folder/read", async (c) => {
   const q = readQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
-    return c.json(await relay.call(c.req.param("id"), { op: "read", path: q.data.path, offset: q.data.offset, limit: q.data.limit }));
+    return c.json(await hub.call(c.req.param("id"), { op: "read", path: q.data.path, offset: q.data.offset, limit: q.data.limit }));
   } catch (e) {
     return relayFailure(c, e);
   }
 });
 
-// Git, read only: the same members may see what changed (status, one diff). Only when the host switched git on.
+// Git, read only: the same members may see what changed (status, one diff). Only when an owner switched git on.
 const gitQuery = z.object({ path: pathParam.optional(), target: z.enum(["worktree", "staged", "head"]).optional() });
 
 folder.use("/:id/folder/git/*", async (c, next) => {
-  if (!relay.caps(c.req.param("id")).git) return c.json({ error: "Git is not switched on for this project.", code: "git_off" }, 404);
+  if (!(await hub.caps(c.req.param("id"))).git) return c.json({ error: "Git is not switched on for this project.", code: "git_off" }, 404);
   await next();
 });
 
@@ -98,7 +107,7 @@ folder.get("/:id/folder/git/status", async (c) => {
   const q = gitQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
-    return c.json(await relay.call(c.req.param("id"), { op: "git", sub: "status", ...(q.data.path ? { path: q.data.path } : {}) }));
+    return c.json(await hub.call(c.req.param("id"), { op: "git", sub: "status", ...(q.data.path ? { path: q.data.path } : {}) }));
   } catch (e) {
     return relayFailure(c, e);
   }
@@ -108,7 +117,7 @@ folder.get("/:id/folder/git/diff", async (c) => {
   const q = gitQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
-    return c.json(await relay.call(c.req.param("id"), { op: "git", sub: "diff", ...(q.data.target ? { target: q.data.target } : {}), ...(q.data.path ? { path: q.data.path } : {}) }));
+    return c.json(await hub.call(c.req.param("id"), { op: "git", sub: "diff", ...(q.data.target ? { target: q.data.target } : {}), ...(q.data.path ? { path: q.data.path } : {}) }));
   } catch (e) {
     return relayFailure(c, e);
   }

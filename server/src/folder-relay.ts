@@ -5,20 +5,31 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 
-// The relay for shared folders. The project host's desktop app opens a WebSocket here and stays connected; when a
-// project member (or the AI answering one) asks to list, read or search the folder, the server checks that they
-// belong to the project and passes the request down that socket. File contents only ever pass through memory:
-// nothing is stored, and nothing is cached.
+// The relay for shared folders. Each person who shares files in a project (the host, admins, members whose requests were
+// approved) runs the desktop app, which opens a WebSocket here and stays connected. When a project member (or the AI
+// answering one) asks to list, read or search, the hub (folder-hub.ts) checks that they belong to the project, picks the
+// owner whose item the path points into, and passes the request down that owner's socket. File contents only ever pass
+// through memory: nothing is stored, and nothing is cached.
 //
-// The host's app is a client like any other and is not trusted with more than answering: every answer is validated
-// and size-limited before it goes on to a member or the AI.
+// An owner's app is a client like any other and is not trusted with more than answering: every answer is validated
+// and size-limited before it goes on to a member or the AI. Which items an owner may serve is decided by the database,
+// never by what the app claims.
+
+/** What an app reports for each thing it shares: its own random id for it (never a path), a suggested name, folder or file. */
+export type ShareItemIn = { key: string; name: string; kind: "dir" | "file" };
+/** What the project calls an item, and whether the host or an admin has approved it yet. */
+export type ShareItemOut = { key: string; name: string; status: "pending" | "active" };
 
 export type RelayDeps = {
   /** The user id for a Supabase access token, or null. */
   authenticate: (token: string) => Promise<string | null>;
-  /** The folder's name when `userId` is the host of `projectId` and a folder is linked; otherwise why not. */
-  hostCheck: (userId: string, projectId: string) => Promise<{ ok: true; name: string } | { ok: false; reason: "not_host" | "not_linked" }>;
-  setOnline: (projectId: string, online: boolean) => Promise<void>;
+  /** Whether `userId` belongs to `projectId`. Any member may connect; what they may serve is decided by `sync`. */
+  connectCheck: (userId: string, projectId: string) => Promise<{ ok: true } | { ok: false; reason: "not_found" }>;
+  /** Records everything this owner shares and returns what the project calls each item. Rejects with an Error whose message is a short code (`too_many`, `invalid_items`). */
+  sync: (userId: string, projectId: string, items: ShareItemIn[]) => Promise<ShareItemOut[]>;
+  setOnline: (projectId: string, ownerId: string, online: boolean) => Promise<void>;
+  /** An owner's connection or items changed: what the project can read may have changed with it. */
+  changed?: (projectId: string, ownerId: string) => void;
 };
 
 /** `offline`: no host app connected. `host`: the host's app refused or failed, with a message written to be shown. */
@@ -61,7 +72,11 @@ export type CallOptions = {
 };
 
 const uuid = z.uuid();
-const hello = z.object({ type: z.literal("hello"), token: z.string().min(1).max(4096), projectId: uuid });
+const itemsIn = z
+  .array(z.object({ key: z.string().min(1).max(64), name: z.string().trim().min(1).max(L.nameChars), kind: z.enum(["dir", "file"]) }))
+  .max(L.items);
+const hello = z.object({ type: z.literal("hello"), token: z.string().min(1).max(4096), projectId: uuid, items: itemsIn });
+const itemsMsg = z.object({ type: z.literal("items"), items: itemsIn });
 const tokenMsg = z.object({ type: z.literal("token"), token: z.string().min(1).max(4096) });
 const capsMsg = z.object({ type: z.literal("caps"), caps: z.object({ edit: z.boolean(), git: z.boolean(), exec: z.boolean() }) });
 
@@ -144,6 +159,7 @@ type Pending = {
 
 type Conn = {
   ws: WebSocket;
+  /** The person whose app this is: the owner of what it serves. */
   userId: string;
   projectId: string;
   pending: Map<string, Pending>;
@@ -169,7 +185,9 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
   const requestMs = opts.requestMs ?? L.requestMs;
   const tokenMaxMs = opts.tokenMaxMs ?? TOKEN_MAX_MS;
   const pingMs = opts.pingMs ?? PING_MS;
+  /** One connection per owner and project. */
   const hosts = new Map<string, Conn>();
+  const keyOf = (projectId: string, ownerId: string) => `${projectId}:${ownerId}`;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   let open = 0;
 
@@ -179,9 +197,10 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
       p.reject(new RelayError("offline", why));
     }
     conn.pending.clear();
-    if (hosts.get(conn.projectId) === conn) {
-      hosts.delete(conn.projectId);
-      void deps.setOnline(conn.projectId, false).catch((e) => console.error("[folder] could not mark offline:", e));
+    if (hosts.get(keyOf(conn.projectId, conn.userId)) === conn) {
+      hosts.delete(keyOf(conn.projectId, conn.userId));
+      void deps.setOnline(conn.projectId, conn.userId, false).catch((e) => console.error("[folder] could not mark offline:", e));
+      deps.changed?.(conn.projectId, conn.userId);
     }
   }
 
@@ -207,9 +226,9 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
     const recheck = setInterval(() => {
       if (!conn) return;
       const c = conn;
-      void deps.hostCheck(c.userId, c.projectId).then(
+      void deps.connectCheck(c.userId, c.projectId).then(
         (r) => !r.ok && fail(ws, r.reason, 4403),
-        () => undefined, // a database hiccup is not a reason to drop the host
+        () => undefined, // a database hiccup is not a reason to drop an owner
       );
     }, RECHECK_MS);
 
@@ -219,7 +238,7 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
       clearTimeout(helloTimer);
       clearInterval(ping);
       clearInterval(recheck);
-      if (conn) drop(conn, "The host's app disconnected.");
+      if (conn) drop(conn, "The app disconnected.");
     });
     ws.on("error", () => ws.terminate());
 
@@ -242,21 +261,30 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
           if (!parsed.success) return void ws.close(1008, "hello first");
           const userId = await deps.authenticate(parsed.data.token);
           if (!userId) return fail(ws, "unauthorized", 4401);
-          const check = await deps.hostCheck(userId, parsed.data.projectId);
+          const check = await deps.connectCheck(userId, parsed.data.projectId);
           if (!check.ok) return fail(ws, check.reason, 4403);
+          let items: ShareItemOut[];
+          try {
+            items = await deps.sync(userId, parsed.data.projectId, parsed.data.items);
+          } catch (e) {
+            const code = e instanceof Error && /^[a-z_]{3,30}$/.test(e.message) ? e.message : "failed";
+            return fail(ws, code, 4400);
+          }
           if (ws.readyState !== ws.OPEN) return;
           clearTimeout(helloTimer);
           authedAt = Date.now();
-          const previous = hosts.get(parsed.data.projectId);
+          const k = keyOf(parsed.data.projectId, userId);
+          const previous = hosts.get(k);
           conn = { ws, userId, projectId: parsed.data.projectId, pending: new Map(), proposed: [], caps: { edit: false, git: false, exec: false } };
-          hosts.set(parsed.data.projectId, conn);
+          hosts.set(k, conn);
           if (previous) {
-            // Another copy of the host's app took over: the older one is dropped without marking the folder offline.
-            drop(previous, "The host's app reconnected.");
+            // Another copy of this person's app took over: the older one is dropped without marking them offline.
+            drop(previous, "The app reconnected.");
             previous.ws.close(4000, "replaced");
           }
-          await deps.setOnline(parsed.data.projectId, true);
-          send(ws, { type: "ready", name: check.name });
+          await deps.setOnline(parsed.data.projectId, userId, true);
+          send(ws, { type: "ready", items });
+          deps.changed?.(parsed.data.projectId, userId);
         } catch (e) {
           console.error("[folder] hello failed:", e instanceof Error ? e.message : e);
           ws.close(1011, "error");
@@ -276,7 +304,7 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
         if (!parsed.data.ok) return void p.reject(new RelayError("host", parsed.data.message, parsed.data.code));
         const checked = results[p.op].safeParse(parsed.data.result);
         if (checked.success) p.resolve(checked.data);
-        else p.reject(new RelayError("bad_answer", "The host's app sent an answer that could not be used."));
+        else p.reject(new RelayError("bad_answer", "The app sent an answer that could not be used."));
       } else if (type === "event") {
         const parsed = previewMsg.safeParse(msg);
         const p = parsed.success ? conn.pending.get(parsed.data.id) : undefined;
@@ -289,8 +317,20 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
       } else if (type === "caps") {
         const parsed = capsMsg.safeParse(msg);
         if (parsed.success) conn.caps = parsed.data.caps;
+        deps.changed?.(conn.projectId, conn.userId);
+      } else if (type === "items") {
+        // The owner picked or removed something: record it and tell the app what the project calls everything now.
+        const parsed = itemsMsg.safeParse(msg);
+        if (!parsed.success) return;
+        const c = conn;
+        try {
+          send(ws, { type: "items", items: await deps.sync(c.userId, c.projectId, parsed.data.items) });
+          deps.changed?.(c.projectId, c.userId);
+        } catch (e) {
+          send(ws, { type: "items_error", code: e instanceof Error && /^[a-z_]{3,30}$/.test(e.message) ? e.message : "failed" });
+        }
       } else if (type === "token") {
-        // A refreshed access token: it has to belong to the same person, who has to still be the host.
+        // A refreshed access token: it has to belong to the same person, who has to still belong to the project.
         const parsed = tokenMsg.safeParse(msg);
         const userId = parsed.success ? await deps.authenticate(parsed.data.token).catch(() => null) : null;
         if (userId !== conn.userId) fail(ws, "unauthorized", 4401);
@@ -315,23 +355,33 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
       });
     },
 
-    isOnline: (projectId: string) => hosts.has(projectId),
+    isOnline: (projectId: string, ownerId: string) => hosts.has(keyOf(projectId, ownerId)),
 
-    /** Disconnects the host's app, for example after the folder was unlinked. */
-    disconnect(projectId: string, code = 4403, reason = "not_linked") {
-      const conn = hosts.get(projectId);
+    /** The owners whose apps are connected for this project. */
+    onlineOwners: (projectId: string): string[] => [...hosts.values()].filter((c) => c.projectId === projectId).map((c) => c.userId),
+
+    /** Tells an owner's app what the project now calls its items (after an approval, a decline or a removal). */
+    pushItems(projectId: string, ownerId: string, items: ShareItemOut[]) {
+      const conn = hosts.get(keyOf(projectId, ownerId));
+      if (conn) send(conn.ws, { type: "items", items });
+    },
+
+    /** Disconnects one owner's app, for example after they left the project. */
+    disconnect(projectId: string, ownerId: string, code = 4403, reason = "not_found") {
+      const conn = hosts.get(keyOf(projectId, ownerId));
       if (conn) {
         send(conn.ws, { type: "error", code: reason });
         conn.ws.close(code, reason);
       }
     },
 
-    /** What the host allows the AI to propose in this project. Nothing while the host's app is offline. */
-    caps: (projectId: string): FolderCaps => hosts.get(projectId)?.caps ?? { edit: false, git: false, exec: false },
+    /** What this owner allows the AI to propose. Nothing while their app is offline. */
+    capsOf: (projectId: string, ownerId: string): FolderCaps => hosts.get(keyOf(projectId, ownerId))?.caps ?? { edit: false, git: false, exec: false },
 
-    /** Asks the host's app. Callers must already have checked that the asker belongs to the project. */
-    call<K extends RelayRequest["op"]>(
+    /** Asks one owner's app. Callers must already have checked that the asker belongs to the project and that the path points into this owner's item. */
+    callOwner<K extends RelayRequest["op"]>(
       projectId: string,
+      ownerId: string,
       req: Extract<RelayRequest, { op: K }>,
       opts: CallOptions = {},
     ): Promise<
@@ -351,12 +401,12 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
                     ? ExecResult
                     : ChangeResult
     > {
-      const conn = hosts.get(projectId);
-      if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "The project host's desktop app is offline."));
+      const conn = hosts.get(keyOf(projectId, ownerId));
+      if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "The desktop app of the person who shares this is offline."));
       if (conn.pending.size >= MAX_PENDING) return Promise.reject(new RelayError("busy", "The shared folder is busy. Try again in a moment."));
       const isChange = req.op === "edit" || req.op === "write" || req.op === "git_change" || req.op === "exec";
       if (isChange && [...conn.pending.values()].filter((p) => p.op === "edit" || p.op === "write" || p.op === "git_change" || p.op === "exec").length >= L.proposals) {
-        return Promise.reject(new RelayError("busy", "Several changes are already waiting for the host. Wait for them to be decided."));
+        return Promise.reject(new RelayError("busy", "Several changes are already waiting for the owner. Wait for them to be decided."));
       }
       if (isChange) {
         const now = Date.now();
@@ -375,7 +425,7 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
           conn.pending.delete(id);
           finish();
           if (isChange) send(conn.ws, { type: "cancel", id });
-          reject(new RelayError("timeout", "The host's app took too long to answer."));
+          reject(new RelayError("timeout", "The app took too long to answer."));
         }, opts.timeoutMs ?? requestMs);
         const onAbort = () => {
           if (!conn.pending.delete(id)) return;

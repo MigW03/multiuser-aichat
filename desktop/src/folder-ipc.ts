@@ -1,7 +1,9 @@
-import { FOLDER_LIMITS as L } from "@mc/shared";
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
+import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse } from "@mc/shared";
+import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { chmod, lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { Approvals, type PendingView } from "./folder-approvals.ts";
+import { stageChange } from "./folder-changes.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
 import { FolderConn, isUuid, originOf, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
@@ -11,7 +13,7 @@ import { nameItems, summaryName, type Item, type ItemSpec } from "./folder-items
 // ask what is shared, open the native "choose" dialog, remove an item and stop sharing. It can never name a path or
 // read a file: items are chosen in a native dialog and read only for requests that arrive from the chat server.
 
-type Link = { items: ItemSpec[]; userId: string };
+type Link = { items: ItemSpec[]; userId: string; caps?: FolderCaps };
 type Links = Record<string, Link>;
 
 const STORE = () => join(app.getPath("userData"), "shared-folders.json");
@@ -25,7 +27,7 @@ async function loadLinks(): Promise<Links> {
       // Version 1 kept one folder as `root`.
       const items = Array.isArray(l.items) ? l.items : typeof l.root === "string" ? [{ abs: l.root, kind: "dir" as const }] : [];
       const valid = items.filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file")).slice(0, L.items);
-      if (valid.length) out[projectId] = { items: valid, userId: l.userId };
+      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true ? { caps: { edit: true } } : {}) };
     }
     return out;
   } catch {
@@ -55,7 +57,8 @@ async function validateFile(picked: string): Promise<string> {
   return abs;
 }
 
-export type FolderInfo = { linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: FolderState };
+export type FolderInfo = { linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: FolderState; caps: FolderCaps };
+const NO_CAPS: FolderCaps = { edit: false };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
 export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
@@ -73,6 +76,51 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("folder:changed", projectId);
   const itemsOf = (projectId: string): Item[] => nameItems(links[projectId]?.items ?? []);
   const mine = (projectId: string) => !!links[projectId] && !!session && links[projectId]!.userId === session.userId;
+  const capsOf = (projectId: string): FolderCaps => (mine(projectId) && links[projectId]!.caps?.edit === true ? { edit: true } : NO_CAPS);
+
+  // Proposed AI changes wait here for the host's click. The page learns of them through these events.
+  const approvals = new Approvals({
+    onAdd: (view) => {
+      opts.getWindow()?.webContents.send("folder:approval", view);
+      const win = opts.getWindow();
+      if (Notification.isSupported() && !(win?.isFocused() ?? false)) {
+        const note = new Notification({ title: "The AI wants to change a file", body: `${view.askedBy} · ${view.change.path}` });
+        note.on("click", () => {
+          win?.show();
+          win?.focus();
+        });
+        note.show();
+      }
+    },
+    onGone: (projectId, id) => opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id }),
+    stillAllowed: (projectId) => capsOf(projectId).edit,
+  });
+
+  /** A name for the card: what the server says the asker is called, without anything that could pass for UI. */
+  // eslint-disable-next-line no-control-regex
+  const label = (v: unknown) =>
+    (typeof v === "string" ? v : "Someone")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029<>]+/g, " ")
+      .trim()
+      .slice(0, 60) || "Someone";
+
+  async function propose(projectId: string, req: unknown, preview: (change: ChangePreview) => void): Promise<FolderResponse | null> {
+    const r = (req ?? {}) as { id?: unknown; askedBy?: unknown; readFiles?: unknown };
+    if (typeof r.id !== "string") return null;
+    const id = r.id;
+    if (!capsOf(projectId).edit) return { id, ok: false, code: "disabled", message: "The host has not allowed AI changes to files in this project." };
+    if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the host. Wait for them to be decided." };
+    try {
+      const staged = await stageChange(itemsOf(projectId), req as never);
+      preview(staged.change);
+      const readFiles = typeof r.readFiles === "number" && Number.isFinite(r.readFiles) ? Math.min(1000, Math.max(0, Math.floor(r.readFiles))) : 0;
+      return await approvals.propose(projectId, staged, { askedBy: label(r.askedBy), readFiles });
+    } catch (err) {
+      if (err instanceof FolderError) return { id, ok: false, code: err.code, message: err.message };
+      console.error("[folder] could not prepare a change:", err instanceof Error ? err.message : err);
+      return { id, ok: false, code: "failed", message: "The change couldn't be prepared." };
+    }
+  }
 
   /** Opens a connection for every project this person hosts and shares something from here; closes the rest. */
   function reconcile() {
@@ -94,6 +142,10 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
         getItems: () => itemsOf(projectId),
         search,
         onState: () => changed(projectId),
+        getCaps: () => capsOf(projectId),
+        propose: (req, preview) => propose(projectId, req, preview),
+        cancel: (id) => approvals.cancel(projectId, id),
+        cancelAll: () => approvals.closeProject(projectId),
       });
       conns.set(projectId, conn);
       changed(projectId);
@@ -101,9 +153,9 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   }
 
   const info = (projectId: string): FolderInfo => {
-    if (!mine(projectId)) return { linked: false, name: null, items: [], state: "off" };
+    if (!mine(projectId)) return { linked: false, name: null, items: [], state: "off", caps: NO_CAPS };
     const items = itemsOf(projectId);
-    return { linked: true, name: summaryName(items), items: items.map((i) => ({ name: i.name, kind: i.kind })), state: conns.get(projectId)?.state ?? "off" };
+    return { linked: true, name: summaryName(items), items: items.map((i) => ({ name: i.name, kind: i.kind })), state: conns.get(projectId)?.state ?? "off", caps: capsOf(projectId) };
   };
 
   ipcMain.handle("folder:set-session", async (e, raw: unknown) => {
@@ -132,7 +184,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   });
 
   ipcMain.handle("folder:get", async (e, projectId: unknown): Promise<FolderInfo> => {
-    if (!trusted(e) || !isUuid(projectId)) return { linked: false, name: null, items: [], state: "off" };
+    if (!trusted(e) || !isUuid(projectId)) return { linked: false, name: null, items: [], state: "off", caps: NO_CAPS };
     await ready;
     return info(projectId);
   });
@@ -190,9 +242,38 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       links = rest;
     } else links = { ...links, [projectId]: { ...links[projectId]!, items: keep } };
     await saveLinks(links);
+    approvals.closeProject(projectId); // what a waiting change pointed at may be gone
     reconcile();
     changed(projectId);
     return { name: keep.length ? summaryName(nameItems(keep)) : null };
+  });
+
+  // The host's switch for AI changes. Off by default; only the host, only for a project they share from this computer.
+  ipcMain.handle("folder:set-caps", async (e, projectId: unknown, caps: unknown): Promise<FolderInfo | null> => {
+    if (!trusted(e) || !isUuid(projectId)) return null;
+    await ready;
+    if (!mine(projectId)) return null;
+    const edit = (caps as { edit?: unknown } | null)?.edit === true;
+    const { caps: _old, ...rest } = links[projectId]!;
+    links = { ...links, [projectId]: { ...rest, ...(edit ? { caps: { edit: true } } : {}) } };
+    await saveLinks(links);
+    if (!edit) approvals.closeProject(projectId, "The host turned off AI changes."); // what was waiting is withdrawn at once
+    conns.get(projectId)?.capsChanged();
+    changed(projectId);
+    return info(projectId);
+  });
+
+  ipcMain.handle("folder:approvals", async (e): Promise<PendingView[]> => {
+    if (!trusted(e)) return [];
+    return approvals.list();
+  });
+
+  // The host's click. Approving writes the file; the server cannot do either.
+  ipcMain.handle("folder:decide", async (e, projectId: unknown, id: unknown, approve: unknown): Promise<boolean> => {
+    if (!trusted(e) || !isUuid(projectId) || typeof id !== "string" || typeof approve !== "boolean") return false;
+    await ready;
+    if (!mine(projectId)) return false;
+    return approvals.decide(projectId, id, approve);
   });
 
   // (Re)connects one project now, for example right after its items were registered with the server.
@@ -212,11 +293,13 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const { [projectId]: _gone, ...rest } = links;
     links = rest;
     await saveLinks(links);
+    approvals.closeProject(projectId);
     reconcile();
     changed(projectId);
   });
 
   app.on("before-quit", () => {
+    approvals.closeAll();
     for (const c of conns.values()) c.close();
   });
 }

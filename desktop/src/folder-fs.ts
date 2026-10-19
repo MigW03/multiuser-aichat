@@ -74,7 +74,7 @@ export function redactSecrets(text: string): string {
 
 /** Control characters, including line breaks: a name with one could pose as instructions in the AI's prompt. */
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+export const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
  * Turns the path a requester sent into its parts, relative to the folder. "" and "." are the folder itself.
@@ -88,10 +88,10 @@ export function splitPath(input: unknown): string[] {
   return parts;
 }
 
-type Found = { abs: string; parts: string[]; isDir: boolean; size: number; dev: number; ino: number };
+export type Found = { abs: string; parts: string[]; isDir: boolean; size: number; dev: number; ino: number };
 
 /** Walks the path one name at a time with lstat. A symlink anywhere on the way ends the walk: they are never followed. */
-async function locate(root: string, input: unknown): Promise<Found> {
+export async function locate(root: string, input: unknown): Promise<Found> {
   const parts = splitPath(input);
   let abs = root;
   let last = { isDir: true, size: 0, dev: 0, ino: 0 };
@@ -112,6 +112,57 @@ async function locate(root: string, input: unknown): Promise<Found> {
     last = { isDir: st.isDirectory(), size: st.size, dev: Number(st.dev), ino: Number(st.ino) };
   }
   return { abs, parts, ...last };
+}
+
+export type WriteSpot = {
+  /** Absolute path of the file, which may not exist yet. */
+  abs: string;
+  parts: string[];
+  /** Existing ancestors of the file (and the folder it lives in, if that exists): the folders that have to be created are the rest. */
+  existingDepth: number;
+  /** The file's current state, or null when it does not exist. */
+  file: { size: number; dev: number; ino: number; mode: number } | null;
+};
+
+/**
+ * Where a file would be written. Every part that exists is checked like a read (no symlinks, nothing hidden); parts
+ * that do not exist yet are only allowed when their names are ordinary: no hidden names (so no .env or .git), no
+ * control characters, and no trailing dot or space (Windows reads ".env." as ".env").
+ */
+/** Names that mean a device on Windows (writing "con.txt" opens the console). Refused on every system, so a project is the same everywhere. */
+const DEVICE_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+
+export async function locateForWrite(root: string, input: unknown): Promise<WriteSpot> {
+  const parts = splitPath(input);
+  if (parts.length === 0) throw new FolderError("not_a_file", "That is the shared folder itself, not a file.");
+  let abs = root;
+  let existingDepth = 0;
+  let file: WriteSpot["file"] = null;
+  for (const [i, part] of parts.entries()) {
+    const isLast = i === parts.length - 1;
+    abs = join(abs, part);
+    if (isHiddenName(part, !isLast) || /[. ]$/.test(part) || DEVICE_NAME.test(part)) {
+      throw new FolderError("excluded", "That path is hidden from the shared folder (secrets, keys, build output and similar are never shared).");
+    }
+    let st;
+    try {
+      st = await lstat(abs);
+    } catch {
+      // Everything from here on is new.
+      if (parts.slice(i).some((p, k) => isHiddenName(p, i + k < parts.length - 1) || CONTROL.test(p) || /[. ]$/.test(p) || DEVICE_NAME.test(p))) {
+        throw new FolderError("excluded", "That path is hidden from the shared folder (secrets, keys, build output and similar are never shared).");
+      }
+      return { abs: join(root, ...parts), parts, existingDepth, file: null };
+    }
+    if (st.isSymbolicLink()) throw new FolderError("excluded", "Links aren't followed, so that path can't be written.");
+    if (!isLast && !st.isDirectory()) throw new FolderError("not_a_directory", "A part of that path is a file, not a folder.");
+    if (isLast) {
+      if (!st.isFile()) throw new FolderError("not_a_file", "That isn't a plain file.");
+      file = { size: st.size, dev: Number(st.dev), ino: Number(st.ino), mode: st.mode & 0o777 };
+    }
+    existingDepth = i + 1;
+  }
+  return { abs, parts, existingDepth, file };
 }
 
 /** Checks a folder the person picked and returns its resolved location. Refuses the disk root and the home folder. */
@@ -142,7 +193,7 @@ export function folderName(root: string): string {
 const BINARY_PROBE = 8000;
 
 /** Opens a file the walk already vetted, and checks that it is still that same plain file. */
-async function openFile(found: Found): Promise<FileHandle> {
+export async function openFile(found: Found): Promise<FileHandle> {
   let handle: FileHandle;
   try {
     handle = await open(found.abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -160,9 +211,9 @@ async function openFile(found: Found): Promise<FileHandle> {
   }
 }
 
-const looksBinary = (buf: Buffer) => buf.subarray(0, BINARY_PROBE).includes(0);
+export const looksBinary = (buf: Buffer) => buf.subarray(0, BINARY_PROBE).includes(0);
 
-async function readWhole(handle: FileHandle, size: number, maxBytes: number): Promise<Buffer> {
+export async function readWhole(handle: FileHandle, size: number, maxBytes: number): Promise<Buffer> {
   if (size > maxBytes) throw new FolderError("too_large", `That file is larger than ${Math.round(maxBytes / 1024 / 1024)} MB, so it isn't shared.`);
   const buf = Buffer.alloc(Math.min(size, maxBytes));
   let got = 0;

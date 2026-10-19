@@ -234,3 +234,110 @@ describe("sign-in age", () => {
     srv.close();
   });
 });
+
+describe("AI changes", () => {
+  const preview = (id: string) => ({ id, kind: "edit", path: "src/a.ts", created: false, added: 1, removed: 1, diff: "@@ -1,1 +1,1 @@\n-a\n+b", cut: false });
+  const edit = { op: "edit", path: "src/a.ts", oldString: "a", newString: "b", askedBy: "Ana", readFiles: 1 } as const;
+
+  test("caps are nothing until the host's app says so, then follow it", async () => {
+    const c = await connect("host-token", P2);
+    await c.first();
+    assert.deepEqual(relay.caps(P2), { edit: false });
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true } }));
+    await until(() => relay.caps(P2).edit);
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: "yes" } })); // junk is ignored
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: false } }));
+    await until(() => !relay.caps(P2).edit);
+    c.ws.close();
+    await c.closed;
+    assert.deepEqual(relay.caps(P2), { edit: false });
+  });
+
+  test("the preview arrives once, then the host's decision, with a long wait allowed", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    c.ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw)) as { type: string; req?: { id: string } };
+      if (msg.type !== "req") return;
+      const id = msg.req!.id;
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: preview(id) }));
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: preview(id) })); // a repeat is ignored
+      setTimeout(() => c.ws.send(JSON.stringify({ type: "res", res: { id, ok: true, result: { path: "src/a.ts", created: false, added: 1, removed: 1 } } })), 600); // longer than requestMs (400)
+    });
+    const seen: string[] = [];
+    const res = await relay.call(P1, edit, { timeoutMs: 3000, onPreview: (ch) => seen.push(ch.diff) });
+    assert.deepEqual(res, { path: "src/a.ts", created: false, added: 1, removed: 1 });
+    assert.equal(seen.length, 1);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("a preview for another request, or a malformed one, is not passed on", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    c.ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw)) as { type: string; req?: { id: string } };
+      if (msg.type !== "req") return;
+      const id = msg.req!.id;
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: preview("someone-else") }));
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: { ...preview(id), diff: "x".repeat(60_000) } }));
+      c.ws.send(JSON.stringify({ type: "event", id: "unknown", event: "pending", change: preview("unknown") }));
+      c.ws.send(JSON.stringify({ type: "res", res: { id, ok: false, code: "denied", message: "The host declined this change." } }));
+    });
+    let previews = 0;
+    await assert.rejects(relay.call(P1, edit, { onPreview: () => previews++ }), (e: unknown) => e instanceof RelayError && e.kind === "host" && e.code === "denied");
+    assert.equal(previews, 0);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("aborting withdraws the request from the host's app", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    const frames: Record<string, unknown>[] = [];
+    c.ws.on("message", (raw) => frames.push(JSON.parse(String(raw))));
+    const ctl = new AbortController();
+    const p = relay.call(P1, edit, { timeoutMs: 5000, signal: ctl.signal });
+    await until(() => frames.some((f) => f.type === "req"));
+    ctl.abort();
+    await assert.rejects(p, (e: unknown) => e instanceof RelayError && e.kind === "cancelled");
+    const req = frames.find((f) => f.type === "req") as { req: { id: string } };
+    await until(() => frames.some((f) => f.type === "cancel" && f.id === req.req.id));
+    await assert.rejects(relay.call(P1, edit, { signal: ctl.signal }), (e: unknown) => e instanceof RelayError && e.kind === "cancelled");
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("only a few changes wait at once, and a timeout cancels on the host's side", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    const frames: Record<string, unknown>[] = [];
+    c.ws.on("message", (raw) => frames.push(JSON.parse(String(raw))));
+    const open = [1, 2, 3].map(() => relay.call(P1, edit, { timeoutMs: 300 }));
+    await assert.rejects(relay.call(P1, edit, { timeoutMs: 300 }), (e: unknown) => e instanceof RelayError && e.kind === "busy");
+    for (const p of open) await assert.rejects(p, (e: unknown) => e instanceof RelayError && e.kind === "timeout");
+    await until(() => frames.filter((f) => f.type === "cancel").length === 3);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("the answer to a change is checked", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    answerWith(c.ws, () => ({ ok: true, result: { path: "src/a.ts", created: "maybe" } }));
+    await assert.rejects(relay.call(P1, edit), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("a flood of proposals is limited", async () => {
+    const c = await connect("host-token", P2);
+    await c.first();
+    answerWith(c.ws, () => ({ ok: true, result: { path: "a.ts", created: false, added: 1, removed: 1 } }));
+    for (let i = 0; i < 30; i++) await relay.call(P2, edit);
+    await assert.rejects(relay.call(P2, edit), (e: unknown) => e instanceof RelayError && e.kind === "busy" && /Too many/.test(e.message));
+    await relay.call(P2, { op: "list", path: "" }).catch(() => undefined); // reads are not limited
+    c.ws.close();
+    await c.closed;
+  });
+});

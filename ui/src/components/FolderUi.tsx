@@ -10,7 +10,7 @@ import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Spinner,
 // The project's shared folder lives in the right column of a project's chats, as the approved hi-fi boards draw it
 // ("Hi-fi · light": a 320 px column, the shared folder card on top, Notes under it later). The chat header's
 // right-panel button shows and hides the column. The card shows whether the host's app is serving the files, lets
-// any member browse them (read only), and lets the host add folders and files, remove them, or stop sharing.
+// any member browse them (read only; AI changes are proposals the host approves, see Changes.tsx), and lets the host add folders and files, remove them, or stop sharing.
 
 const messageOf = (e: unknown, fallback = "Something went wrong.") => (e instanceof Error ? e.message : fallback);
 
@@ -73,7 +73,7 @@ function FolderInfo() {
   return (
     <InfoTip label="About shared files">
       <ul className="info-tip-list">
-        <li>Read only: nobody can change the files.</li>
+        <li>Members can only read the files. The AI can propose changes only if the host allows it, and every change needs the host's approval.</li>
         <li>Never shared: .env files, keys, .git, node_modules, build folders and links.</li>
         <li>Binary files and files over {FOLDER_LIMITS.fileBytes / 1024 / 1024} MB can't be opened.</li>
         <li>Text the AI reads goes to the AI provider of the person who asked.</li>
@@ -97,7 +97,7 @@ function FolderEmpty({ project, host, bridge, onClose }: { project: ProjectSumma
       <p className="small muted">
         {host
           ? bridge
-            ? `Share folders or files from your computer. Everyone in ${project.name} can read them, and the AI can use them in project chats. Read only; nothing is uploaded.`
+            ? `Share folders or files from your computer. Everyone in ${project.name} can read them, and the AI can use them in project chats. Members can only read; nothing is uploaded.`
             : `Files are shared from your computer, so this takes the desktop app. Open ${project.name} there to share folders or files.`
           : `Nothing is shared in ${project.name} yet. The project host can share folders or files from the desktop app.`}
       </p>

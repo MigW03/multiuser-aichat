@@ -116,8 +116,8 @@ export const shareFolderNotice = (project: string): Pick<NoticeProps, "title" | 
   title: `Before you share files with ${project}`,
   always: true,
   items: [
-    { icon: <Eye size={ICON} strokeWidth={STROKE} />, title: "Everyone in the project can browse it", text: "Every member can open and read the folders and files you pick, as long as your desktop app is running. Nobody can change them." },
-    { icon: <Sparkles size={ICON} strokeWidth={STROKE} />, title: "The AI can read it too", text: "When someone in a project chat asks about the files, the AI opens them. The text it reads goes to that person's AI provider." },
+    { icon: <Eye size={ICON} strokeWidth={STROKE} />, title: "Everyone in the project can browse it", text: "Every member can open and read the folders and files you pick, as long as your desktop app is running. Members cannot change them." },
+    { icon: <Sparkles size={ICON} strokeWidth={STROKE} />, title: "The AI can read it too", text: "When someone in a project chat asks about the files, the AI opens them. The text it reads goes to that person's AI provider. The AI can only propose changes if you allow it, and you approve each one." },
     { icon: <HardDrive size={ICON} strokeWidth={STROKE} />, title: "Files stay on your computer", text: "Nothing is uploaded or stored. Files are read from your computer when someone asks, and they go offline when you quit the app or sign out." },
     { icon: <FolderLock size={ICON} strokeWidth={STROKE} />, title: "Secrets are left out, but check", text: "Files like .env, keys, .git and node_modules are never shared, and common tokens are masked. Pick project folders, not your home folder, and keep anything private elsewhere." },
   ],

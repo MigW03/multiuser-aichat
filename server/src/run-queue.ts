@@ -4,6 +4,9 @@ import {
   isReasoning,
   PROVIDER_LABELS,
   type AiErrorCode,
+  type ApprovalDoneEvent,
+  type ApprovalEvent,
+  type ChangePreview,
   type MessageKind,
   type MessageMeta,
   type ProviderId,
@@ -12,7 +15,7 @@ import {
 } from "@mc/shared";
 import { APICallError, stepCountIs, streamText, type ModelMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { FOLDER_MAX_STEPS, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { folderAccess, relay } from "./folders.ts";
 import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
@@ -39,6 +42,8 @@ const SUMMARY_LIMIT = 400;
 const HISTORY_CHAR_BUDGET = 100_000;
 const MESSAGE_CHAR_LIMIT = 20_000;
 const LOCK_SECONDS = 300;
+/** A run that may propose file changes can wait for the host's decision (up to 5 minutes each), so its lock is longer. */
+const LOCK_SECONDS_EDIT = 20 * 60;
 const BROADCAST_EVERY_MS = 120;
 const ROW_COLUMNS = "id, role, author_id, kind, content, mentions, reply_to, skip_reason, meta, created_at, seq";
 
@@ -217,7 +222,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
-    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse } | null = null;
+    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; canChange: boolean } | null = null;
+    let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
       const fromSeq = Number(first.meta.from_seq ?? 0);
@@ -253,8 +259,22 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       const access = projectId ? await folderAccess(authorId, projectId) : null;
       if (projectId && access?.ok) {
         folderName = access.name;
-        const use: FolderUse = { files: new Set(), offline: false };
-        folder = { tools: folderTools((req) => relay.call(projectId, req as never), use), use };
+        const use: FolderUse = { files: new Set(), offline: false, edits: [] };
+        // AI changes are on only when the host switched them on in their app. Every one still needs the host's approval there.
+        const canChange = relay.caps(projectId).edit;
+        const changes = canChange
+          ? {
+              askedBy: asker,
+              signal: controller.signal,
+              preview: (change: ChangePreview) => void channel.httpSend("approval", { messageId: assistant.id, change, askedBy: asker, readFiles: use.files.size } satisfies ApprovalEvent),
+              done: (id: string, outcome: ApprovalDoneEvent["outcome"]) => void channel.httpSend("approval_done", { messageId: assistant.id, id, outcome } satisfies ApprovalDoneEvent),
+            }
+          : undefined;
+        folder = { tools: folderTools((req, opts) => relay.call(projectId, req as never, opts), use, changes), use, canChange };
+        if (canChange) {
+          runSeconds = LOCK_SECONDS_EDIT;
+          await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
+        }
       }
     }
 
@@ -273,13 +293,13 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools)}` : instructions,
+        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.canChange)}` : instructions,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(FOLDER_MAX_STEPS) } : {}),
+        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.canChange ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
         abortSignal: controller.signal,
-        timeout: { totalMs: (LOCK_SECONDS - 30) * 1000 },
+        timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
 
       let lastSent = 0;

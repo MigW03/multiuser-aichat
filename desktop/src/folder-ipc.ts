@@ -1,9 +1,10 @@
-import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse } from "@mc/shared";
+import { classifyCommand, FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse } from "@mc/shared";
 import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { chmod, lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Approvals, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
+import { stageExec } from "./folder-exec.ts";
 import { stageGitChange } from "./folder-git.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
@@ -28,7 +29,7 @@ async function loadLinks(): Promise<Links> {
       // Version 1 kept one folder as `root`.
       const items = Array.isArray(l.items) ? l.items : typeof l.root === "string" ? [{ abs: l.root, kind: "dir" as const }] : [];
       const valid = items.filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file")).slice(0, L.items);
-      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true || l.caps?.git === true ? { caps: { edit: l.caps.edit === true, git: l.caps.git === true } } : {}) };
+      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true || l.caps?.git === true || l.caps?.exec === true ? { caps: { edit: l.caps.edit === true, git: l.caps.git === true, exec: l.caps.exec === true } } : {}) };
     }
     return out;
   } catch {
@@ -59,7 +60,7 @@ async function validateFile(picked: string): Promise<string> {
 }
 
 export type FolderInfo = { linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: FolderState; caps: FolderCaps };
-const NO_CAPS: FolderCaps = { edit: false, git: false };
+const NO_CAPS: FolderCaps = { edit: false, git: false, exec: false };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
 export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
@@ -79,7 +80,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const mine = (projectId: string) => !!links[projectId] && !!session && links[projectId]!.userId === session.userId;
   const capsOf = (projectId: string): FolderCaps => {
     const c = mine(projectId) ? links[projectId]!.caps : undefined;
-    return c ? { edit: c.edit === true, git: c.git === true } : NO_CAPS;
+    return c ? { edit: c.edit === true, git: c.git === true, exec: c.exec === true } : NO_CAPS;
   };
 
   // Proposed AI changes wait here for the host's click. The page learns of them through these events.
@@ -97,7 +98,25 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       }
     },
     onGone: (projectId, id) => opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id }),
-    stillAllowed: (projectId, kind) => (kind === "git" ? capsOf(projectId).git : capsOf(projectId).edit),
+    stillAllowed: (projectId, kind) => capsOf(projectId)[kind === "files" ? "edit" : kind],
+    // A command runs only after the person confirms in a window the app itself shows: the page cannot click it.
+    confirm: async (view) => {
+      const flags = classifyCommand(view.change.command ?? "").map((f) => `• ${f.label}`);
+      const detail = [
+        view.change.command ?? "", // the whole command, never cut: what is confirmed is what runs
+        "",
+        `Folder: ${view.change.workdir ? view.change.workdir : "the shared folder"}`,
+        `Time limit: ${view.change.timeoutSec ?? 0} seconds`,
+        `Asked for by: ${view.askedBy}`,
+        ...(flags.length ? ["", "Looks like it:", ...flags] : []),
+        "",
+        "It runs with your own user's rights. Nothing limits what it can read, change or send.",
+      ].join("\n");
+      const win = opts.getWindow();
+      const options = { type: "warning" as const, title: "Run this command?", message: "Run this command on your computer?", detail, buttons: ["Cancel", "Run command"], defaultId: 0, cancelId: 0, noLink: true };
+      const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+      return r.response === 1;
+    },
   });
 
   /** A name for the card: what the server says the asker is called, without anything that could pass for UI. */
@@ -112,11 +131,16 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const r = (req ?? {}) as { id?: unknown; askedBy?: unknown; readFiles?: unknown };
     if (typeof r.id !== "string") return null;
     const id = r.id;
-    const git = (req as { op?: unknown }).op === "git_change";
-    if (!(git ? capsOf(projectId).git : capsOf(projectId).edit)) return { id, ok: false, code: "disabled", message: git ? "The host has not allowed git in this project." : "The host has not allowed AI changes to files in this project." };
+    const op = (req as { op?: unknown }).op;
+    const git = op === "git_change";
+    const exec = op === "exec";
+    const allowed = exec ? capsOf(projectId).exec : git ? capsOf(projectId).git : capsOf(projectId).edit;
+    if (!allowed) return { id, ok: false, code: "disabled", message: exec ? "The host has not allowed commands in this project." : git ? "The host has not allowed git in this project." : "The host has not allowed AI changes to files in this project." };
+    // One command at a time per project: a second is refused while one waits or runs.
+    if (exec && approvals.execBusy(projectId)) return { id, ok: false, code: "busy", message: "A command is already waiting for the host or running. Wait for it to finish." };
     if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the host. Wait for them to be decided." };
     try {
-      const staged = git ? await stageGitChange(itemsOf(projectId), req as never) : await stageChange(itemsOf(projectId), req as never);
+      const staged = exec ? await stageExec(itemsOf(projectId), req as never) : git ? await stageGitChange(itemsOf(projectId), req as never) : await stageChange(itemsOf(projectId), req as never);
       preview(staged.change);
       const readFiles = typeof r.readFiles === "number" && Number.isFinite(r.readFiles) ? Math.min(1000, Math.max(0, Math.floor(r.readFiles))) : 0;
       return await approvals.propose(projectId, staged, { askedBy: label(r.askedBy), readFiles });
@@ -259,14 +283,36 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await ready;
     if (!mine(projectId)) return null;
     // Only the keys that are sent change; anything else stays as it was.
-    const given = (caps ?? {}) as { edit?: unknown; git?: unknown };
+    const given = (caps ?? {}) as { edit?: unknown; git?: unknown; exec?: unknown };
     const before = capsOf(projectId);
-    const next: FolderCaps = { edit: typeof given.edit === "boolean" ? given.edit : before.edit, git: typeof given.git === "boolean" ? given.git : before.git };
+    const next: FolderCaps = {
+      edit: typeof given.edit === "boolean" ? given.edit : before.edit,
+      git: typeof given.git === "boolean" ? given.git : before.git,
+      exec: typeof given.exec === "boolean" ? given.exec : before.exec,
+    };
+    // Turning commands on is confirmed in the app's own window, which the page cannot click. Turning anything off just happens.
+    if (next.exec && !before.exec) {
+      const win = opts.getWindow();
+      const options = {
+        type: "warning" as const,
+        title: "Let the AI propose commands?",
+        message: "Let the AI propose commands on your computer?",
+        detail:
+          "In this project's chats the AI will be able to propose shell commands, asked for by anyone in the project. Each one appears in this app with the exact command, and you confirm every single one in a window like this before it runs. Nothing runs on its own.\n\nThere is no sandbox: an approved command runs with your user's rights and can read or change anything you can, including files outside the shared folder. Its output goes into the chat and to the AI provider. You can switch this off any time.",
+        buttons: ["Cancel", "Allow proposals"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+      if (r.response !== 1) return info(projectId);
+    }
     const { caps: _old, ...rest } = links[projectId]!;
-    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git ? { caps: next } : {}) } };
+    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git || next.exec ? { caps: next } : {}) } };
     await saveLinks(links);
     if (!next.edit) approvals.closeProject(projectId, "The host turned off AI changes.", "files"); // what was waiting is withdrawn at once
     if (!next.git) approvals.closeProject(projectId, "The host turned off git.", "git");
+    if (!next.exec) approvals.closeProject(projectId, "The host turned off commands.", "exec"); // and a command that is running is stopped
     conns.get(projectId)?.capsChanged();
     changed(projectId);
     return info(projectId);

@@ -15,8 +15,8 @@ export const folderApi = {
   /** Starts serving a linked folder now (after the page registered it with the server). */
   connect: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:connect", projectId),
   unlink: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:unlink", projectId),
-  /** The host's switches for AI changes to files and for git (both off by default). Only the keys given change. */
-  setCaps: (projectId: string, caps: { edit?: boolean; git?: boolean }): Promise<unknown> => ipcRenderer.invoke("folder:set-caps", projectId, caps),
+  /** The host's switches for AI changes to files, git and commands (all off by default; turning on commands asks in a native window). Only the keys given change. */
+  setCaps: (projectId: string, caps: { edit?: boolean; git?: boolean; exec?: boolean }): Promise<unknown> => ipcRenderer.invoke("folder:set-caps", projectId, caps),
   /** AI changes waiting for this computer's owner to decide. */
   approvals: (): Promise<unknown[]> => ipcRenderer.invoke("folder:approvals"),
   /** The host's click. The file is written only by this call. */

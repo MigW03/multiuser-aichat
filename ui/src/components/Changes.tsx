@@ -1,5 +1,5 @@
-import type { ChangePreview } from "@mc/shared";
-import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { classifyCommand, type ChangePreview } from "@mc/shared";
+import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, Terminal, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { folderBridge, useHostApprovals, type PendingChange } from "../lib/folder.ts";
 import { createPortal } from "react-dom";
@@ -45,7 +45,27 @@ export function DiffView({ diff, cut }: { diff: string; cut?: boolean }) {
 /** Files that run code when a project is built, installed, committed or pushed. A change there deserves a slower look. */
 const RISKY = /(^|\/)(\.github\/|\.gitlab-ci|\.vscode\/|\.husky\/|package\.json$|Makefile$|Dockerfile|[^/]+\.(sh|bash|zsh|bat|cmd|ps1)$|pre-commit$|pre-push$)/i;
 
+/** An approved-or-not command, shown as text. The warnings are only hints from a pattern list: the host reads the command. */
+function CommandBlock({ change, warn }: { change: ChangePreview; warn: boolean }) {
+  const flags = warn ? classifyCommand(change.command ?? "") : [];
+  return (
+    <>
+      <pre className="git-command exec-command">{change.command}</pre>
+      <p className="small muted exec-facts">
+        In {change.workdir ? <b>{change.workdir}</b> : "the shared folder"} · stops after {change.timeoutSec ?? 120} s
+        {change.note ? <> · the AI says: <i>{change.note}</i></> : null}
+      </p>
+      {flags.map((f) => (
+        <p key={f.kind} className="small risky" role="note">
+          <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {f.label}.
+        </p>
+      ))}
+    </>
+  );
+}
+
 function Stats({ change }: { change: ChangePreview }) {
+  if (change.kind === "exec") return null;
   return (
     <span className="diff-stats small">
       <span className="add">+{change.added}</span> <span className="del">−{change.removed}</span>
@@ -68,21 +88,27 @@ export function ProposalCards({ proposals }: { proposals: Proposal[] }) {
       {proposals.map((p) => (
         <details key={p.change.id} className={`proposal ${p.outcome ?? "waiting"}`} open={!p.outcome}>
           <summary>
-            {p.change.kind === "git" ? <GitBranch size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : p.change.created ? <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <FilePen size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+            {p.change.kind === "exec" ? <Terminal size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : p.change.kind === "git" ? <GitBranch size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : p.change.created ? <FilePlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <FilePen size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
             <span className="grow truncate">
-              <b>{p.change.path}</b> {p.change.kind === "git" ? "" : p.change.created ? "(new file)" : ""}
+              <b>{p.change.path}</b> {p.change.kind === "git" || p.change.kind === "exec" ? "" : p.change.created ? "(new file)" : ""}
             </span>
             <Stats change={p.change} />
             <span className={`chip ${p.outcome === "applied" ? "accent" : ""}`}>
-              {p.outcome ? (p.outcome === "applied" && p.change.kind === "git" ? "Approved and run" : OUTCOME[p.outcome]) : (
+              {p.outcome ? (p.outcome === "applied" && (p.change.kind === "git" || p.change.kind === "exec") ? "Approved and run" : OUTCOME[p.outcome]) : (
                 <>
                   <Hourglass size={12} strokeWidth={STROKE} aria-hidden /> Waiting for the host
                 </>
               )}
             </span>
           </summary>
-          {p.change.command && <code className="git-command">{p.change.command}</code>}
-          <DiffView diff={p.change.diff} cut={p.change.cut} />
+          {p.change.kind === "exec" ? (
+            <CommandBlock change={p.change} warn />
+          ) : (
+            <>
+              {p.change.command && <code className="git-command">{p.change.command}</code>}
+              <DiffView diff={p.change.diff} cut={p.change.cut} />
+            </>
+          )}
         </details>
       ))}
     </div>
@@ -151,7 +177,7 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
       <header>
         <ShieldCheck size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         <span className="grow">
-          <b>{item.askedBy}</b>'s AI wants to {c.kind === "git" ? "run" : c.created ? "create" : "change"} <b>{c.path}</b> in {projectName}
+          <b>{item.askedBy}</b>'s AI wants to {c.kind === "exec" ? <b>run a command</b> : <>{c.kind === "git" ? "run" : c.created ? "create" : "change"} <b>{c.path}</b></>} in {projectName}
         </span>
         <Stats change={c} />
         {expanded ? (
@@ -169,24 +195,32 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
           </IconButton>
         )}
       </header>
-      {c.command && <code className="git-command">{c.command}</code>}
-      {c.destructive && (
-        <p className="small risky" role="note">
-          <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> This throws away uncommitted changes. They cannot be brought back. The diff below is what would be lost.
-        </p>
+      {c.kind === "exec" ? (
+        <CommandBlock change={c} warn />
+      ) : (
+        <>
+          {c.command && <code className="git-command">{c.command}</code>}
+          {c.destructive && (
+            <p className="small risky" role="note">
+              <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> This throws away uncommitted changes. They cannot be brought back. The diff below is what would be lost.
+            </p>
+          )}
+          {c.kind !== "git" && RISKY.test(c.path) && (
+            <p className="small risky" role="note">
+              This file can run code when the project is built, installed or pushed. Read the whole diff before approving.
+            </p>
+          )}
+          <DiffView diff={c.diff} cut={c.cut} />
+        </>
       )}
-      {c.kind !== "git" && RISKY.test(c.path) && (
-        <p className="small risky" role="note">
-          This file can run code when the project is built, installed or pushed. Read the whole diff before approving.
-        </p>
-      )}
-      <DiffView diff={c.diff} cut={c.cut} />
       <p className="small muted">
-        It read {item.readFiles} {item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing {c.kind === "git" ? "runs" : "is written"} until you approve. Time left: {left}.
+        {c.kind === "exec"
+          ? `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. It runs with your own rights, and nothing limits what it can read or change. Approving opens a second window where you confirm. Nothing runs until you do. Time left: ${left}.`
+          : `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing ${c.kind === "git" ? "runs" : "is written"} until you approve. Time left: ${left}.`}
       </p>
       <div className="row dock-actions">
         <Button size="sm" variant="primary" busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide(true)}>
-          <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {c.kind === "git" ? "Approve and run" : "Approve and write"}
+          <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {c.kind === "exec" ? "Review and run…" : c.kind === "git" ? "Approve and run" : "Approve and write"}
         </Button>
         <Button size="sm" busy={busy === "deny"} disabled={busy !== null} onClick={() => void decide(false)}>
           <X size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Decline

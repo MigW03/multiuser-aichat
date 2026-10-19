@@ -67,7 +67,7 @@ async function topLevel(items: Item[]): Promise<FolderEntry[]> {
 }
 
 /** Answers one request from the shared items. Never throws; messages in answers never contain paths from this computer. */
-export async function answer(items: Item[], req: unknown, search: Search, caps: FolderCaps = { edit: false, git: false }): Promise<FolderResponse | null> {
+export async function answer(items: Item[], req: unknown, search: Search, caps: FolderCaps = { edit: false, git: false, exec: false }): Promise<FolderResponse | null> {
   type Loose = { id?: unknown; op?: unknown; path?: unknown; offset?: unknown; limit?: unknown; pattern?: unknown; hidden?: unknown; include?: unknown; literal?: unknown; caseSensitive?: unknown };
   const r = (req ?? {}) as Loose;
   if (typeof r?.id !== "string" || r.id.length === 0 || r.id.length > 64) return null;

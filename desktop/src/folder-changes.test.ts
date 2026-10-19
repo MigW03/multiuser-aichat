@@ -179,7 +179,7 @@ describe("Approvals", () => {
     const added: string[] = [];
     const gone: string[] = [];
     let allowed = true;
-    return { added, gone, set: (v: boolean) => (allowed = v), hooks: { onAdd: (v: { id: string }) => added.push(v.id), onGone: (_p: string, id: string) => gone.push(id), stillAllowed: () => allowed } };
+    return { added, gone, set: (v: boolean) => (allowed = v), hooks: { onAdd: (v: { id: string }) => added.push(v.id), onGone: (_p: string, id: string) => gone.push(id), stillAllowed: () => allowed, confirm: async () => true } };
   };
 
   test("nothing is written until the host approves; approving writes once", async () => {

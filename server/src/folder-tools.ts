@@ -372,10 +372,10 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
 }
 
 /** Collapses control characters and brackets in a name that came from a person, so it can't pose as part of the prompt. */
-const promptSafe = (name: string) => name.replace(/[\u0000-\u001f\u007f-\u009f"<>`]+/g, " ").replace(/\s+/g, " ").trim().slice(0, L.nameChars);
+const promptSafe = (name: string, max: number = L.nameChars) => name.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff"<>`]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
 export function folderInstructions(folderName: string, canRead: boolean, canChange = false, canGit = false, canExec = false): string {
-  const base = `This project shares folders and files from its members' computers: ${promptSafe(folderName)}. The top level lists them by name, and every path starts with the name of the folder or file it is in. ${canChange ? "You can read them, and propose changes to their files that the person who shares them has to approve." : "They are read only: you cannot change, create or delete files."}`;
+  const base = `This project shares folders and files from its members' computers: ${promptSafe(folderName, 600)}. The top level lists them by name, and every path starts with the name of the folder or file it is in. ${canChange ? "You can read them, and propose changes to their files that the person who shares them has to approve." : "They are read only: you cannot change, create or delete files."}`;
   if (!canRead) {
     return `${base}
 You cannot open its files in this answer: this model or connection did not accept the file tools. If someone asks about the files, say so plainly and suggest trying another model; don't guess what the files contain.`;

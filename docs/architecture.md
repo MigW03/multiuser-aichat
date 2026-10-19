@@ -1,6 +1,6 @@
 # Architecture: one small server, two thin clients (TypeScript)
 
-Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18. AI file edits with host approval built 2026-10-19. Connected tools (MCP, local servers) built 2026-10-19.
+Status: chat part built (2026-10-14). Shared files v1 (read only) built 2026-10-18, per-owner 2026-10-19. AI file edits with host approval built 2026-10-19. Connected tools (MCP, local servers) built 2026-10-19.
 
 ## Pieces
 
@@ -44,35 +44,49 @@ the local file host.
 - **Realtime:** `chat:<id>` carries message changes, stream snapshots, typing hints and presence; `project:<id>`
   carries presence for the green dots. Broadcasts and presence are hints only; nothing is decided from them.
 
-## Shared folder (v1, read only, built 2026-10-18)
+## Shared files (read only; per-owner since 2026-10-19)
 
-The project's host shares up to 20 folders and files from their computer in the desktop app. Nothing is uploaded:
-the host's app serves them through the server, which relays requests and checks permissions but stores no file
-contents. One folder alone is shared as is (paths like `src/index.ts`); several items appear as a top level of their
-names (`my-app/src/index.ts`, `notes.md`).
+People share folders and files from their own computers in the desktop app, up to 20 items per project in all.
+Nothing is uploaded: each owner's app serves its items through the server, which relays requests and checks
+permissions but stores no file contents. The project sees one top level made of the items' names (`my-app/src/index.ts`,
+`notes.md`), whoever shares what; every path starts with an item's name.
 
-- **Host app (desktop main process):** items are picked in a native dialog; their paths stay on the host's computer
-  (`userData/shared-folders.json`, mode 0600). The main process keeps one outgoing WebSocket per project to
-  `/api/folder-host` and answers `list`, `read`, `glob` and `grep` (`folder-items.ts`, `folder-fs.ts`). The page can
-  only ask for status, open the dialog, remove an item and stop sharing: it never sees a path or reads a file. Rules:
-  relative paths only, no `..`, symlinks never followed, secrets and junk hidden (`.env*`, keys, `.git`,
-  `node_modules`, build folders), binary and >2 MB files refused, known token formats masked, every answer
-  size-capped. Like opencode (ripgrep), glob and grep skip `.gitignore`d and hidden files; grep runs in a worker
-  thread that is stopped after 10 s so a runaway regular expression can't hang the app.
-- **Server:** `folder-relay.ts` accepts only the project host (Supabase token checked on connect and on each refresh,
-  host role re-checked every 5 minutes, closed when the sign-in is older than 75 minutes), refuses browser-originated
-  sockets (any `Origin` header), validates and size-limits every answer. `routes/folder.ts`: the host links/unlinks;
+- **Who shares:** the host and admins share directly. A member's pick is a request that waits ("pending") until the host
+  or an admin approves it (Approve / Decline card at the top of the Files panel); nothing of a pending item is readable.
+  The owner, the host and admins can remove an item. Leaving a project removes what you shared in it.
+- **Owner's app (desktop main process):** items are picked in a native dialog or dragged onto the Files card; their
+  paths stay on the owner's computer (`userData/shared-folders.json`, mode 0600, each item with a random key). The main
+  process keeps one outgoing WebSocket per project to `/api/folder-host`. Its `hello` reports the items (key, suggested
+  name, kind: never a path); the server answers with the name the project gave each and whether it is approved, and the
+  app serves **only approved items under those names**. It answers `list`, `read`, `glob`, `grep` and the proposal
+  requests (`folder-items.ts`, `folder-fs.ts`). The page can only ask for status, open the dialog, hear what was dropped
+  (names only; paths wait in the app until the page confirms), remove an item and stop sharing: it never sees a path or
+  reads a file. A drop is read from the OS by the preload script (`webUtils.getPathForFile`, trusted events only).
+  Rules: relative paths only, no `..`, symlinks never followed, secrets and junk hidden (`.env*`, keys, `.git`,
+  `node_modules`, build folders), binary and >2 MB files refused, known token formats masked, every answer size-capped.
+  Glob and grep skip `.gitignore`d and hidden files; grep runs in a worker thread stopped after 10 s.
+- **Server:** `folder-relay.ts` accepts any project member's app, one connection per owner and project (Supabase token
+  checked on connect and on each refresh, membership re-checked every 5 minutes, closed when the sign-in is older than
+  75 minutes), refuses browser-originated sockets, validates and size-limits every answer, and has the database record
+  the items (`app_share_sync`). `folder-hub.ts` routes each request by the first path segment to the owner of that
+  **approved** item (the database's list, cached a few seconds), builds the top level itself, fans a search with no path
+  out to every online owner and cuts each owner's results to their own approved items, and refuses a path-less git or
+  command request when more than one folder is shared. `routes/folder.ts`: approve/decline a request, remove an item;
   every project member can list and read (rate limited).
-- **Database:** `project_folders` (name, linked by, online flag). Members read it through RLS (it drives the live
-  online/offline badge); only `app_folder_*` functions (service role) write it. Paths are never stored.
+- **Database (0015):** `project_share_hosts` (project, owner, online) and `project_shares` (owner, app key, name unique
+  in the project, kind, status pending/active). Members read them through RLS (pending rows only the owner, the host and
+  admins see); only `app_share_*` functions (service role) write. Paths are never stored.
 - **AI:** in project chats with shared files, runs get opencode's `read` (files and folders, `<line>: <content>`,
   offset/limit, 2000 lines), `glob` and `grep` (regex or literal, include, 100 results) with opencode's output shape
-  (`folder-tools.ts`). Results are fenced as untrusted data and the instructions forbid following them. Host offline:
-  the tool says so and the AI tells the chat. ChatGPT plan connections get the tools too; if a model or connection
-  refuses tools, the answer is retried once without them and says it can't open the files.
-- **UI:** the right column of a project's chats (the approved hi-fi board: a 320 px column, the shared folder card on
-  top, Notes under it later), shown and hidden from the chat header. The card shows status, a read-only browser, and
-  for the host in the desktop app: add folders or files, remove one, stop sharing. The web app shows status and browses.
+  (`folder-tools.ts`). Results are fenced as untrusted data and the instructions forbid following them. An owner
+  offline: the tool says so and the AI tells the chat. ChatGPT plan connections get the tools too; if a model or
+  connection refuses tools, the answer is retried once without them and says it can't open the files.
+- **UI:** the right column of a project's chats (a 320 px column, the Files card on top, Notes under it later), shown and
+  hidden from the chat header. Each row has a presence dot on its icon (its owner's app is online or not; a hover that
+  rests 600 ms explains it) and a three-dot Remove menu; requests wait as cards for the host and admins. In the desktop
+  app: Share menu (folder or files) and drag and drop. The web app shows and browses but cannot share (no real paths).
+- **Known limit:** if an owner's app is offline when the host or an admin removes one of their items, the app reports it
+  again when it next connects (as a new request for a member, or approved at once for an admin or the host).
 
 ## AI file edits (built 2026-10-19; git below; commands are the next phase)
 

@@ -457,8 +457,10 @@ export type McpRemoteList = {
   oauthAvailable: boolean;
 };
 
-/** The one row the server keeps for a project's shared folder: a name and whether the host's app is serving it. Never the path. */
-export type ProjectFolder = { project_id: string; name: string; linked_by: string; linked_at: string; online: boolean };
+/** One folder or file someone shares in a project. Never the path: only the name the project sees and who shares it. `pending` until the host or an admin approves a member's request. */
+export type ProjectShare = { id: string; project_id: string; owner_id: string; name: string; kind: "dir" | "file"; status: "pending" | "active"; created_at: string };
+/** One row per person who shares in a project: whether their desktop app is connected, so their items can be read right now. */
+export type ProjectShareHost = { project_id: string; owner_id: string; online: boolean; linked_at: string };
 
 // ---- Realtime broadcast events on the private channel `chat:<id>`
 

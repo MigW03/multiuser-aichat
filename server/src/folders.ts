@@ -24,7 +24,7 @@ export const relay = createRelay({
 
   async sync(userId, projectId, items) {
     const { data, error } = await admin.rpc("app_share_sync", { p_user: userId, p_project: projectId, p_items: items });
-    if (error) throw new Error(["too_many", "invalid_items", "not_found"].includes(error.message.trim()) ? error.message.trim() : "failed");
+    if (error) throw new Error(["too_many", "too_many_requests", "invalid_items", "not_found"].includes(error.message.trim()) ? error.message.trim() : "failed");
     return (data ?? []) as { key: string; name: string; status: "pending" | "active" }[];
   },
 

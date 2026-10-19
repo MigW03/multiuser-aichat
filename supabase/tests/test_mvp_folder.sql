@@ -9,6 +9,7 @@ declare
   r jsonb;
   v_share uuid;
   v_ben_share uuid;
+  v_i text;
 begin
   p := public.app_create_project(uid('ana'), 'Share project');
   insert into ids values ('sp', p);
@@ -32,6 +33,9 @@ begin
   perform t_fails(format($q$select public.app_share_sync(%L, %L, '[{"key":"x","name":"  ","kind":"dir"}]')$q$, uid('ana'), p), 'invalid_items');
   perform t_fails(format($q$select public.app_share_sync(%L, %L, '[{"key":"x","name":"a","kind":"socket"}]')$q$, uid('ana'), p), 'invalid_items');
   perform t_fails(format($q$select public.app_share_sync(%L, %L, %L)$q$, uid('ana'), p, jsonb_build_array(jsonb_build_object('key', 'x', 'name', E'bad\nname', 'kind', 'dir'))), 'invalid_items');
+  for v_i in select unnest(array['a/b', 'a\\b', '..', '.', E'x\u202ey', E'z\u200bz']) loop
+    perform t_fails(format($q$select public.app_share_sync(%L, %L, %L)$q$, uid('ana'), p, jsonb_build_array(jsonb_build_object('key', 'x', 'name', v_i, 'kind', 'dir'))), 'invalid_items');
+  end loop;
   perform t_assert((select count(*) from public.project_shares where project_id = p) = 2, 'bad input changed nothing');
 
   -- a member's items wait for approval, and a taken name gets a suffix
@@ -84,10 +88,20 @@ begin
   perform t_assert((select name from public.project_shares where project_id = p and item_key = 'k3') = 'docs (2)', 'a name taken by another owner is suffixed');
   perform t_assert((select name from public.project_shares where project_id = p and item_key = 'd1') = 'docs', 'the first owner keeps the name');
 
+  -- a member's waiting requests are capped so they can't crowd out real items; approving never goes past the project limit
+  r := public.app_share_sync(uid('ben'), p, (select jsonb_agg(jsonb_build_object('key', 'q' || i, 'name', 'req' || i, 'kind', 'dir')) from generate_series(1, 5) i));
+  perform t_assert((select count(*) from public.project_shares where project_id = p and owner_id = uid('ben') and status = 'pending') = 5, 'five requests waiting');
+  perform t_fails(format($q$select public.app_share_sync(%L, %L, %L)$q$, uid('ben'), p, (select jsonb_agg(jsonb_build_object('key', 'q' || i, 'name', 'req' || i, 'kind', 'dir')) from generate_series(1, 6) i)), 'too_many_requests');
+  perform public.app_share_sync(uid('ben'), p, '[]');
+
   -- the limit is per project, and swapping an item at the limit works
   r := public.app_share_sync(uid('ana'), p, (select jsonb_agg(jsonb_build_object('key', 'x' || i, 'name', 'item' || i, 'kind', 'dir')) from generate_series(1, 19) i));
   perform t_assert((select count(*) from public.project_shares where project_id = p) = 20, 'at the limit');
   perform t_fails(format($q$select public.app_share_sync(%L, %L, %L)$q$, uid('dan'), p, '[{"key":"d1","name":"docs","kind":"dir"},{"key":"d2","name":"more","kind":"dir"}]'), 'too_many');
+  -- a request can be made while the project is full, but not approved
+  perform public.app_share_sync(uid('ben'), p, '[{"key":"late","name":"late-one","kind":"dir"}]');
+  perform t_fails(format($q$select public.app_share_decide(%L, %L, %L, true)$q$, uid('ana'), p, (select id from public.project_shares where project_id = p and item_key = 'late')), 'too_many');
+  perform public.app_share_sync(uid('ben'), p, '[]');
   perform public.app_share_sync(uid('ana'), p, (select jsonb_agg(jsonb_build_object('key', 'y' || i, 'name', 'thing' || i, 'kind', 'dir')) from generate_series(1, 19) i));
   perform t_assert((select count(*) from public.project_shares where project_id = p) = 20, 'swapping at the limit works');
   perform public.app_share_sync(uid('ana'), p, '[]');

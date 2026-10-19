@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
 import { RelayError, type CallOptions, type Relay, type RelayRequest, type ShareItemOut } from "./folder-relay.ts";
 
 // The hub sits between the project's members (and the AI answering them) and the owners' apps. A project's files are
@@ -21,6 +21,7 @@ const none: FolderCaps = { edit: false, git: false, exec: false };
 const notFound = () => new RelayError("host", "That file or folder doesn't exist in the shared folder.", "not_found");
 const several = () => new RelayError("host", "Several folders are shared, so this cannot tell which one you mean. Start the path with the folder's name.", "bad_request");
 const nothing = () => new RelayError("host", "Nothing is shared in this project right now.", "not_found");
+const spoofed = () => new RelayError("bad_answer", "The app sent an answer that could not be used.");
 
 /** The first path segment, which names an item. "" for the top level. */
 const firstSegment = (path: string | undefined) => (path ?? "").split("/").filter(Boolean)[0] ?? "";
@@ -36,6 +37,14 @@ export function createHub(relay: Relay, deps: HubDeps) {
     shares.catch(() => cache.delete(projectId));
     cache.set(projectId, { at: Date.now(), shares });
     return shares;
+  }
+
+  /** An answer may only talk about the item that was asked about: a path outside it is refused, not passed on. */
+  const within = (item: Share, path: string) => firstSegment(path) === item.name;
+  async function asked<T extends { path: string }>(item: Share, answer: Promise<T>): Promise<T> {
+    const r = await answer;
+    if (!within(item, r.path)) throw spoofed();
+    return r;
   }
 
   const owners = (shares: Share[]) => [...new Set(shares.map((s) => s.owner_id))];
@@ -87,15 +96,29 @@ export function createHub(relay: Relay, deps: HubDeps) {
             .sort((a, b) => Number(b.type === "dir") - Number(a.type === "dir") || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
           return { path: "", entries, truncated: false } satisfies FolderListResult;
         }
-        return relay.callOwner(projectId, itemFor(shares, req.path).owner_id, req, opts);
+        const item = itemFor(shares, req.path);
+        return asked(item, relay.callOwner(projectId, item.owner_id, req, opts));
       }
-      case "read":
+      case "read": {
+        const item = itemFor(shares, req.path);
+        return asked(item, relay.callOwner(projectId, item.owner_id, req, opts));
+      }
       case "edit":
-      case "write":
-        return relay.callOwner(projectId, itemFor(shares, req.path).owner_id, req, opts);
+      case "write": {
+        const item = itemFor(shares, req.path);
+        // A preview of a change to a file in some other item is not shown: the diff on the answer is only trusted for the item asked about.
+        const onPreview = opts.onPreview && ((change: ChangePreview) => (within(item, change.path) ? opts.onPreview!(change) : undefined));
+        return asked(item, relay.callOwner(projectId, item.owner_id, req, { ...opts, onPreview }));
+      }
       case "glob":
       case "grep": {
-        if (firstSegment(req.path)) return relay.callOwner(projectId, itemFor(shares, req.path).owner_id, req as never, opts);
+        if (firstSegment(req.path)) {
+          const item = itemFor(shares, req.path);
+          const result = await relay.callOwner(projectId, item.owner_id, req as never, opts);
+          return req.op === "glob"
+            ? ({ ...(result as FolderGlobResult), paths: (result as FolderGlobResult).paths.filter((p) => within(item, p)) } satisfies FolderGlobResult)
+            : ({ ...(result as FolderSearchResult), matches: (result as FolderSearchResult).matches.filter((m) => within(item, m.path)) } satisfies FolderSearchResult);
+        }
         const limit = Math.min(req.limit ?? L.searchLimit, L.searchLimit);
         const answers = await fanOut(projectId, shares, (owner) => relay.callOwner(projectId, owner, req as never, opts));
         if (req.op === "glob") {

@@ -12,6 +12,17 @@
 --
 -- Members read the rows through RLS (they drive the live dots and the request cards via realtime); only the server writes.
 
+-- A name is one path segment: 1 to 80 characters, no slashes, not "." or "..", no control or direction-changing characters.
+create function public.project_share_name_ok(p_name text) returns boolean
+language sql immutable set search_path = '' as $$
+  select p_name is not null
+    and char_length(p_name) between 1 and 80
+    and p_name !~ '[[:cntrl:]/\\]'
+    and p_name !~ E'[\\u200b-\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ufeff]'
+    and p_name not in ('.', '..')
+$$;
+revoke execute on function public.project_share_name_ok(text) from public, anon, authenticated;
+
 create table public.project_share_hosts (
   project_id uuid not null references public.projects (id) on delete cascade,
   owner_id uuid not null references public.profiles (id) on delete cascade,
@@ -25,7 +36,7 @@ create table public.project_shares (
   project_id uuid not null references public.projects (id) on delete cascade,
   owner_id uuid not null references public.profiles (id) on delete cascade,
   item_key text not null check (char_length(item_key) between 1 and 64),
-  name text not null check (char_length(name) between 1 and 80 and name !~ '[[:cntrl:]]'),
+  name text not null check (public.project_share_name_ok(name)),
   kind text not null check (kind in ('dir', 'file')),
   status text not null default 'active' check (status in ('pending', 'active')),
   created_at timestamptz not null default now(),
@@ -111,7 +122,9 @@ declare
   v_name text;
   v_n int;
   v_keys text[];
+  v_status text;
   v_max constant int := 20;
+  v_max_requests constant int := 5;
 begin
   if v_role is null then raise exception 'not_found'; end if;
   if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items) > v_max then raise exception 'invalid_items'; end if;
@@ -125,15 +138,17 @@ begin
     v_key := v_item ->> 'key';
     v_kind := v_item ->> 'kind';
     v_base := left(trim(coalesce(v_item ->> 'name', '')), 80);
-    if v_key is null or char_length(v_key) not between 1 and 64 or v_kind not in ('dir', 'file')
-       or char_length(v_base) < 1 or v_base ~ '[[:cntrl:]]' then
+    if v_key is null or char_length(v_key) not between 1 and 64 or v_kind not in ('dir', 'file') or not public.project_share_name_ok(v_base) then
       raise exception 'invalid_items';
     end if;
     if exists (select 1 from public.project_shares where project_id = p_project and owner_id = p_user and item_key = v_key) then
       update public.project_shares set kind = v_kind where project_id = p_project and owner_id = p_user and item_key = v_key and kind <> v_kind;
       continue;
     end if;
-    if (select count(*) from public.project_shares where project_id = p_project) >= v_max then raise exception 'too_many'; end if;
+    -- At most 20 approved items in a project, and a member can only have a few requests waiting, so requests can't crowd out real items.
+    v_status := case when v_role in ('host', 'admin') then 'active' else 'pending' end;
+    if v_status = 'active' and (select count(*) from public.project_shares where project_id = p_project and status = 'active') >= v_max then raise exception 'too_many'; end if;
+    if v_status = 'pending' and (select count(*) from public.project_shares where project_id = p_project and owner_id = p_user and status = 'pending') >= v_max_requests then raise exception 'too_many_requests'; end if;
     v_name := v_base;
     v_n := 2;
     while exists (select 1 from public.project_shares where project_id = p_project and lower(name) = lower(v_name)) loop
@@ -141,7 +156,7 @@ begin
       v_n := v_n + 1;
     end loop;
     insert into public.project_shares (project_id, owner_id, item_key, name, kind, status)
-      values (p_project, p_user, v_key, v_name, v_kind, case when v_role in ('host', 'admin') then 'active' else 'pending' end);
+      values (p_project, p_user, v_key, v_name, v_kind, v_status);
   end loop;
 
   return coalesce((select jsonb_agg(jsonb_build_object('key', item_key, 'name', name, 'status', status) order by created_at, id)
@@ -161,6 +176,7 @@ begin
   if v_role not in ('host', 'admin') then raise exception 'forbidden'; end if;
   select owner_id into v_owner from public.project_shares where id = p_share and project_id = p_project and status = 'pending';
   if v_owner is null then raise exception 'not_found'; end if;
+  if p_approve and (select count(*) from public.project_shares where project_id = p_project and status = 'active') >= 20 then raise exception 'too_many'; end if;
   if p_approve then
     update public.project_shares set status = 'active', decided_by = p_user where id = p_share;
   else

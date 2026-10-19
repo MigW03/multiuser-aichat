@@ -130,8 +130,8 @@ export function Shell({ userId }: { userId: string }) {
   const chats = useLive(() => fetchChats(projectId), [projectId]);
   const members = useLive(() => (projectId ? fetchProjectMembers(projectId) : Promise.resolve(undefined)), [projectId]);
   const online = useProjectPresence(projectId, userId);
-  // The desktop app serves the shared folders of the projects this person hosts.
-  useFolderHost(userId, projects.data?.filter((p) => p.my_role === "host").map((p) => p.id));
+  // The desktop app serves what this person shares in the projects they belong to.
+  useFolderHost(userId, projects.data?.map((p) => p.id));
   // And it runs this person's own connected tools (MCP servers) for the answers they ask for.
   useMcpHost(userId);
 

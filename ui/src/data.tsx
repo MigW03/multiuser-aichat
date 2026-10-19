@@ -32,7 +32,7 @@ export function onChanged(callback: () => void): () => void {
 export function useRealtimeLists(userId: string) {
   useEffect(() => {
     const channel = supabase.channel(`lists:${userId}`);
-    for (const table of ["messages", "chats", "projects", "project_members", "chat_members", "project_folders"]) {
+    for (const table of ["messages", "chats", "projects", "project_members", "chat_members", "project_shares", "project_share_hosts"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, notifyChanged);
     }
     channel.subscribe((status) => status === "SUBSCRIBED" && notifyChanged());
@@ -137,7 +137,7 @@ export type AppContextValue = {
   openAddKey: () => void;
   /** Open the "invite someone" dialog for a project or a home chat. */
   openInvite: (target: { kind: "project"; projectId: string } | { kind: "chat"; chatId: string }) => void;
-  /** The shared folder column on the right of a project's chats. `drawer`: a small screen shows it as a drawer. */
+  /** The files column on the right of a project's chats. `drawer`: a small screen shows it as a drawer. */
   folderPanel: { open: boolean; drawer: boolean; toggle: () => void };
 };
 

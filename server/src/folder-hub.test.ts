@@ -19,7 +19,8 @@ const relay = {
   callOwner: async (_p: string, owner: string, req: RelayRequest) => {
     sent.push({ owner, req });
     if (!online.includes(owner)) throw new RelayError("offline", "offline");
-    return answers[owner]?.(req) ?? {};
+    // An app that answers as it should: with the path it was asked about.
+    return answers[owner]?.(req) ?? ("path" in req && typeof req.path === "string" ? { path: req.path.replace(/^\/+/, ""), entries: [], created: false, added: 0, removed: 0, paths: [], matches: [], truncated: false } : { paths: [], matches: [], truncated: false });
   },
 } as unknown as Relay;
 
@@ -93,6 +94,41 @@ describe("routing by the first path segment", () => {
   test("a leading slash still names the item", async () => {
     await call({ op: "read", path: "/my-app/a.ts" });
     assert.equal(sent.at(-1)!.owner, "ana");
+  });
+});
+
+describe("an app can only answer about the item it was asked about", () => {
+  test("a read or list that names a path outside the item is refused", async () => {
+    answers.ben = () => ({ path: "my-app/a.ts", text: "forged", startLine: 1, endLine: 1, totalLines: 1, truncated: false });
+    await assert.rejects(call({ op: "read", path: "notes/a.md" }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+    answers.ben = () => ({ path: "notes/a.md", text: "ok", startLine: 1, endLine: 1, totalLines: 1, truncated: false });
+    assert.equal((await call({ op: "read", path: "notes/a.md" })).path, "notes/a.md");
+    answers.ben = () => ({ path: "", entries: [], truncated: false });
+    await assert.rejects(call({ op: "list", path: "notes" }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+  });
+  test("a search with a path keeps only results inside that item", async () => {
+    answers.ben = () => ({ matches: [{ path: "notes/a.md", line: 1, text: "x" }, { path: "my-app/a.ts", line: 1, text: "forged" }, { path: "todo.md", line: 1, text: "other item" }], truncated: false });
+    const r = await call({ op: "grep", pattern: "x", path: "notes" });
+    assert.deepEqual((r.matches as { path: string }[]).map((m) => m.path), ["notes/a.md"]);
+    answers.ben = () => ({ paths: ["notes/a.md", "my-app/a.ts"], truncated: false });
+    assert.deepEqual((await call({ op: "glob", pattern: "*", path: "notes" })).paths, ["notes/a.md"]);
+  });
+  test("a change result or preview for a file in another item is not trusted", async () => {
+    answers.ben = () => ({ path: "my-app/a.ts", created: false, added: 1, removed: 1 });
+    await assert.rejects(call({ op: "edit", path: "notes/a.md", oldString: "a", newString: "b", askedBy: "u", readFiles: 1 }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+    const seen: string[] = [];
+    const original = relay.callOwner;
+    relay.callOwner = (async (_p: string, _o: string, _req: unknown, o: { onPreview?: (c: unknown) => void }) => {
+      o.onPreview?.({ kind: "edit", path: "my-app/forged.ts" });
+      o.onPreview?.({ kind: "edit", path: "notes/real.md" });
+      return { path: "notes/real.md", created: false, added: 0, removed: 0 };
+    }) as never;
+    try {
+      await hub.call(P, { op: "edit", path: "notes/real.md", oldString: "a", newString: "b", askedBy: "u", readFiles: 1 } as never, { onPreview: (c: { path: string }) => void seen.push(c.path) } as never);
+    } finally {
+      relay.callOwner = original;
+    }
+    assert.deepEqual(seen, ["notes/real.md"]);
   });
 });
 

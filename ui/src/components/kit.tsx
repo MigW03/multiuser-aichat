@@ -189,20 +189,31 @@ export function InfoTip({ label, children, size = ICON_SM }: { label: string; ch
  * A short hint that floats below its content on hover or keyboard focus. Rendered in a portal like InfoTip, because the
  * desktop app doesn't show the browser's own title tooltips reliably.
  */
-export function Tip({ text, children, className = "", focusable = true }: { text: string; children: ReactNode; className?: string; focusable?: boolean }) {
+export function Tip({ text, children, className = "", focusable = true, delayMs = 0 }: { text: string; children: ReactNode; className?: string; focusable?: boolean; delayMs?: number }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const id = useId();
   const WIDTH = 220;
-  const show = () => {
+  const place = () => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
     setPos({ top: r.bottom + 6, left: Math.min(Math.max(8, r.right - WIDTH), window.innerWidth - WIDTH - 8) });
   };
-  const hide = () => setPos(null);
+  // A hover has to rest for `delayMs` before the hint shows, so a pointer that only passes over it triggers nothing. Focus shows it at once.
+  const show = () => {
+    clearTimeout(timer.current);
+    if (delayMs > 0) timer.current = setTimeout(place, delayMs);
+    else place();
+  };
+  const hide = () => {
+    clearTimeout(timer.current);
+    setPos(null);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <>
-      <span ref={ref} className={className} tabIndex={focusable ? 0 : undefined} aria-describedby={pos ? id : undefined} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onKeyDown={(e) => e.key === "Escape" && hide()}>
+      <span ref={ref} className={className} tabIndex={focusable ? 0 : undefined} aria-describedby={pos ? id : undefined} onMouseEnter={show} onMouseLeave={hide} onMouseDown={hide} onFocus={place} onBlur={hide} onKeyDown={(e) => e.key === "Escape" && hide()}>
         {children}
       </span>
       {pos &&

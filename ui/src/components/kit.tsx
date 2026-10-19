@@ -260,7 +260,7 @@ export function Dialog({
 // ------------------------------------------------------------------ menus
 
 export type MenuItem =
-  | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean }
+  | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean; title?: string }
   | "divider";
 
 /** A button that opens a small menu. Closes on outside click, Escape and selection. */
@@ -316,6 +316,7 @@ export function Menu({
                 role="menuitem"
                 className={`menu-item ${item.danger ? "danger" : ""}`}
                 disabled={item.disabled}
+                title={item.title}
                 onClick={() => {
                   setOpen(false);
                   item.onSelect();

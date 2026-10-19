@@ -1,14 +1,19 @@
 import type { ChangePreview, FolderCaps, FolderResponse } from "@mc/shared";
-import { answer, type Item, type Search } from "./folder-items.ts";
+import { answer, type Item, type ItemStatus, type Search } from "./folder-items.ts";
 
-// The host's side of the shared folder. For each linked project this app keeps one outgoing WebSocket to the chat
-// server. The server sends read requests down it (after checking who asked) and this app answers from the linked
-// folder. Nothing is listening on this computer, and the renderer (the web page) cannot read the folder: it can
-// only ask this module for status.
+// This person's side of a project's shared files. For each project where they share something this app keeps one
+// outgoing WebSocket to the chat server. It reports what is shared (by random id, name and kind, never a path), the
+// server answers with what the project calls each item and whether it is approved, then sends read requests down the
+// socket (after checking who asked and whose item it is) and this app answers from the items. Nothing is listening on
+// this computer, and the renderer (the web page) cannot read the files: it can only ask this module for status.
 
 export type FolderState = "off" | "connecting" | "connected" | "rejected" | "auth";
 
-export type HostSession = { serverUrl: string; token: string; userId: string; hostProjects: string[] };
+/** `projects` are the projects the person belongs to: the only ones this app will connect for. */
+export type HostSession = { serverUrl: string; token: string; userId: string; projects: string[] };
+
+/** What the app reports for each item, and what the server answers. */
+export type ItemReport = { key: string; name: string; kind: "dir" | "file" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
@@ -40,6 +45,17 @@ export function serverSocketUrl(serverUrl: string, packaged: boolean, path = "/a
   return null;
 }
 
+/** Reads the server's list of items defensively: anything that is not exactly the expected shape is left out. */
+function statuses(raw: unknown): ({ key: string } & ItemStatus)[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((i: unknown) => {
+    const v = i as { key?: unknown; name?: unknown; status?: unknown } | null;
+    return typeof v?.key === "string" && v.key.length <= 64 && typeof v.name === "string" && v.name.length >= 1 && v.name.length <= 80 && (v.status === "pending" || v.status === "active")
+      ? [{ key: v.key, name: v.name, status: v.status }]
+      : [];
+  });
+}
+
 const MAX_IN_FLIGHT = 3;
 const MAX_QUEUED = 20;
 /** Largest frame from the server. Reads are tiny; the room is for the text of an AI edit or whole-file write (checked again per field). */
@@ -52,8 +68,14 @@ type ConnOptions = {
   projectId: string;
   wsUrl: string;
   getToken: () => string;
-  /** What is shared right now. Read on every request, so adding or removing an item needs no reconnect. */
+  /** What may be served right now (approved items only). Read on every request, so adding or removing an item needs no reconnect. */
   getItems: () => Item[];
+  /** Everything this person shares in the project, approved or not, for the server to record. */
+  getReport: () => ItemReport[];
+  /** The server's answer about the items: new names, approvals, and anything an admin removed. */
+  onItems: (items: ({ key: string } & ItemStatus)[], initial: boolean) => void;
+  /** The server refused the items (for example too many in the project). */
+  onItemsError: (code: string) => void;
   search: Search;
   onState: (state: FolderState) => void;
   /** What the host allows the AI to propose. Sent to the server on connect and when it changes. */
@@ -66,9 +88,11 @@ type ConnOptions = {
   cancelAll: () => void;
 };
 
-/** One project's connection. Reconnects on its own until `close()`, unless the server says this app may not serve the folder. */
+/** One project's connection. Reconnects on its own until `close()`, unless the server says this person may not share here. */
 export class FolderConn {
   state: FolderState = "connecting";
+  /** Why the server refused, when it did. */
+  error: string | null = null;
   private ws: WebSocket | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -100,7 +124,7 @@ export class FolderConn {
     this.ws = ws;
     ws.onopen = () => {
       this.arm();
-      ws.send(JSON.stringify({ type: "hello", token: this.o.getToken(), projectId: this.o.projectId }));
+      ws.send(JSON.stringify({ type: "hello", token: this.o.getToken(), projectId: this.o.projectId, items: this.o.getReport() }));
     };
     ws.onmessage = (event) => {
       this.arm();
@@ -113,12 +137,20 @@ export class FolderConn {
       }
       if (msg.type === "ready") {
         this.attempt = 0;
+        this.error = null;
+        this.o.onItems(statuses(msg.items), true);
         this.set("connected");
         this.capsChanged();
+      } else if (msg.type === "items") {
+        // After the host or an admin answered a request, removed something, or after this app reported a change.
+        this.o.onItems(statuses(msg.items), false);
+      } else if (msg.type === "items_error") {
+        this.o.onItemsError(typeof msg.code === "string" ? msg.code.slice(0, 40) : "failed");
       } else if (msg.type === "ping") {
         ws.send(JSON.stringify({ type: "pong" }));
       } else if (msg.type === "error") {
-        // not_host / not_linked: retrying won't help until the person links again. unauthorized: wait for a fresh token.
+        // not_found (no longer in the project), too_many, invalid_items: retrying won't help until something changes. unauthorized: wait for a fresh token.
+        this.error = typeof msg.code === "string" ? msg.code.slice(0, 40) : "failed";
         this.set(msg.code === "unauthorized" ? "auth" : "rejected");
       } else if (msg.type === "req" && this.state === "connected") {
         const op = (msg.req as { op?: unknown } | null)?.op;
@@ -136,7 +168,7 @@ export class FolderConn {
       if (this.closed) return;
       if (this.state === "auth") return; // waits for a fresh token (tokenChanged)
       if (this.state === "rejected") {
-        // Not the host, or the folder isn't registered: check again now and then, not in a tight loop.
+        // Not allowed here, or refused: check again now and then, not in a tight loop.
         clearTimeout(this.timer);
         this.timer = setTimeout(() => this.open(), REJECTED_RETRY_MS);
         return;
@@ -169,7 +201,12 @@ export class FolderConn {
     }
   }
 
-  /** Tells the server what the host allows. */
+  /** Tells the server what is shared now, after the person added or removed something. The answer arrives as an `items` message. */
+  reportItems() {
+    if (this.ws?.readyState === WebSocket.OPEN && this.state === "connected") this.ws.send(JSON.stringify({ type: "items", items: this.o.getReport() }));
+  }
+
+  /** Tells the server what this person allows. */
   capsChanged() {
     if (this.ws?.readyState === WebSocket.OPEN && this.state === "connected") this.ws.send(JSON.stringify({ type: "caps", caps: this.o.getCaps() }));
   }

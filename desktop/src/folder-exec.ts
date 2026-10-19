@@ -71,15 +71,18 @@ async function workdirOf(items: Item[], workdir: unknown): Promise<{ root: strin
   const t = resolve(items, workdir ?? "");
   let root: string;
   let parts: string[];
+  let prefix: string;
   if (t === "top") {
     const dirs = items.filter((i) => i.kind === "dir");
     if (dirs.length !== 1) throw new FolderError("bad_request", "Several folders are shared. Give workdir as a folder inside the one you mean, like my-app or my-app/src.");
     root = dirs[0]!.abs;
     parts = [];
+    prefix = dirs[0]!.name;
   } else {
     if (t.single) throw new FolderError("not_a_directory", "workdir must be a folder, not a shared file.");
     root = t.root;
     parts = t.start;
+    prefix = t.prefix;
   }
   if (parts.some((p) => isHiddenName(p, true))) throw new FolderError("excluded", "That folder is hidden from the shared folder (secrets, keys, build output and similar).");
   const cwd = join(root, ...parts);
@@ -91,7 +94,8 @@ async function workdirOf(items: Item[], workdir: unknown): Promise<{ root: strin
     if (st.isSymbolicLink()) throw new FolderError("excluded", "Links aren't followed, so that folder can't be used.");
     if (!st.isDirectory()) throw new FolderError("not_a_directory", "workdir must be a folder.");
   }
-  return { root, cwd, shown: parts.join("/") };
+  // Shown with the name of the shared folder it is in, so a person who shares several knows which one it runs in.
+  return { root, cwd, shown: [prefix, ...parts].filter(Boolean).join("/") };
 }
 
 const clipLine = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}…` : s);

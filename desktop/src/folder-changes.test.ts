@@ -16,8 +16,10 @@ let root = "";
 let outside = "";
 let items: Item[] = [];
 let n = 0;
-const edit = (path: string, oldString: string, newString: string, extra: object = {}) => ({ id: `e${++n}`, op: "edit", path, oldString, newString, ...extra });
-const write = (path: string, content: string, hadRead = true) => ({ id: `w${++n}`, op: "write", path, content, hadRead });
+/** Paths inside the shared folder start with the folder's name, as they do for the project's members. Escapes and absolute paths stay as they are. */
+const at = (path: string) => (path.startsWith("/") || path.startsWith("..") ? path : `${items[0]!.name}/${path}`);
+const edit = (path: string, oldString: string, newString: string, extra: object = {}) => ({ id: `e${++n}`, op: "edit", path: at(path), oldString, newString, ...extra });
+const write = (path: string, content: string, hadRead = true) => ({ id: `w${++n}`, op: "write", path: at(path), content, hadRead });
 
 before(() => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "mc-changes-")));
@@ -44,7 +46,7 @@ describe("stageChange", () => {
   test("an edit builds a diff and writes nothing", async () => {
     const s = await stageChange(items, edit("src/a.ts", "const b = 2", "const b = 3"));
     assert.equal(s.created, false);
-    assert.equal(s.change.path, "src/a.ts");
+    assert.equal(s.change.path, at("src/a.ts"));
     assert.equal(s.change.added, 1);
     assert.equal(s.change.removed, 1);
     assert.match(s.change.diff, /-export const b = 2;/);
@@ -81,7 +83,7 @@ describe("stageChange", () => {
 
   test("bad input and limits", async () => {
     await fails(stageChange(items, edit("nope.ts", "a", "b")), "not_found");
-    await fails(stageChange(items, { id: "x1", op: "edit", path: "src/a.ts", oldString: 5, newString: "b" }), "bad_request");
+    await fails(stageChange(items, { id: "x1", op: "edit", path: at("src/a.ts"), oldString: 5, newString: "b" }), "bad_request");
     await fails(stageChange(items, edit("src/a.ts", "const a = 1;", "const a = 1;")), "bad_request");
     await fails(stageChange(items, write("big.txt", "a".repeat(600_000))), "bad_request");
     await fails(stageChange(items, write("zero.txt", "a\0b")), "bad_request");

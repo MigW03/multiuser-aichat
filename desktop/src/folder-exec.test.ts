@@ -18,7 +18,9 @@ let base = "";
 let root = "";
 let items: Item[] = [];
 let n = 0;
-const stage = (command: string, extra: object = {}) => stageExec(items, { id: `x${++n}`, command, ...extra });
+/** A folder inside the share starts with the shared folder's name. Escapes and absolute paths stay as they are. */
+const at = (path: string) => (path.startsWith("/") || path.startsWith("..") ? path : `${items[0]!.name}/${path}`);
+const stage = (command: string, extra: { workdir?: string; timeoutSec?: number; description?: string; [k: string]: unknown } = {}) => stageExec(items, { id: `x${++n}`, command, ...extra, ...(extra.workdir ? { workdir: at(extra.workdir) } : {}) });
 const FAKE_TOKEN = ["sk", "ant", "api03", "x".repeat(40)].join("-");
 
 before(() => {
@@ -112,7 +114,7 @@ describe("stageExec", () => {
     const s = await stage("touch should-not-exist.txt", { workdir: "src", timeoutSec: 30, description: "make a file\nwith a line break" });
     assert.equal(s.change.kind, "exec");
     assert.equal(s.change.command, "touch should-not-exist.txt");
-    assert.equal(s.change.workdir, "src");
+    assert.equal(s.change.workdir, at("src"));
     assert.equal(s.change.timeoutSec, 30);
     assert.equal(s.change.note, "make a file with a line break");
     assert.equal(existsSync(join(root, "src/should-not-exist.txt")), false);

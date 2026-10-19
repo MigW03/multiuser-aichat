@@ -1,6 +1,7 @@
 import { classifyCommand, FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse } from "@mc/shared";
 import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
-import { chmod, lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Approvals, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
@@ -9,11 +10,12 @@ import { stageGitChange } from "./folder-git.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
 import { FolderConn, isUuid, originOf, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
-import { nameItems, summaryName, type Item, type ItemSpec } from "./folder-items.ts";
+import { nameItems, servedItems, summaryName, type Item, type ItemSpec, type ItemStatus } from "./folder-items.ts";
 
-// Wires the shared folder to the app window. The page can: say who is signed in and which projects they host,
-// ask what is shared, open the native "choose" dialog, remove an item and stop sharing. It can never name a path or
-// read a file: items are chosen in a native dialog and read only for requests that arrive from the chat server.
+// Wires this person's shared files to the app window. The page can: say who is signed in and which projects they belong
+// to, ask what is shared, open the native "choose" dialog (or hand over what was dropped on it), remove an item and
+// stop sharing. It can never name a path or read a file: items are chosen in a native dialog or dropped by the person,
+// and read only for requests that arrive from the chat server for items the host or an admin approved.
 
 type Link = { items: ItemSpec[]; userId: string; caps?: FolderCaps };
 type Links = Record<string, Link>;
@@ -28,7 +30,10 @@ async function loadLinks(): Promise<Links> {
       if (!isUuid(projectId) || !isUuid(l?.userId)) continue;
       // Version 1 kept one folder as `root`.
       const items = Array.isArray(l.items) ? l.items : typeof l.root === "string" ? [{ abs: l.root, kind: "dir" as const }] : [];
-      const valid = items.filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file")).slice(0, L.items);
+      const valid = items
+        .filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file"))
+        .slice(0, L.items)
+        .map((i) => ({ abs: i.abs, kind: i.kind, key: typeof i.key === "string" && i.key.length >= 1 && i.key.length <= 64 ? i.key : randomUUID() }));
       if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true || l.caps?.git === true || l.caps?.exec === true ? { caps: { edit: l.caps.edit === true, git: l.caps.git === true, exec: l.caps.exec === true } } : {}) };
     }
     return out;
@@ -59,14 +64,19 @@ async function validateFile(picked: string): Promise<string> {
   return abs;
 }
 
-export type FolderInfo = { linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: FolderState; caps: FolderCaps };
+/** `syncing`: the server has not answered for this item yet. `pending`: waiting for the host or an admin. */
+export type ItemView = { name: string; kind: "dir" | "file"; key: string; status: "syncing" | "pending" | "active" };
+export type FolderInfo = { linked: boolean; name: string | null; items: ItemView[]; state: FolderState; caps: FolderCaps; /** Why the server refused, when it did. */ error: string | null };
 const NO_CAPS: FolderCaps = { edit: false, git: false, exec: false };
+const EMPTY: FolderInfo = { linked: false, name: null, items: [], state: "off", caps: NO_CAPS, error: null };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
 export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
   let links: Links = {};
   let session: HostSession | null = null;
   const conns = new Map<string, FolderConn>();
+  /** What the server last said about each item (new name, approval), per project. Not stored: it is asked for on every connection. */
+  const assigned = new Map<string, Map<string, ItemStatus>>();
   // Packaged, the worker is kept outside app.asar (asarUnpack in package.json): worker threads load from the real disk.
   const search = workerSearch(join(__dirname, "folder-worker.cjs").replace(/app\.asar([\\/])/, "app.asar.unpacked$1"));
   const ready = loadLinks().then((l) => {
@@ -76,7 +86,16 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   // Only the app's own page may use these calls (not an iframe or a page it navigated to).
   const trusted = (e: IpcMainInvokeEvent) => originOf(e.senderFrame?.url) === opts.allowedOrigin;
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("folder:changed", projectId);
-  const itemsOf = (projectId: string): Item[] => nameItems(links[projectId]?.items ?? []);
+  /** What may be served: approved items only, under the names the project gave them. */
+  const itemsOf = (projectId: string): Item[] => servedItems(links[projectId]?.items ?? [], assigned.get(projectId));
+  /** Everything shared from here, for the server to record. The names are suggestions; the server decides. */
+  const report = (projectId: string) => nameItems(links[projectId]?.items ?? []).flatMap((i) => (i.key ? [{ key: i.key, name: i.name, kind: i.kind }] : []));
+  /** Every item with the name and approval the server last gave it, for the page. */
+  const viewOf = (projectId: string): ItemView[] =>
+    nameItems(links[projectId]?.items ?? []).flatMap((i) => {
+      const a = i.key ? assigned.get(projectId)?.get(i.key) : undefined;
+      return i.key ? [{ name: a?.name ?? i.name, kind: i.kind, key: i.key, status: a?.status ?? ("syncing" as const) }] : [];
+    });
   const mine = (projectId: string) => !!links[projectId] && !!session && links[projectId]!.userId === session.userId;
   const capsOf = (projectId: string): FolderCaps => {
     const c = mine(projectId) ? links[projectId]!.caps : undefined;
@@ -135,10 +154,10 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const git = op === "git_change";
     const exec = op === "exec";
     const allowed = exec ? capsOf(projectId).exec : git ? capsOf(projectId).git : capsOf(projectId).edit;
-    if (!allowed) return { id, ok: false, code: "disabled", message: exec ? "The host has not allowed commands in this project." : git ? "The host has not allowed git in this project." : "The host has not allowed AI changes to files in this project." };
+    if (!allowed) return { id, ok: false, code: "disabled", message: exec ? "This person has not allowed commands." : git ? "This person has not allowed git." : "This person has not allowed AI changes to files." };
     // One command at a time per project: a second is refused while one waits or runs.
-    if (exec && approvals.execBusy(projectId)) return { id, ok: false, code: "busy", message: "A command is already waiting for the host or running. Wait for it to finish." };
-    if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the host. Wait for them to be decided." };
+    if (exec && approvals.execBusy(projectId)) return { id, ok: false, code: "busy", message: "A command is already waiting for its owner or running. Wait for it to finish." };
+    if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the owner. Wait for them to be decided." };
     try {
       const staged = exec ? await stageExec(itemsOf(projectId), req as never) : git ? await stageGitChange(itemsOf(projectId), req as never) : await stageChange(itemsOf(projectId), req as never);
       preview(staged.change);
@@ -155,20 +174,26 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   function reconcile() {
     const wsUrl = session ? serverSocketUrl(session.serverUrl, app.isPackaged) : null;
     for (const [projectId, conn] of conns) {
-      if (!session || !wsUrl || !session.hostProjects.includes(projectId) || !mine(projectId)) {
+      if (!session || !wsUrl || !session.projects.includes(projectId) || !mine(projectId)) {
         conn.close();
         conns.delete(projectId);
         changed(projectId);
       }
     }
     if (!session || !wsUrl) return;
-    for (const projectId of session.hostProjects) {
+    for (const projectId of session.projects) {
       if (!mine(projectId) || conns.has(projectId)) continue;
       const conn = new FolderConn({
         projectId,
         wsUrl,
         getToken: () => session?.token ?? "",
         getItems: () => itemsOf(projectId),
+        getReport: () => report(projectId),
+        onItems: (items) => void applyItems(projectId, items),
+        onItemsError: (code) => {
+          const win = opts.getWindow();
+          win?.webContents.send("folder:items-error", { projectId, code });
+        },
         search,
         onState: () => changed(projectId),
         getCaps: () => capsOf(projectId),
@@ -181,10 +206,35 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     }
   }
 
+  /** The server's answer about the items. Something it knew before and no longer lists was removed by the host or an admin: it stops being shared here too. */
+  async function applyItems(projectId: string, items: ({ key: string } & ItemStatus)[]) {
+    const before = assigned.get(projectId);
+    const next = new Map(items.map((i) => [i.key, { name: i.name, status: i.status }] as const));
+    assigned.set(projectId, next);
+    const link = links[projectId];
+    if (link) {
+      const gone = new Set([...(before?.keys() ?? [])].filter((k) => !next.has(k)));
+      if (gone.size > 0) {
+        const keep = link.items.filter((i) => !(i.key && gone.has(i.key)));
+        if (keep.length !== link.items.length) {
+          if (keep.length === 0) {
+            const { [projectId]: _gone, ...rest } = links;
+            links = rest;
+          } else links = { ...links, [projectId]: { ...link, items: keep } };
+          await saveLinks(links);
+          approvals.closeProject(projectId); // what a waiting change pointed at may be gone
+          reconcile();
+        }
+      }
+    }
+    changed(projectId);
+  }
+
   const info = (projectId: string): FolderInfo => {
-    if (!mine(projectId)) return { linked: false, name: null, items: [], state: "off", caps: NO_CAPS };
-    const items = itemsOf(projectId);
-    return { linked: true, name: summaryName(items), items: items.map((i) => ({ name: i.name, kind: i.kind })), state: conns.get(projectId)?.state ?? "off", caps: capsOf(projectId) };
+    if (!mine(projectId)) return EMPTY;
+    const items = viewOf(projectId);
+    const conn = conns.get(projectId);
+    return { linked: true, name: summaryName(nameItems(links[projectId]!.items)), items, state: conn?.state ?? "off", caps: capsOf(projectId), error: conn?.error ?? null };
   };
 
   ipcMain.handle("folder:set-session", async (e, raw: unknown) => {
@@ -198,12 +248,12 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       s.token.length > 0 &&
       s.token.length <= 4096 &&
       isUuid(s.userId) &&
-      Array.isArray(s.hostProjects) &&
-      s.hostProjects.length <= 100 &&
-      s.hostProjects.every(isUuid)
+      Array.isArray(s.projects) &&
+      s.projects.length <= 500 &&
+      s.projects.every(isUuid)
     ) {
       const tokenChanged = session?.token !== s.token;
-      session = { serverUrl: s.serverUrl, token: s.token, userId: s.userId, hostProjects: [...s.hostProjects] };
+      session = { serverUrl: s.serverUrl, token: s.token, userId: s.userId, projects: [...s.projects] };
       reconcile();
       if (tokenChanged) for (const c of conns.values()) c.tokenChanged();
     } else {
@@ -213,19 +263,46 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   });
 
   ipcMain.handle("folder:get", async (e, projectId: unknown): Promise<FolderInfo> => {
-    if (!trusted(e) || !isUuid(projectId)) return { linked: false, name: null, items: [], state: "off", caps: NO_CAPS };
+    if (!trusted(e) || !isUuid(projectId)) return EMPTY;
     await ready;
     return info(projectId);
   });
 
-  // Adds folders or files to what the project shares. The page registers the new name with the server next and
-  // then calls folder:connect.
+  /**
+   * Adds checked items to what this person shares in a project, tells the server (which names them and, for a member,
+   * asks the host or an admin), and answers the page. `skipped` names picks that could not be shared.
+   */
+  async function addItems(projectId: string, picks: ItemSpec[], skipped: string[], lastError: string | null): Promise<PickResult> {
+    const current = mine(projectId) ? links[projectId]!.items : [];
+    const added: ItemSpec[] = [];
+    for (const pick of picks) {
+      if ([...current, ...added].some((i) => i.abs === pick.abs)) continue; // already shared
+      if (current.length + added.length >= L.items) {
+        skipped.push(basename(pick.abs));
+        lastError = `You can share up to ${L.items} folders and files in a project.`;
+        continue;
+      }
+      added.push({ abs: pick.abs, kind: pick.kind, key: randomUUID() });
+    }
+    if (added.length === 0) return { ok: false, error: lastError };
+    links = { ...links, [projectId]: { ...(links[projectId] ?? {}), items: [...current, ...added], userId: session!.userId } };
+    await saveLinks(links);
+    reconcile(); // the first item of a project opens its connection, which reports it in its hello
+    conns.get(projectId)?.reportItems();
+    changed(projectId);
+    const now = info(projectId);
+    return { ok: true, name: now.name!, items: now.items, skipped };
+  }
+
+  const canShareIn = (projectId: string) => !!session && session.projects.includes(projectId);
+
+  // Adds folders or files picked in the native dialog. The server answers over the connection and the page hears about it through folder:changed.
   ipcMain.handle("folder:pick", async (e, projectId: unknown, kind: unknown): Promise<PickResult> => {
     if (!trusted(e) || !isUuid(projectId) || (kind !== "folder" && kind !== "files")) return { ok: false, error: "Invalid request." };
     await ready;
-    if (!session || !session.hostProjects.includes(projectId)) return { ok: false, error: "Only the project's host can share files." };
+    if (!canShareIn(projectId)) return { ok: false, error: "You can only share files in a project you belong to." };
     const current = mine(projectId) ? links[projectId]!.items : [];
-    if (current.length >= L.items) return { ok: false, error: `A project can share up to ${L.items} folders and files. Remove one first.` };
+    if (current.length >= L.items) return { ok: false, error: `You can share up to ${L.items} folders and files in a project. Remove one first.` };
     const win = opts.getWindow();
     const options: OpenDialogOptions =
       kind === "folder"
@@ -234,50 +311,85 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     if (picked.canceled || picked.filePaths.length === 0) return { ok: false, error: null };
 
-    const added: ItemSpec[] = [];
+    const specs: ItemSpec[] = [];
     const skipped: string[] = [];
     let lastError: string | null = null;
     for (const p of picked.filePaths) {
       try {
-        const abs = kind === "folder" ? await validateRoot(p) : await validateFile(p);
-        if ([...current, ...added].some((i) => i.abs === abs)) continue; // already shared
-        if (current.length + added.length >= L.items) {
-          skipped.push(basename(p));
-          lastError = `A project can share up to ${L.items} folders and files.`;
-          continue;
-        }
-        added.push({ abs, kind: kind === "folder" ? "dir" : "file" });
+        specs.push({ abs: kind === "folder" ? await validateRoot(p) : await validateFile(p), kind: kind === "folder" ? "dir" : "file" });
       } catch (err) {
         skipped.push(basename(p));
         lastError = err instanceof FolderError ? err.message : "That couldn't be shared.";
       }
     }
-    if (added.length === 0) return { ok: false, error: lastError };
-    links = { ...links, [projectId]: { items: [...current, ...added], userId: session.userId } };
-    await saveLinks(links);
-    changed(projectId);
-    const now = info(projectId);
-    return { ok: true, name: now.name!, items: now.items, skipped };
+    return addItems(projectId, specs, skipped, lastError);
   });
 
-  // Takes one item out of what is shared. Returns the new name, or null when nothing is left.
+  // Dropped on the panel. The page's drop listener (folder-preload.ts) hands over the real paths of what the person dragged in
+  // from their file system, and they wait here, checked, until the page has shown the "who can see this" notice if one is due
+  // and the person's choice comes back as drop-commit. The page only ever sees names.
+  const staged = new Map<string, { specs: ItemSpec[]; skipped: string[]; lastError: string | null; at: number }>();
+  const STAGE_MS = 5 * 60_000;
+  const MAX_DROPPED = 50;
+
+  ipcMain.handle("folder:drop-stage", async (e, projectId: unknown, paths: unknown): Promise<{ ok: true; items: { name: string; kind: "dir" | "file" }[]; skipped: string[] } | { ok: false; error: string }> => {
+    if (!trusted(e) || !isUuid(projectId) || !Array.isArray(paths) || !paths.every((p) => typeof p === "string" && p.length > 0 && p.length < 4096)) return { ok: false, error: "Invalid request." };
+    await ready;
+    if (!canShareIn(projectId)) return { ok: false, error: "You can only share files in a project you belong to." };
+    const specs: ItemSpec[] = [];
+    const skipped: string[] = [];
+    let lastError: string | null = null;
+    for (const p of (paths as string[]).slice(0, MAX_DROPPED)) {
+      try {
+        const st = await stat(p);
+        if (!st.isDirectory() && !st.isFile()) throw new FolderError("not_a_file", "Only folders and files can be shared.");
+        specs.push({ abs: st.isDirectory() ? await validateRoot(p) : await validateFile(p), kind: st.isDirectory() ? "dir" : "file" });
+      } catch (err) {
+        skipped.push(basename(p));
+        lastError = err instanceof FolderError ? err.message : "That couldn't be shared.";
+      }
+    }
+    if (specs.length === 0) return { ok: false, error: lastError ?? "Nothing to share." };
+    staged.set(projectId, { specs, skipped, lastError, at: Date.now() });
+    return { ok: true, items: specs.map((s) => ({ name: basename(s.abs), kind: s.kind })), skipped };
+  });
+
+  ipcMain.handle("folder:drop-commit", async (e, projectId: unknown): Promise<PickResult> => {
+    if (!trusted(e) || !isUuid(projectId)) return { ok: false, error: "Invalid request." };
+    await ready;
+    const s = staged.get(projectId);
+    staged.delete(projectId);
+    if (!s || Date.now() - s.at > STAGE_MS || !canShareIn(projectId)) return { ok: false, error: "Drop them again to share them." };
+    return addItems(projectId, s.specs, s.skipped, s.lastError);
+  });
+
+  ipcMain.handle("folder:drop-cancel", async (e, projectId: unknown) => {
+    if (trusted(e) && isUuid(projectId)) staged.delete(projectId);
+  });
+
+  // Takes one item out of what this person shares. The server hears about it over the connection.
   ipcMain.handle("folder:remove", async (e, projectId: unknown, name: unknown): Promise<{ name: string | null }> => {
     if (!trusted(e) || !isUuid(projectId) || typeof name !== "string") return { name: null };
     await ready;
     if (!mine(projectId)) return { name: null };
-    const keep = links[projectId]!.items.filter((_, i) => itemsOf(projectId)[i]?.name !== name);
+    const gone = viewOf(projectId).find((i) => i.name === name);
+    if (!gone) return { name: info(projectId).name };
+    const keep = links[projectId]!.items.filter((i) => i.key !== gone.key);
+    const before = conns.get(projectId);
     if (keep.length === 0) {
       const { [projectId]: _gone, ...rest } = links;
       links = rest;
     } else links = { ...links, [projectId]: { ...links[projectId]!, items: keep } };
     await saveLinks(links);
+    assigned.get(projectId)?.delete(gone.key);
     approvals.closeProject(projectId); // what a waiting change pointed at may be gone
+    before?.reportItems(); // before reconcile closes the connection, when nothing is left
     reconcile();
     changed(projectId);
     return { name: keep.length ? summaryName(nameItems(keep)) : null };
   });
 
-  // The host's switch for AI changes. Off by default; only the host, only for a project they share from this computer.
+  // This person's switch for AI changes to what they share. Off by default; only for a project they share from this computer.
   ipcMain.handle("folder:set-caps", async (e, projectId: unknown, caps: unknown): Promise<FolderInfo | null> => {
     if (!trusted(e) || !isUuid(projectId)) return null;
     await ready;
@@ -310,9 +422,9 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const { caps: _old, ...rest } = links[projectId]!;
     links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git || next.exec ? { caps: next } : {}) } };
     await saveLinks(links);
-    if (!next.edit) approvals.closeProject(projectId, "The host turned off AI changes.", "files"); // what was waiting is withdrawn at once
-    if (!next.git) approvals.closeProject(projectId, "The host turned off git.", "git");
-    if (!next.exec) approvals.closeProject(projectId, "The host turned off commands.", "exec"); // and a command that is running is stopped
+    if (!next.edit) approvals.closeProject(projectId, "The owner turned off AI changes.", "files"); // what was waiting is withdrawn at once
+    if (!next.git) approvals.closeProject(projectId, "The owner turned off git.", "git");
+    if (!next.exec) approvals.closeProject(projectId, "The owner turned off commands.", "exec"); // and a command that is running is stopped
     conns.get(projectId)?.capsChanged();
     changed(projectId);
     return info(projectId);
@@ -331,7 +443,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     return approvals.decide(projectId, id, approve);
   });
 
-  // (Re)connects one project now, for example right after its items were registered with the server.
+  // (Re)connects one project now.
   ipcMain.handle("folder:connect", async (e, projectId: unknown) => {
     if (!trusted(e) || !isUuid(projectId)) return;
     await ready;
@@ -341,6 +453,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     changed(projectId);
   });
 
+  // Stops sharing everything this person shares in a project.
   ipcMain.handle("folder:unlink", async (e, projectId: unknown) => {
     if (!trusted(e) || !isUuid(projectId)) return;
     await ready;
@@ -348,7 +461,9 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const { [projectId]: _gone, ...rest } = links;
     links = rest;
     await saveLinks(links);
+    assigned.delete(projectId);
     approvals.closeProject(projectId);
+    conns.get(projectId)?.reportItems(); // an empty list, before reconcile closes the connection
     reconcile();
     changed(projectId);
   });

@@ -36,14 +36,14 @@ export function summaryName(items: Item[]): string {
 
 const transparent = (items: Item[]) => items.length === 1 && items[0]!.kind === "dir";
 
-const itemTarget = (item: Item, rest: string[]): Target => {
+export const itemTarget = (item: Item, rest: string[]): Target => {
   if (item.kind === "dir") return { root: item.abs, start: rest, prefix: item.name };
   if (rest.length > 0) throw new FolderError("not_found", "That file or folder doesn't exist in the shared folder.");
   return { root: dirname(item.abs), start: [basename(item.abs)], prefix: item.name, single: true };
 };
 
 /** Where a path points: the shared top level, or a place inside one item. */
-function resolve(items: Item[], path: unknown): Target | "top" {
+export function resolve(items: Item[], path: unknown): Target | "top" {
   const parts = splitPath(path ?? "");
   if (transparent(items)) return { root: items[0]!.abs, start: parts, prefix: "" };
   if (parts.length === 0) return "top";
@@ -52,7 +52,7 @@ function resolve(items: Item[], path: unknown): Target | "top" {
   return itemTarget(item, parts.slice(1));
 }
 
-const under = (prefix: string, path: string) => [prefix, path].filter(Boolean).join("/");
+export const under = (prefix: string, path: string) => [prefix, path].filter(Boolean).join("/");
 
 async function topLevel(items: Item[]): Promise<FolderEntry[]> {
   const entries = await Promise.all(

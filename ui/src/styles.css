@@ -520,3 +520,26 @@ h1, h2, h3, p { margin: 0; }
 .file-text { margin: 0; flex: 1; min-height: 120px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font: 12.5px/1.5 var(--mono); white-space: pre; tab-size: 4; }
 .folder-note { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; }
 .folder-note svg { flex: none; }
+
+/* AI changes: proposal cards in the chat, the host's approval dock, diffs */
+.diff { margin: 0; padding: 8px 0; max-height: 280px; overflow: auto; font: 12px/1.5 var(--mono); background: var(--muted); border-radius: 8px; tab-size: 4; }
+.diff span { display: block; padding: 0 10px; white-space: pre; }
+.diff .add { background: color-mix(in srgb, var(--success, #2e9e5b) 18%, transparent); }
+.diff .del { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.diff .hunk { color: var(--muted-fg); }
+.diff-stats .add { color: var(--success, #2e9e5b); font-weight: 600; }
+.diff-stats .del { color: var(--danger); font-weight: 600; }
+.proposals { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.proposal { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px 10px; }
+.proposal summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.proposal summary::-webkit-details-marker { display: none; }
+.proposal .diff { margin-top: 8px; }
+.proposal.waiting { border-color: var(--warning); }
+.approval-dock { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 10px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
+.dock-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); box-shadow: var(--shadow-menu); }
+.dock-card header { display: flex; align-items: center; gap: 8px; font: var(--text-row); }
+.dock-card header svg { flex: none; color: var(--p-text); }
+.dock-actions { justify-content: flex-end; }
+.edit-switch { display: flex; gap: 8px; align-items: flex-start; padding: 8px 2px; cursor: pointer; }
+.edit-switch input { margin-top: 3px; flex: none; }
+.dock-card .risky { padding: 6px 8px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-tint); }

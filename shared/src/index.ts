@@ -98,6 +98,8 @@ export type MessageMeta = {
   files?: string[];
   /** The shared folder could not be reached while this answer was written. */
   folder_offline?: boolean;
+  /** answers: changes the AI proposed to files (path, and whether the host approved it). Shares the column's 1 KB with `files`. */
+  edits?: { p: string; ok: boolean }[];
 };
 
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -281,6 +283,15 @@ export const FOLDER_LIMITS = {
   items: 20,
   /** How long the server waits for the host's app to answer one request. */
   requestMs: 20_000,
+  /** AI changes: how long the host has to decide before a proposal is dropped. */
+  approvalMs: 5 * 60_000,
+  /** Open proposals per project at once. */
+  proposals: 3,
+  /** Longest oldString / newString of one edit, and longest content of one whole-file write, in characters. */
+  editChars: 200_000,
+  writeChars: 500_000,
+  /** Longest diff shown on an approval card, in characters. */
+  diffChars: 40_000,
 } as const;
 
 export type FolderEntry = { name: string; type: "file" | "dir"; size?: number };
@@ -291,14 +302,59 @@ export type FolderSearchResult = { matches: FolderMatch[]; truncated: boolean };
 export type FolderGlobResult = { paths: string[]; truncated: boolean };
 
 /** Why the host's app refused a request. The messages are written to be shown. */
-export type FolderErrorCode = "invalid_path" | "not_found" | "excluded" | "too_large" | "binary" | "not_a_file" | "not_a_directory" | "bad_request" | "timeout" | "busy" | "failed";
+export type FolderErrorCode =
+  | "invalid_path"
+  | "not_found"
+  | "excluded"
+  | "too_large"
+  | "binary"
+  | "not_a_file"
+  | "not_a_directory"
+  | "bad_request"
+  | "timeout"
+  | "busy"
+  | "failed"
+  // AI changes
+  | "disabled" // the host has not allowed AI changes
+  | "no_match" // the text to replace was not found
+  | "ambiguous" // it was found more than once
+  | "secrets" // the file holds a masked secret, so the AI cannot rewrite it
+  | "stale" // the file changed after the diff was made
+  | "denied" // the host said no
+  | "expired" // nobody decided in time, or the request was cancelled
+  | "exists"; // write to a path that already holds a file
+
+/** What the host allows the AI to propose in this project. Off by default; kept on the host's computer. */
+export type FolderCaps = { edit: boolean };
+
+/** One proposed change as everybody sees it: a unified diff and who asked. The host decides in the desktop app. */
+export type ChangePreview = {
+  id: string;
+  kind: "edit" | "write";
+  /** Path inside the shared folder. */
+  path: string;
+  /** true when the file does not exist yet. */
+  created: boolean;
+  added: number;
+  removed: number;
+  diff: string;
+  /** The diff was cut for size. */
+  cut: boolean;
+};
+
+/** Broadcast on `chat:<id>`: a proposal is waiting for the host. Informational only: the decision happens on the host's computer. */
+export type ApprovalEvent = { messageId: string; change: ChangePreview; askedBy: string; readFiles: number };
+/** Broadcast when a proposal is settled. */
+export type ApprovalDoneEvent = { messageId: string; id: string; outcome: "applied" | "denied" | "expired" | "failed" };
 
 /** What the server asks the host's app to do. `id` pairs the answer with the request. */
 export type FolderRequest =
   | { id: string; op: "list"; path: string }
   | { id: string; op: "read"; path: string; offset?: number; limit?: number }
   | { id: string; op: "glob"; pattern: string; path?: string; hidden?: boolean; limit?: number }
-  | { id: string; op: "grep"; pattern: string; path?: string; include?: string; literal?: boolean; caseSensitive?: boolean; limit?: number };
+  | { id: string; op: "grep"; pattern: string; path?: string; include?: string; literal?: boolean; caseSensitive?: boolean; limit?: number }
+  | { id: string; op: "edit"; path: string; oldString: string; newString: string; replaceAll?: boolean; askedBy: string; readFiles: number }
+  | { id: string; op: "write"; path: string; content: string; hadRead: boolean; askedBy: string; readFiles: number };
 
 export type FolderResponse = { id: string; ok: true; result: unknown } | { id: string; ok: false; code: FolderErrorCode; message: string };
 

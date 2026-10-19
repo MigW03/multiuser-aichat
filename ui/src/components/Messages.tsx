@@ -1,16 +1,20 @@
 import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, Folder, RotateCcw, Sparkles } from "lucide-react";
+import { Copy, CornerUpLeft, Folder, Pencil, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
+import { ProposalCards } from "./Changes.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
 import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
+import type { Proposal } from "./useChatRoom.ts";
 
 export const OPTIMISTIC_SEQ = Number.MAX_SAFE_INTEGER;
 
 export type MessageListProps = {
   messages: ChatMessage[];
   streams: Record<string, string>;
+  /** changes the AI proposed while the answer is being written, by change id */
+  proposals: Record<string, Proposal>;
   meId: string;
   /** id -> display name, for everyone who ever wrote in the chat */
   names: Map<string, string>;
@@ -245,6 +249,16 @@ function AssistantMessage(props: RowProps) {
             )}
           </div>
         )}
+        {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
+        {!streaming && !failed && m.meta.edits?.length ? (
+          <div className="folder-note small muted">
+            <Pencil size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+            <span className="truncate" title={m.meta.edits.map((e) => `${e.ok ? "Changed" : "Not changed"}: ${e.p}`).join("\n")}>
+              {m.meta.edits.filter((e) => e.ok).length > 0 ? `Changed ${m.meta.edits.filter((e) => e.ok).map((e) => e.p).join(", ")}` : "No file was changed"}
+              {m.meta.edits.some((e) => !e.ok) ? ` · ${m.meta.edits.filter((e) => !e.ok).length} declined or not approved` : ""}
+            </span>
+          </div>
+        ) : null}
         {!streaming && !failed && (m.meta.files?.length || m.meta.folder_offline) ? (
           <div className="folder-note small muted">
             <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />

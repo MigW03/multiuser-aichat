@@ -1,4 +1,4 @@
-import type { ProjectFolder } from "@mc/shared";
+import type { ChangePreview, FolderCaps, ProjectFolder } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
@@ -9,7 +9,10 @@ import { supabase } from "../supabase.ts";
 // browser `folderBridge()` is null and the folder can be browsed but not shared.
 
 export type SharedItem = { name: string; kind: "dir" | "file" };
-export type LocalFolder = { linked: boolean; name: string | null; items: SharedItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth" };
+export type LocalFolder = { linked: boolean; name: string | null; items: SharedItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth"; caps?: FolderCaps };
+
+/** An AI change waiting for this computer's owner. The diff comes from the app itself, not from the chat server. */
+export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number };
 
 /** What the desktop app's preload script offers. The page never gets a path or a file, only these calls. */
 export type FolderBridge = {
@@ -23,6 +26,14 @@ export type FolderBridge = {
   connect: (projectId: string) => Promise<void>;
   unlink: (projectId: string) => Promise<void>;
   onChange: (callback: (projectId: string) => void) => () => void;
+  /** The host's switch for AI changes to files (off by default). Absent in older builds of the app. */
+  setCaps?: (projectId: string, caps: FolderCaps) => Promise<unknown>;
+  /** AI changes waiting for the host's decision. */
+  approvals?: () => Promise<PendingChange[]>;
+  /** The host's click. The file is written by this call and by nothing else. */
+  decide?: (projectId: string, id: string, approve: boolean) => Promise<boolean>;
+  onApproval?: (callback: (view: PendingChange) => void) => () => void;
+  onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
 };
 
 export const folderBridge = (): FolderBridge | null => (globalThis as { desktop?: { folder?: FolderBridge } }).desktop?.folder ?? null;
@@ -87,4 +98,23 @@ export function useFolderHost(userId: string, hostProjectIds: string[] | undefin
 
   // Signing out (or leaving the app screen) stops serving.
   useEffect(() => () => void folderBridge()?.setSession(null).catch(() => undefined), [userId]);
+}
+
+/** AI changes waiting for this computer's owner to approve or decline. Empty in a browser. */
+export function useHostApprovals(): PendingChange[] {
+  const [pending, setPending] = useState<PendingChange[]>([]);
+  const bridge = folderBridge();
+  useEffect(() => {
+    if (!bridge?.approvals || !bridge.onApproval || !bridge.onApprovalGone) return;
+    let live = true;
+    void bridge.approvals().then((list) => live && setPending(list), () => undefined);
+    const offAdd = bridge.onApproval((view) => setPending((cur) => [...cur.filter((p) => p.id !== view.id), view]));
+    const offGone = bridge.onApprovalGone(({ projectId, id }) => setPending((cur) => cur.filter((p) => !(p.projectId === projectId && p.id === id))));
+    return () => {
+      live = false;
+      offAdd();
+      offGone();
+    };
+  }, [bridge]);
+  return pending;
 }

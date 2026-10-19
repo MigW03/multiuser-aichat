@@ -1,6 +1,6 @@
 # Architecture: one small server, two thin clients (TypeScript)
 
-Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18.
+Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18. AI file edits with host approval built 2026-10-19.
 
 ## Pieces
 
@@ -74,8 +74,35 @@ names (`my-app/src/index.ts`, `notes.md`).
   top, Notes under it later), shown and hidden from the chat header. The card shows status, a read-only browser, and
   for the host in the desktop app: add folders or files, remove one, stop sharing. The web app shows status and browses.
 
-Later: AI edits with host approval (opencode's edit + diff, Odysseus's sealed approvals), compaction, live co-editing
-(Yjs, Zed's model).
+## AI file edits (built 2026-10-19; git and commands are later phases)
+
+Follows opencode's `edit` and `write` tools (names, inputs, tolerant matching) with one forced difference: opencode asks
+the person at the terminal, but here several people share a chat and the files sit on the host's computer. So a change
+is only a **proposal**, and the host's desktop app is the only thing that can write it.
+
+- **Off by default.** The host switches "Let the AI propose changes to these files" on in the folder card. The choice
+  lives on the host's computer (same file as the folder link) and is reported to the server on connect. No database
+  change. Only then do project chats get `edit` and `write`.
+- **Flow.** AI calls `edit` (read-first rule, as in opencode) -> server relay request (`edit` / `write`, long timeout) ->
+  host app reads the file, applies the match (`edit-match.ts`: exact, line-trimmed, block-anchor, whitespace, indentation,
+  escapes, boundary), builds a unified diff and writes nothing -> a preview frame goes back, the server broadcasts it on
+  the chat channel (`approval`) so every member sees the diff on the answer -> the host sees it in the approval dock
+  (fed by the app itself over IPC, not by the server) and clicks Approve or Decline -> approving re-checks the file and
+  writes it -> the answer (`applied`, `denied`, `expired`, `stale`...) goes back to the AI as the tool result.
+- **Sealed approval** (idea from Odysseus, no code taken): what is approved is the file as the diff was made. The app
+  keeps path, inode and SHA-256; if the file changed, was replaced or became a link before the click, nothing is
+  written and the AI is told to read it again. The write is temp file + rename, keeping mode, line endings and BOM.
+- **Blocked paths stay blocked.** Same rules as reads (no `..`, no symlinks, nothing hidden: `.env`, keys, `.git`,
+  `node_modules`, build folders), plus: no device names, no trailing dots or spaces, a file that holds a secret-shaped
+  string cannot be edited (the mask would be written into it), and new text that looks like a secret is refused.
+- **Limits.** 3 open proposals per project, 30 per 10 minutes, 5 minutes to decide, cancelled by Stop / app quit /
+  disconnect / unlinking. Edit text 200k chars, new file 500k chars, files up to 2 MB, plain UTF-8 only. A run that may
+  propose changes gets a 20 minute lock and 25 steps instead of 5 minutes and 10.
+- **Visible.** The answer shows "Changed src/a.ts" (kept in the answer's meta, within its 1 KB jsonb check) next to
+  "Read N files". Cards for files that run code (CI config, `package.json`, shell scripts) carry an extra warning.
+
+Later: git tracking (read-only git without a prompt, git writes as approved proposals), running commands (every call
+asks, native confirm window), compaction, live co-editing (Yjs, Zed's model).
 
 ## Decisions
 

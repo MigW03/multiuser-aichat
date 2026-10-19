@@ -121,6 +121,8 @@ describe("answer", () => {
   });
 });
 
+const noChanges = { getCaps: () => ({ edit: false }), propose: async () => null, cancel: () => undefined, cancelAll: () => undefined };
+
 describe("connection", () => {
   let wss: WebSocketServer;
   let port = 0;
@@ -153,7 +155,7 @@ describe("connection", () => {
 
   test("says hello, answers requests, reports state", async () => {
     const states: FolderState[] = [];
-    const conn = new FolderConn({ projectId: "p1", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: (s) => states.push(s) });
+    const conn = new FolderConn({ projectId: "p1", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: (s) => states.push(s), ...noChanges });
     await until(() => conn.state === "connected");
     assert.deepEqual(hellos.at(-1), { type: "hello", token: "tok", projectId: "p1" });
 
@@ -180,7 +182,7 @@ describe("connection", () => {
         ws.close();
       }
     };
-    const conn = new FolderConn({ projectId: "p2", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: () => undefined });
+    const conn = new FolderConn({ projectId: "p2", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: () => undefined, ...noChanges });
     await until(() => conn.state === "rejected");
     await new Promise((r) => setTimeout(r, 1500));
     assert.equal(sockets.length, before + 1);
@@ -190,7 +192,7 @@ describe("connection", () => {
 
   test("ignores requests before the server said ready and junk frames", async () => {
     respond = () => undefined;
-    const conn = new FolderConn({ projectId: "p3", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: () => undefined });
+    const conn = new FolderConn({ projectId: "p3", wsUrl: `ws://127.0.0.1:${port}`, getToken: () => "tok", getItems: () => items, search: grep, onState: () => undefined, ...noChanges });
     await until(() => conn.state === "connected");
     const ws = sockets.at(-1)!;
     ws.send("not json");

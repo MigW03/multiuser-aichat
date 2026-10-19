@@ -25,6 +25,7 @@ import { ResetPassword } from "./Auth.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
+import { ApprovalDock } from "./Changes.tsx";
 import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
@@ -291,6 +292,7 @@ export function Shell({ userId }: { userId: string }) {
       {settings && <SettingsDialog initialTab={settings.tab} onClose={() => setSettings(null)} />}
       {addKey && <AddKeyDialog onClose={() => setAddKey(false)} />}
       {inviteReq && <InviteHost req={inviteReq} projects={projects.data} chats={chats.data} meId={userId} onClose={() => setInviteReq(null)} />}
+      <ApprovalDock projectName={(id) => projects.data?.find((p) => p.id === id)?.name ?? "a project"} />
     </AppContext.Provider>
   );
 }

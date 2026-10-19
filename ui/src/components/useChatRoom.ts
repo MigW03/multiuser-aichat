@@ -1,4 +1,4 @@
-import { MESSAGE_COLUMNS, type ChatMessage, type StreamEvent, type TypingEvent } from "@mc/shared";
+import { MESSAGE_COLUMNS, type ApprovalDoneEvent, type ApprovalEvent, type ChatMessage, type StreamEvent, type TypingEvent } from "@mc/shared";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { notifyChanged } from "../data.tsx";
@@ -14,6 +14,9 @@ const TYPING_SEND_EVERY_MS = 2_500;
 
 const bySeq = (a: ChatMessage, b: ChatMessage) => a.seq - b.seq;
 
+/** A change the AI proposed in this chat, as everybody sees it while the answer is being written. */
+export type Proposal = ApprovalEvent & { outcome?: ApprovalDoneEvent["outcome"] };
+
 /**
  * Everything live about one open chat: messages (loaded, then kept current by realtime), the text of the answer that is
  * being written, who is online and who is typing, and the read marker the chat had when it was opened.
@@ -22,6 +25,7 @@ export function useChatRoom(chatId: string, meId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [streams, setStreams] = useState<Record<string, string>>({});
+  const [proposals, setProposals] = useState<Record<string, Proposal>>({});
   /** undefined until loaded; null when the person never opened this chat before */
   const [readSeq, setReadSeq] = useState<number | null | undefined>(undefined);
   const [live, setLive] = useState(false);
@@ -79,7 +83,11 @@ export function useChatRoom(chatId: string, meId: string) {
         }
         const m = p.new as ChatMessage;
         upsert(m);
-        if (m.status === "done" || m.status === "error") setStreams(({ [m.id]: _gone, ...rest }) => rest);
+        if (m.status === "done" || m.status === "error") {
+          setStreams(({ [m.id]: _gone, ...rest }) => rest);
+          // The answer's own note ("Edited 2 files") replaces the live cards.
+          setProposals((cur) => Object.fromEntries(Object.entries(cur).filter(([, p]) => p.messageId !== m.id)));
+        }
         const author = m.author_id;
         if (author) setTypingUntil((cur) => Object.fromEntries(Object.entries(cur).filter(([id]) => id !== author)));
         if (m.author_id !== meId) markRead();
@@ -90,6 +98,22 @@ export function useChatRoom(chatId: string, meId: string) {
         const writing = typeof e.messageId === "string" && messagesRef.current.some((m) => m.id === e.messageId && m.role === "assistant" && m.status === "streaming");
         if (writing && typeof e.content === "string") {
           setStreams((s) => ({ ...s, [e.messageId!]: e.content!.slice(0, MAX_STREAM_CHARS) }));
+        }
+      })
+      .on("broadcast", { event: "approval" }, ({ payload }) => {
+        // Informational only: anyone in the chat can broadcast, so this shows a card and nothing more. The host decides in their app.
+        const e = payload as Partial<ApprovalEvent>;
+        const writing = typeof e.messageId === "string" && messagesRef.current.some((m) => m.id === e.messageId && m.role === "assistant" && m.status === "streaming");
+        const c = e.change;
+        if (writing && c && typeof c.id === "string" && typeof c.path === "string" && typeof c.diff === "string" && typeof e.askedBy === "string") {
+          const change = { ...c, path: c.path.slice(0, 400), diff: c.diff.slice(0, 41_000) };
+          setProposals((cur) => ({ ...cur, [c.id]: { messageId: e.messageId!, change, askedBy: e.askedBy!.slice(0, 80), readFiles: Number(e.readFiles) || 0 } }));
+        }
+      })
+      .on("broadcast", { event: "approval_done" }, ({ payload }) => {
+        const e = payload as Partial<ApprovalDoneEvent>;
+        if (typeof e.id === "string" && (e.outcome === "applied" || e.outcome === "denied" || e.outcome === "expired" || e.outcome === "failed")) {
+          setProposals((cur) => (cur[e.id!] ? { ...cur, [e.id!]: { ...cur[e.id!]!, outcome: e.outcome } } : cur));
         }
       })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
@@ -137,5 +161,5 @@ export function useChatRoom(chatId: string, meId: string) {
 
   const dropOptimistic = useCallback((id: string) => setMessages((prev) => prev.filter((m) => !(m.id === id && m.seq === OPTIMISTIC_SEQ))), []);
 
-  return { messages, loaded, streams, readSeq, live, online, typingIds: Object.keys(typingUntil), upsert, dropOptimistic, sendTyping };
+  return { messages, loaded, streams, proposals, readSeq, live, online, typingIds: Object.keys(typingUntil), upsert, dropOptimistic, sendTyping };
 }

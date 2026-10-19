@@ -15,6 +15,25 @@ export const folderApi = {
   /** Starts serving a linked folder now (after the page registered it with the server). */
   connect: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:connect", projectId),
   unlink: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:unlink", projectId),
+  /** The host's switch for AI changes to files (off by default). */
+  setCaps: (projectId: string, caps: { edit: boolean }): Promise<unknown> => ipcRenderer.invoke("folder:set-caps", projectId, caps),
+  /** AI changes waiting for this computer's owner to decide. */
+  approvals: (): Promise<unknown[]> => ipcRenderer.invoke("folder:approvals"),
+  /** The host's click. The file is written only by this call. */
+  decide: (projectId: string, id: string, approve: boolean): Promise<boolean> => ipcRenderer.invoke("folder:decide", projectId, id, approve),
+  onApproval: (callback: (view: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, view: unknown) => callback(view);
+    ipcRenderer.on("folder:approval", listener);
+    return () => void ipcRenderer.removeListener("folder:approval", listener);
+  },
+  onApprovalGone: (callback: (gone: { projectId: string; id: string }) => void): (() => void) => {
+    const listener = (_event: unknown, gone: unknown) => {
+      const g = gone as { projectId?: unknown; id?: unknown } | null;
+      if (typeof g?.projectId === "string" && typeof g.id === "string") callback({ projectId: g.projectId, id: g.id });
+    };
+    ipcRenderer.on("folder:approval-gone", listener);
+    return () => void ipcRenderer.removeListener("folder:approval-gone", listener);
+  },
   onChange: (callback: (projectId: string) => void): (() => void) => {
     const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
     ipcRenderer.on("folder:changed", listener);

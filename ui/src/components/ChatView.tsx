@@ -200,6 +200,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       <MessageList
         messages={room.messages}
         streams={room.streams}
+        proposals={room.proposals}
         meId={me.id}
         names={names}
         readSeq={room.readSeq ?? null}

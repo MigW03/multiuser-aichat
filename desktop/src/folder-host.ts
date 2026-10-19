@@ -1,4 +1,4 @@
-import type { FolderResponse } from "@mc/shared";
+import type { ChangePreview, FolderCaps, FolderResponse } from "@mc/shared";
 import { answer, type Item, type Search } from "./folder-items.ts";
 
 // The host's side of the shared folder. For each linked project this app keeps one outgoing WebSocket to the chat
@@ -42,7 +42,8 @@ export function serverSocketUrl(serverUrl: string, packaged: boolean): string | 
 
 const MAX_IN_FLIGHT = 3;
 const MAX_QUEUED = 20;
-const MAX_FRAME_CHARS = 16 * 1024;
+/** Largest frame from the server. Reads are tiny; the room is for the text of an AI edit or whole-file write (checked again per field). */
+const MAX_FRAME_CHARS = 1_300_000;
 /** The server pings every 20 s. Silence for longer than this means the connection is dead. */
 const SILENCE_MS = 70_000;
 const REJECTED_RETRY_MS = 5 * 60_000;
@@ -55,6 +56,14 @@ type ConnOptions = {
   getItems: () => Item[];
   search: Search;
   onState: (state: FolderState) => void;
+  /** What the host allows the AI to propose. Sent to the server on connect and when it changes. */
+  getCaps: () => FolderCaps;
+  /** An AI edit or write: stages it, shows the host, and resolves when the host decides. `preview` reports the diff as soon as it exists. */
+  propose: (req: unknown, preview: (change: ChangePreview) => void) => Promise<FolderResponse | null>;
+  /** The server withdrew a proposal. */
+  cancel: (id: string) => void;
+  /** The connection ended: proposals that were waiting on it are dropped. */
+  cancelAll: () => void;
 };
 
 /** One project's connection. Reconnects on its own until `close()`, unless the server says this app may not serve the folder. */
@@ -105,19 +114,25 @@ export class FolderConn {
       if (msg.type === "ready") {
         this.attempt = 0;
         this.set("connected");
+        this.capsChanged();
       } else if (msg.type === "ping") {
         ws.send(JSON.stringify({ type: "pong" }));
       } else if (msg.type === "error") {
         // not_host / not_linked: retrying won't help until the person links again. unauthorized: wait for a fresh token.
         this.set(msg.code === "unauthorized" ? "auth" : "rejected");
       } else if (msg.type === "req" && this.state === "connected") {
-        this.enqueue(msg.req);
+        const op = (msg.req as { op?: unknown } | null)?.op;
+        if (op === "edit" || op === "write") this.propose(msg.req);
+        else this.enqueue(msg.req);
+      } else if (msg.type === "cancel" && typeof msg.id === "string" && msg.id.length <= 64) {
+        this.o.cancel(msg.id);
       }
     };
     ws.onclose = () => {
       clearTimeout(this.watchdog);
       this.ws = null;
       this.queue = [];
+      this.o.cancelAll();
       if (this.closed) return;
       if (this.state === "auth") return; // waits for a fresh token (tokenChanged)
       if (this.state === "rejected") {
@@ -154,6 +169,24 @@ export class FolderConn {
     }
   }
 
+  /** Tells the server what the host allows. */
+  capsChanged() {
+    if (this.ws?.readyState === WebSocket.OPEN && this.state === "connected") this.ws.send(JSON.stringify({ type: "caps", caps: this.o.getCaps() }));
+  }
+
+  /** Proposals wait for a person, so they don't count against the three reads in flight. */
+  private propose(req: unknown) {
+    const id = (req as { id?: unknown } | null)?.id;
+    if (typeof id !== "string" || id.length === 0 || id.length > 64) return;
+    void this.o
+      .propose(req, (change) => this.ws?.readyState === WebSocket.OPEN && this.ws.send(JSON.stringify({ type: "event", id, event: "pending", change })))
+      .then((res) => res && this.send(res))
+      .catch((e) => {
+        console.error("[folder] proposal failed:", e instanceof Error ? e.message : e);
+        this.send({ id, ok: false, code: "failed", message: "The change couldn't be prepared." });
+      });
+  }
+
   private enqueue(req: unknown) {
     const id = (req as { id?: unknown } | null)?.id;
     if (this.queue.length >= MAX_QUEUED) {
@@ -187,5 +220,6 @@ export class FolderConn {
     clearTimeout(this.watchdog);
     this.ws?.close();
     this.ws = null;
+    this.o.cancelAll();
   }
 }

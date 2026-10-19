@@ -78,6 +78,7 @@ export const api = {
 
   createProject: (name: string) => call<{ id: string }>("POST", "/api/projects", { name }),
   renameProject: (id: string, name: string) => call<{ ok: true }>("PATCH", `/api/projects/${id}`, { name }),
+  reorderProjects: (ids: string[]) => call<{ ok: true }>("PUT", "/api/projects/order", { ids }),
   deleteProject: (id: string) => call<{ ok: true }>("DELETE", `/api/projects/${id}`),
   keyStatus: (projectId: string) => call<{ hasKey: Record<string, boolean> }>("GET", `/api/projects/${projectId}/key-status`),
   setRole: (projectId: string, userId: string, role: AssignableRole) => call<{ ok: true }>("PATCH", `/api/projects/${projectId}/members/${userId}`, { role }),

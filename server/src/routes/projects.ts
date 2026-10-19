@@ -10,6 +10,7 @@ export const projects = new Hono<AuthVars>();
 
 const uuid = z.uuid();
 const nameBody = z.object({ name: z.string().trim().min(1).max(LIMITS.projectNameChars) });
+const orderBody = z.object({ ids: z.array(uuid).max(200) });
 const inviteBody = z.object({ email: z.string().trim().min(3).max(254), role: z.enum(ASSIGNABLE_ROLES).default("member") });
 const roleBody = z.object({ role: z.enum(ASSIGNABLE_ROLES) });
 
@@ -19,6 +20,14 @@ projects.post("/", rateLimit("project-create", 20, 60 * 60_000), async (c) => {
   const { data, error } = await admin.rpc("app_create_project", { p_user: c.get("userId"), p_name: parsed.data.name });
   if (error) return dbError(c, error);
   return c.json({ id: data as string });
+});
+
+// Saves the caller's own order of their projects list. Other members' order is never touched.
+projects.put("/order", async (c) => {
+  const parsed = orderBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  const { error } = await admin.rpc("app_reorder_projects", { p_user: c.get("userId"), p_ids: parsed.data.ids });
+  return error ? dbError(c, error) : c.json({ ok: true });
 });
 
 projects.patch("/:id", async (c) => {

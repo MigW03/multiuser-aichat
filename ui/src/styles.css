@@ -504,9 +504,9 @@ h1, h2, h3, p { margin: 0; }
 .folder-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--muted-fg); }
 .folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 180px; }
 .folder-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font: var(--text-row); }
-.folder-crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--muted-fg); max-width: 160px; }
-.folder-crumbs button:hover { background: var(--hover-row); color: var(--fg); }
-.folder-crumbs > :last-child button, .folder-crumbs > button:only-child { color: var(--fg); }
+.folder-crumbs .row button { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--muted-fg); max-width: 160px; }
+.folder-crumbs .row button:hover { background: var(--hover-row); color: var(--fg); }
+.folder-crumbs > :last-child button { color: var(--fg); }
 .folder-list { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
 .folder-list li + li { border-top: 1px solid var(--border); }
 .folder-list li.pad { padding: 10px 12px; }

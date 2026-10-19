@@ -301,9 +301,10 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
 
   return {
     /** Hand the HTTP server's upgrade requests for /api/folder-host to the relay. */
-    attach(server: Server) {
+    attach(server: Server, skip?: (path: string) => boolean) {
       server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
         const path = (req.url ?? "").split("?")[0];
+        if (skip?.(path ?? "")) return; // another relay's path: left alone
         // The host's app is not a web page and sends no Origin; a browser always does. Keeping browsers out
         // closes off cross-site WebSocket tricks.
         if (path !== "/api/folder-host" || req.headers.origin !== undefined || open >= MAX_CONNECTIONS) {

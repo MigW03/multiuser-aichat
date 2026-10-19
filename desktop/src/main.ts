@@ -3,6 +3,7 @@ import { join, normalize, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDeepLink, SCHEME } from "./deeplink.ts";
 import { setupFolderHost } from "./folder-ipc.ts";
+import { setupMcp } from "./mcp-ipc.ts";
 
 // Production loads the web build from a private app:// origin (not file://, which would give the page
 // access to the whole disk). Development loads the Vite dev server.
@@ -88,6 +89,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler(() => false);
     if (!DEV_URL) serveWebBuild();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

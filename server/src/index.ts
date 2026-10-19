@@ -6,6 +6,8 @@ import { secureHeaders } from "hono/secure-headers";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
 import { relay, resetFolderStatus } from "./folders.ts";
+import { MCP_PATH } from "./mcp-relay.ts";
+import { mcpRelay } from "./mcp.ts";
 import { chats, messages } from "./routes/chats.ts";
 import { folder } from "./routes/folder.ts";
 import { invites, publicInvites } from "./routes/invites.ts";
@@ -45,5 +47,7 @@ const server = serve({ fetch: app.fetch, port: env.port, hostname: process.env.H
   void recoverRuns();
   void resetFolderStatus();
 });
-// Host desktop apps connect over a WebSocket (/api/folder-host); everything else here is plain HTTP.
-relay.attach(server as import("node:http").Server);
+// Desktop apps connect over WebSockets: /api/folder-host (a project host's shared folder) and /api/mcp-host (a person's
+// connected tools). Everything else here is plain HTTP.
+relay.attach(server as import("node:http").Server, (path) => path === MCP_PATH);
+mcpRelay.attach(server as import("node:http").Server);

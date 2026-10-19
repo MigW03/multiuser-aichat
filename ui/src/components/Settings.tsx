@@ -1,16 +1,17 @@
 import { isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
-import { Copy, ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, ShieldAlert, Sun, User } from "lucide-react";
+import { Copy, ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sun, User } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
+import { McpTab } from "./McpSettings.tsx";
 import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
 import { Button, Dialog, ErrorLine, Field, ICON, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
 
-export type SettingsTab = "account" | "key" | "appearance";
+export type SettingsTab = "account" | "key" | "appearance" | "mcp";
 
 const messageOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
 
@@ -18,6 +19,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "key", label: "AI key", icon: KeyRound },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "mcp", label: "MCP servers", icon: Plug },
 ];
 
 export function SettingsDialog({ initialTab = "account", onClose }: { initialTab?: SettingsTab; onClose: () => void }) {
@@ -37,6 +39,7 @@ export function SettingsDialog({ initialTab = "account", onClose }: { initialTab
           {tab === "account" && <AccountTab />}
           {tab === "key" && <KeyTab />}
           {tab === "appearance" && <AppearanceTab />}
+          {tab === "mcp" && <McpTab />}
           <div className="dialog-actions">
             <Button onClick={onClose}>Close</Button>
           </div>

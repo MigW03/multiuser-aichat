@@ -1,6 +1,6 @@
 # Architecture: one small server, two thin clients (TypeScript)
 
-Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18. AI file edits with host approval built 2026-10-19.
+Status: chat part built (2026-10-14). Shared folder v1 (read only) built 2026-10-18. AI file edits with host approval built 2026-10-19. Connected tools (MCP, local servers) built 2026-10-19.
 
 ## Pieces
 
@@ -149,7 +149,56 @@ allow", no pattern allow-list, no auto mode.
   is why the command, folder and time limit are fixed when proposed and the host confirms twice. A macOS or Windows
   sandbox is a possible later step.
 
-Later: compaction, live co-editing (Yjs, Zed's model), MCP.
+## Connected tools, MCP (phase 1 built 2026-10-19: local servers over stdio)
+
+Follows opencode's MCP client (config shape, `<server>_<tool>` names, per-tool switches; the official
+`@modelcontextprotocol/sdk`) with two chosen differences (Miguel). **No approval per call**: opencode asks before each
+tool use; here the person decides once, when they add a server, and after that the AI picks and uses the tools on its own
+(code tools keep their approvals). **MCP servers belong to the person, not to a project**: they live in the desktop app's
+own Settings (bottom-left account menu > "MCP servers"), run on that person's computer with that person's accounts, and the
+chat server only relays.
+
+- **Whose tools:** the AI uses the tools of the person who asked, in any chat (project or private), for that answer only.
+  Someone else's question never gets your tools, so nobody borrows another person's logins. `run-queue.ts` asks
+  `mcpRelay.tools(authorId)` and calls `mcpRelay.call(authorId, ...)` with the asker's id fixed; a test checks one person's
+  call never reaches another's socket. If the asker's desktop app is offline or signed out, no tools are offered and the
+  AI answers without them. Needs no shared folder and no database change.
+- **Connection:** the desktop app keeps one WebSocket per signed-in user to `/api/mcp-host` (`desktop/src/mcp-conn.ts`,
+  `server/src/mcp-relay.ts`): hello with the Supabase token, token refresh, 75 minute sign-in age limit, browser (Origin)
+  refusal, ping, one app per person (a newer one replaces the older). The page tells the app who is signed in
+  (`useMcpHost`); signing out stops everything.
+- **Setup lives on the computer** (`userData/mcp-servers.json`, mode 0600, keyed by user id so two accounts on one
+  computer never see each other's servers; environment values encrypted with Electron `safeStorage`, so a server with
+  secrets can't be saved without secure storage). Settings > MCP servers: list with status (Starting / Running / Failed
+  with the server's own last output, masked), a switch per server, a switch per tool, Remove, Add. The web app shows a
+  note: servers are set up in the desktop app.
+- **Adding a server** (`mcp-ipc.ts`): the page sends what the person typed; the app splits the command line itself
+  (quotes, no shell, no expansion) and shows every part in quotes, the environment variable names and the risk in a
+  window the page cannot click. Only "Add and run" starts anything.
+- **Running** (`mcp-client.ts`, `mcp-host.ts`): a server runs only while its person is signed in here and its switch is
+  on. Started with the SDK's stdio transport, no shell, in an empty folder the app owns, with a trimmed environment (no
+  host tokens) plus what the person typed for that server. Killed on switch-off, removal, sign-out and quit.
+- **What the server is told:** the app sends the tool list when connected and whenever it changes (`mcp` message);
+  `mcp-relay.ts` checks it again (name patterns, 10 servers, 50 tools, 8 KB schemas, descriptions cut to one line of 1000
+  characters) and a list that breaks a rule means no tools. Calls go down the same socket; the app checks server, tool,
+  switches and argument size again. Limits: 25 calls per answer, 120 per person per 10 minutes, 4 at once, 60 s each,
+  results cut to 50k characters.
+- **AI** (`server/src/mcp-tools.ts`): tools named `<server>_<tool>` (a built-in tool's name can never be taken over), the
+  tool's JSON schema as input, results as plain text (binary left out, control characters and secret-shaped text
+  removed) fenced in `<connected_tool_data>` and labelled as data, never instructions. The instructions tell the model to
+  use a fitting tool on its own initiative, without asking, only for what the asker asked. The answer shows "Used connected
+  tools: server: tool".
+- **Risk, in plain words:** without per-call approval the AI acts with that server's rights whenever it judges a tool
+  useful. Other people's messages in the same chat could try to steer it into using the asker's tools (prompt injection),
+  and a tool result written by a third party can try the same. Mitigations: nothing exists until the person adds a server
+  and confirms its exact command, per-server and per-tool switches, small tool lists, fenced results, call limits, tools
+  shown under the answer. What a tool returns lands in the chat, so everyone in that chat can read it; Settings and the
+  confirm window say so. Keys belong in the environment field: the command itself is stored and shown as typed.
+- **Next:** remote servers over HTTP with headers (and whether they should run on the chat server so they also work in
+  the web app: needs a table and a decision), then OAuth (opencode's flow), then polish (list-changed, reconnect,
+  resources and prompts).
+
+Later: compaction, live co-editing (Yjs, Zed's model).
 
 ## Decisions
 

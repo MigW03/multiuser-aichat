@@ -563,6 +563,20 @@ h1, h2, h3, p { margin: 0; }
 .setting-switch { flex: none; margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
 .setting-switch:disabled { cursor: default; }
 .settings-rows > .error-line { padding: 0 16px 12px; }
+.mcp-command { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.mcp-status { margin-left: 6px; font: var(--text-small); font-weight: 500; color: var(--muted-fg); }
+.mcp-status.ready { color: var(--p-text); }
+.mcp-status.failed { color: var(--danger); }
+.mcp-error { margin-top: 6px; color: var(--danger); white-space: pre-wrap; word-break: break-word; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; margin-left: -8px; }
+.mcp-tools { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mcp-tools li { display: flex; gap: 12px; align-items: flex-start; }
+.mcp-tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.mcp-link { display: flex; align-items: center; gap: 6px; }
+.mcp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-fg); flex: none; }
+.mcp-dot.connected { background: var(--p-text); }
+.mcp-dot.auth { background: var(--danger); }
+.mcp-env { resize: vertical; min-height: 64px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .git-command { display: block; padding: 6px 10px; margin-top: 6px; border-radius: 8px; background: var(--muted); font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; user-select: all; }
 .dock-card .git-command { margin-top: 0; }
 .dock-card .risky svg { vertical-align: -2px; margin-right: 4px; color: var(--warning); }

@@ -1,5 +1,5 @@
 import { canManagePeople, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
-import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plus, Search, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.ts";
 import { APP_NAME } from "../config.ts";
@@ -372,6 +372,7 @@ function AccountCard() {
         items={[
           { label: "Settings", icon: <Settings size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("account") },
           { label: "AI key", icon: <KeyRound size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("key") },
+          { label: "MCP servers", icon: <Plug size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("mcp") },
           "divider",
           { label: "Log out", icon: <LogOut size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => void supabase.auth.signOut() },
         ]}

@@ -133,7 +133,7 @@ export type AppContextValue = {
   /** The model the next message uses. null until there is a key and a pick. Saved on the profile. */
   choice: ModelChoice | null;
   setChoice: (c: ModelChoice) => void;
-  openSettings: (tab?: "account" | "key" | "appearance") => void;
+  openSettings: (tab?: "account" | "key" | "appearance" | "mcp") => void;
   openAddKey: () => void;
   /** Open the "invite someone" dialog for a project or a home chat. */
   openInvite: (target: { kind: "project"; projectId: string } | { kind: "chat"; chatId: string }) => void;

@@ -27,7 +27,7 @@ export function originOf(url: string | undefined): string | null {
 }
 
 /** The chat server addresses this app may connect to. Keep in step with the page's connect-src. Local servers are for development builds. */
-export function serverSocketUrl(serverUrl: string, packaged: boolean): string | null {
+export function serverSocketUrl(serverUrl: string, packaged: boolean, path = "/api/folder-host"): string | null {
   let u: URL;
   try {
     u = new URL(serverUrl);
@@ -35,8 +35,8 @@ export function serverSocketUrl(serverUrl: string, packaged: boolean): string | 
     return null;
   }
   const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
-  if (u.protocol === "https:" && u.hostname.endsWith(".fly.dev")) return `wss://${u.host}/api/folder-host`;
-  if (!packaged && u.protocol === "http:" && local) return `ws://${u.host}/api/folder-host`;
+  if (u.protocol === "https:" && u.hostname.endsWith(".fly.dev")) return `wss://${u.host}${path}`;
+  if (!packaged && u.protocol === "http:" && local) return `ws://${u.host}${path}`;
   return null;
 }
 

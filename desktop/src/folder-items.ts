@@ -1,7 +1,8 @@
-import { FOLDER_LIMITS as L, type FolderEntry, type FolderGlobResult, type FolderResponse, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type FolderCaps, type FolderEntry, type FolderGlobResult, type FolderResponse, type FolderSearchResult } from "@mc/shared";
 import { lstat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { FolderError, folderName, listDir, readText, splitPath, type Target } from "./folder-fs.ts";
+import { gitRead } from "./folder-git.ts";
 
 // What a project shares: up to 20 folders and files, picked one by one by the host. One folder alone is shared as
 // is (paths start inside it, like src/index.ts). Anything else is shown as a top level made of the picked items,
@@ -66,7 +67,7 @@ async function topLevel(items: Item[]): Promise<FolderEntry[]> {
 }
 
 /** Answers one request from the shared items. Never throws; messages in answers never contain paths from this computer. */
-export async function answer(items: Item[], req: unknown, search: Search): Promise<FolderResponse | null> {
+export async function answer(items: Item[], req: unknown, search: Search, caps: FolderCaps = { edit: false, git: false }): Promise<FolderResponse | null> {
   type Loose = { id?: unknown; op?: unknown; path?: unknown; offset?: unknown; limit?: unknown; pattern?: unknown; hidden?: unknown; include?: unknown; literal?: unknown; caseSensitive?: unknown };
   const r = (req ?? {}) as Loose;
   if (typeof r?.id !== "string" || r.id.length === 0 || r.id.length > 64) return null;
@@ -97,6 +98,10 @@ export async function answer(items: Item[], req: unknown, search: Search): Promi
             : await search.grep(targets, r.pattern, { include: r.include, literal: r.literal, caseSensitive: r.caseSensitive, limit: r.limit });
         return { id, ok: true, result };
       }
+      case "git":
+        // Read-only git (status, diff, log, show). Switched on by the host with the other AI switches.
+        if (!caps.git) throw new FolderError("disabled", "The host has not allowed git in this project.");
+        return { id, ok: true, result: await gitRead(items, r as never) };
       default:
         return { id, ok: false, code: "bad_request", message: "Unknown request." };
     }

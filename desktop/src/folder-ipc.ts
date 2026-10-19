@@ -4,6 +4,7 @@ import { chmod, lstat, mkdir, readFile, realpath, rename, writeFile } from "node
 import { basename, dirname, join } from "node:path";
 import { Approvals, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
+import { stageGitChange } from "./folder-git.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
 import { FolderConn, isUuid, originOf, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
@@ -27,7 +28,7 @@ async function loadLinks(): Promise<Links> {
       // Version 1 kept one folder as `root`.
       const items = Array.isArray(l.items) ? l.items : typeof l.root === "string" ? [{ abs: l.root, kind: "dir" as const }] : [];
       const valid = items.filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file")).slice(0, L.items);
-      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true ? { caps: { edit: true } } : {}) };
+      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true || l.caps?.git === true ? { caps: { edit: l.caps.edit === true, git: l.caps.git === true } } : {}) };
     }
     return out;
   } catch {
@@ -58,7 +59,7 @@ async function validateFile(picked: string): Promise<string> {
 }
 
 export type FolderInfo = { linked: boolean; name: string | null; items: { name: string; kind: "dir" | "file" }[]; state: FolderState; caps: FolderCaps };
-const NO_CAPS: FolderCaps = { edit: false };
+const NO_CAPS: FolderCaps = { edit: false, git: false };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
 export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
@@ -76,7 +77,10 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("folder:changed", projectId);
   const itemsOf = (projectId: string): Item[] => nameItems(links[projectId]?.items ?? []);
   const mine = (projectId: string) => !!links[projectId] && !!session && links[projectId]!.userId === session.userId;
-  const capsOf = (projectId: string): FolderCaps => (mine(projectId) && links[projectId]!.caps?.edit === true ? { edit: true } : NO_CAPS);
+  const capsOf = (projectId: string): FolderCaps => {
+    const c = mine(projectId) ? links[projectId]!.caps : undefined;
+    return c ? { edit: c.edit === true, git: c.git === true } : NO_CAPS;
+  };
 
   // Proposed AI changes wait here for the host's click. The page learns of them through these events.
   const approvals = new Approvals({
@@ -93,7 +97,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       }
     },
     onGone: (projectId, id) => opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id }),
-    stillAllowed: (projectId) => capsOf(projectId).edit,
+    stillAllowed: (projectId, kind) => (kind === "git" ? capsOf(projectId).git : capsOf(projectId).edit),
   });
 
   /** A name for the card: what the server says the asker is called, without anything that could pass for UI. */
@@ -108,10 +112,11 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const r = (req ?? {}) as { id?: unknown; askedBy?: unknown; readFiles?: unknown };
     if (typeof r.id !== "string") return null;
     const id = r.id;
-    if (!capsOf(projectId).edit) return { id, ok: false, code: "disabled", message: "The host has not allowed AI changes to files in this project." };
+    const git = (req as { op?: unknown }).op === "git_change";
+    if (!(git ? capsOf(projectId).git : capsOf(projectId).edit)) return { id, ok: false, code: "disabled", message: git ? "The host has not allowed git in this project." : "The host has not allowed AI changes to files in this project." };
     if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the host. Wait for them to be decided." };
     try {
-      const staged = await stageChange(itemsOf(projectId), req as never);
+      const staged = git ? await stageGitChange(itemsOf(projectId), req as never) : await stageChange(itemsOf(projectId), req as never);
       preview(staged.change);
       const readFiles = typeof r.readFiles === "number" && Number.isFinite(r.readFiles) ? Math.min(1000, Math.max(0, Math.floor(r.readFiles))) : 0;
       return await approvals.propose(projectId, staged, { askedBy: label(r.askedBy), readFiles });
@@ -253,11 +258,15 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     if (!trusted(e) || !isUuid(projectId)) return null;
     await ready;
     if (!mine(projectId)) return null;
-    const edit = (caps as { edit?: unknown } | null)?.edit === true;
+    // Only the keys that are sent change; anything else stays as it was.
+    const given = (caps ?? {}) as { edit?: unknown; git?: unknown };
+    const before = capsOf(projectId);
+    const next: FolderCaps = { edit: typeof given.edit === "boolean" ? given.edit : before.edit, git: typeof given.git === "boolean" ? given.git : before.git };
     const { caps: _old, ...rest } = links[projectId]!;
-    links = { ...links, [projectId]: { ...rest, ...(edit ? { caps: { edit: true } } : {}) } };
+    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git ? { caps: next } : {}) } };
     await saveLinks(links);
-    if (!edit) approvals.closeProject(projectId, "The host turned off AI changes."); // what was waiting is withdrawn at once
+    if (!next.edit) approvals.closeProject(projectId, "The host turned off AI changes.", "files"); // what was waiting is withdrawn at once
+    if (!next.git) approvals.closeProject(projectId, "The host turned off git.", "git");
     conns.get(projectId)?.capsChanged();
     changed(projectId);
     return info(projectId);

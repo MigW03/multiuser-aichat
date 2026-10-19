@@ -21,6 +21,7 @@ const readQuery = z.object({ path: z.string().min(1).max(L.pathChars), offset: z
 
 const HOST_STATUS: Record<string, ContentfulStatusCode> = {
   invalid_path: 400, bad_request: 400, not_found: 404, not_a_file: 400, not_a_directory: 400, excluded: 403, too_large: 413, binary: 415, timeout: 504, busy: 503, failed: 502,
+  disabled: 403, no_repo: 404, git_unsafe: 409, git_failed: 502, nothing: 400, no_match: 400, ambiguous: 400, secrets: 400, stale: 409, denied: 403, expired: 408, exists: 409,
 };
 
 /** Maps a failed relay call to a response whose message is safe to show to any project member. */
@@ -80,6 +81,34 @@ folder.get("/:id/folder/read", async (c) => {
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
     return c.json(await relay.call(c.req.param("id"), { op: "read", path: q.data.path, offset: q.data.offset, limit: q.data.limit }));
+  } catch (e) {
+    return relayFailure(c, e);
+  }
+});
+
+// Git, read only: the same members may see what changed (status, one diff). Only when the host switched git on.
+const gitQuery = z.object({ path: pathParam.optional(), target: z.enum(["worktree", "staged", "head"]).optional() });
+
+folder.use("/:id/folder/git/*", async (c, next) => {
+  if (!relay.caps(c.req.param("id")).git) return c.json({ error: "Git is not switched on for this project.", code: "git_off" }, 404);
+  await next();
+});
+
+folder.get("/:id/folder/git/status", async (c) => {
+  const q = gitQuery.safeParse(c.req.query());
+  if (!q.success) return c.json({ error: "Invalid request" }, 400);
+  try {
+    return c.json(await relay.call(c.req.param("id"), { op: "git", sub: "status", ...(q.data.path ? { path: q.data.path } : {}) }));
+  } catch (e) {
+    return relayFailure(c, e);
+  }
+});
+
+folder.get("/:id/folder/git/diff", async (c) => {
+  const q = gitQuery.safeParse(c.req.query());
+  if (!q.success) return c.json({ error: "Invalid request" }, 400);
+  try {
+    return c.json(await relay.call(c.req.param("id"), { op: "git", sub: "diff", ...(q.data.target ? { target: q.data.target } : {}), ...(q.data.path ? { path: q.data.path } : {}) }));
   } catch (e) {
     return relayFailure(c, e);
   }

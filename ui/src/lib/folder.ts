@@ -27,7 +27,7 @@ export type FolderBridge = {
   unlink: (projectId: string) => Promise<void>;
   onChange: (callback: (projectId: string) => void) => () => void;
   /** The host's switch for AI changes to files (off by default). Absent in older builds of the app. */
-  setCaps?: (projectId: string, caps: FolderCaps) => Promise<unknown>;
+  setCaps?: (projectId: string, caps: Partial<FolderCaps>) => Promise<unknown>;
   /** AI changes waiting for the host's decision. */
   approvals?: () => Promise<PendingChange[]>;
   /** The host's click. The file is written by this call and by nothing else. */

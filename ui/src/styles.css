@@ -574,3 +574,6 @@ h1, h2, h3, p { margin: 0; }
 .git-letter.M { color: var(--warning); }
 .git-letter.A, .git-letter.new { color: var(--success, #2e9e5b); }
 .git-letter.D { color: var(--danger); }
+.exec-command { margin: 6px 0 0; max-height: 240px; overflow: auto; user-select: text; }
+.dock-card.expanded .exec-command { max-height: none; flex: 1; min-height: 0; }
+.exec-facts { margin: 4px 0 0; }

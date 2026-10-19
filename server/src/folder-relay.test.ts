@@ -242,16 +242,16 @@ describe("AI changes", () => {
   test("caps are nothing until the host's app says so, then follow it", async () => {
     const c = await connect("host-token", P2);
     await c.first();
-    assert.deepEqual(relay.caps(P2), { edit: false, git: false });
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true, git: true } }));
-    await until(() => relay.caps(P2).edit && relay.caps(P2).git);
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: "yes", git: true } })); // junk is ignored
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true } })); // an old app that does not know git is ignored too
-    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: false, git: false } }));
-    await until(() => !relay.caps(P2).edit && !relay.caps(P2).git);
+    assert.deepEqual(relay.caps(P2), { edit: false, git: false, exec: false });
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true, git: true, exec: true } }));
+    await until(() => relay.caps(P2).edit && relay.caps(P2).git && relay.caps(P2).exec);
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: "yes", git: true, exec: true } })); // junk is ignored
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: true, git: true } })); // an old app that does not know commands is ignored too
+    c.ws.send(JSON.stringify({ type: "caps", caps: { edit: false, git: false, exec: false } }));
+    await until(() => !relay.caps(P2).edit && !relay.caps(P2).git && !relay.caps(P2).exec);
     c.ws.close();
     await c.closed;
-    assert.deepEqual(relay.caps(P2), { edit: false, git: false });
+    assert.deepEqual(relay.caps(P2), { edit: false, git: false, exec: false });
   });
 
   test("the preview arrives once, then the host's decision, with a long wait allowed", async () => {
@@ -372,6 +372,33 @@ describe("AI changes", () => {
     const res = await relay.call(P1, { op: "git_change", action: "commit", message: "x", askedBy: "Ana", readFiles: 1 }, { onPreview: (ch) => seen.push(`${ch.kind} ${ch.command}`) });
     assert.deepEqual(res, { command: 'git commit -m "x"', output: "[main abc] x" });
     assert.deepEqual(seen, ['git git commit -m "x"']);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("a command is a proposal: preview with its folder and limit, then the host's decision and its output", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    c.ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw)) as { type: string; req?: { id: string; command: string } };
+      if (msg.type !== "req") return;
+      const id = msg.req!.id;
+      c.ws.send(JSON.stringify({ type: "event", id, event: "pending", change: { id, kind: "exec", path: "run a command", command: msg.req!.command, workdir: "src", timeoutSec: 30, note: "run the tests", created: false, added: 0, removed: 0, diff: "", cut: false } }));
+      c.ws.send(JSON.stringify({ type: "res", res: { id, ok: true, result: { command: msg.req!.command, exitCode: 0, signal: null, timedOut: false, output: "ok\n", truncated: false, ms: 12 } } }));
+    });
+    const seen: string[] = [];
+    const res = await relay.call(P1, { op: "exec", command: "npm test", description: "run the tests", workdir: "src", timeoutSec: 30, askedBy: "Ana", readFiles: 1 }, { onPreview: (ch) => seen.push(`${ch.kind} ${ch.command} ${ch.workdir} ${ch.timeoutSec}`) });
+    assert.equal((res as { output: string }).output, "ok\n");
+    assert.deepEqual(seen, ["exec npm test src 30"]);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test("a command's answer is checked", async () => {
+    const c = await connect("host-token", P1);
+    await c.first();
+    answerWith(c.ws, () => ({ ok: true, result: { command: "x", exitCode: "zero" } }));
+    await assert.rejects(relay.call(P1, { op: "exec", command: "x", askedBy: "A", readFiles: 0 }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
     c.ws.close();
     await c.closed;
   });

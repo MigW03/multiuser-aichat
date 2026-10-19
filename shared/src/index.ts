@@ -299,6 +299,13 @@ export const FOLDER_LIMITS = {
   gitFiles: 500,
   gitPaths: 50,
   gitMessageChars: 4_000,
+  /** Commands: longest command, default and largest time limit, and the output kept (start + end). */
+  /** Short enough that the whole command fits in the confirmation window the host sees. */
+  execChars: 2_500,
+  execDefaultSec: 120,
+  execMaxSec: 600,
+  execHeadChars: 30_000,
+  execTailChars: 20_000,
 } as const;
 
 export type FolderEntry = { name: string; type: "file" | "dir"; size?: number };
@@ -334,7 +341,8 @@ export type FolderErrorCode =
   | "no_repo" // the shared folder is not a git repository
   | "git_unsafe" // the repository's own config runs programs, so git is not used on it
   | "git_failed" // git refused; the message says why in words that hold no paths from the host's computer
-  | "nothing"; // nothing to add, commit or restore
+  | "nothing" // nothing to add, commit or restore
+  | "exec_failed"; // the command could not be started
 
 /** What the host allows the AI to propose in this project. Off by default; kept on the host's computer. */
 export type FolderCaps = {
@@ -342,18 +350,24 @@ export type FolderCaps = {
   edit: boolean;
   /** Use git: status, diff, log and show freely; add, commit, restore and new branches as proposals the host approves. */
   git: boolean;
+  /** Propose shell commands. Every single command asks the host, in a window the page cannot click. */
+  exec: boolean;
 };
 
 /** One proposed change as everybody sees it: a unified diff and who asked. The host decides in the desktop app. */
 export type ChangePreview = {
   id: string;
-  kind: "edit" | "write" | "git";
+  kind: "edit" | "write" | "git" | "exec";
   /** Path inside the shared folder; for git, the short name of the action ("git commit"). */
   path: string;
   /** git only: the exact command that will run on the host's computer. */
   command?: string;
   /** git only: the action throws work away (restore). */
   destructive?: boolean;
+  /** exec only: the folder it runs in (relative to the shared folder), the time limit, and what the AI says it is for. */
+  workdir?: string;
+  timeoutSec?: number;
+  note?: string;
   /** true when the file does not exist yet. */
   created: boolean;
   added: number;
@@ -382,11 +396,14 @@ export type FolderRequest =
   | { id: string; op: "git"; sub: "show"; rev: string; path?: string }
   | { id: string; op: "git_change"; action: "add" | "restore"; paths: string[]; askedBy: string; readFiles: number }
   | { id: string; op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
-  | { id: string; op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number };
+  | { id: string; op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number }
+  | { id: string; op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number };
 
 export type GitStatusFile = { path: string; /** index column of `git status --porcelain` */ index: string; /** worktree column */ worktree: string };
 export type GitStatusResult = { branch: string | null; files: GitStatusFile[]; truncated: boolean };
 export type GitTextResult = { text: string; truncated: boolean };
+/** What an approved command did. `output` is stdout and stderr together, cut to the start and the end when long. */
+export type ExecResult = { command: string; exitCode: number | null; signal: string | null; timedOut: boolean; output: string; truncated: boolean; ms: number };
 /** What a host-approved git action did. */
 export type GitChangeResult = { command: string; output: string };
 
@@ -401,3 +418,21 @@ export type ProjectFolder = { project_id: string; name: string; linked_by: strin
 export type StreamEvent = { messageId: string; content: string };
 /** Sent by a client while its user types. Broadcasts aren't signed: treat as a hint only. */
 export type TypingEvent = { userId: string };
+
+// ---- Commands: what a shell command is likely to do, shown to the host as warnings. Display only: nothing here ever
+// approves, blocks or changes a command. A pattern that does not match means nothing; the host reads the command.
+
+export type CommandFlag = { kind: "destructive" | "network" | "privileged" | "secrets" | "shell-pipe" | "background"; label: string };
+
+const FLAGS: { kind: CommandFlag["kind"]; label: string; re: RegExp }[] = [
+  { kind: "destructive", label: "Deletes or overwrites files", re: /(^|[\s;&|(])(rm|rmdir|shred|truncate|mv|dd|mkfs[.\w]*|wipefs|diskutil|format|del|rd)\s|(^|\s)>\s*[^\s&|]|git\s+(reset\s+--hard|clean|checkout\s+--|restore|push\s+.*--force|push\s+-f)|chmod\s+-R|chown\s+-R|find\s.*-delete/ },
+  { kind: "network", label: "Uses the network or installs packages", re: /(^|[\s;&|(])(curl|wget|ssh|scp|sftp|rsync|nc|ncat|telnet|ftp|brew|apt|apt-get|yum|dnf|pacman|apk|choco|winget|pip3?|pipx|gem|cargo\s+install|go\s+install|docker|podman|kubectl|terraform)\s|(npm|pnpm|yarn|bun)\s+(i|add|install|ci|publish|login|exec|dlx)|npx\s|git\s+(push|pull|fetch|clone|remote)|https?:\/\// },
+  { kind: "privileged", label: "Runs with extra privileges", re: /(^|[\s;&|(])(sudo|su|doas|runas|pkexec)(\s|$)/ },
+  { kind: "secrets", label: "May read secrets or your environment", re: /(\.env\b|\.ssh|\.aws|\.npmrc|\.netrc|\.git-credentials|id_rsa|id_ed25519|keychain|security\s+find|(^|[\s;&|(])(env|printenv|export)(\s|$)|\$\{?[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)\b)/i },
+  { kind: "shell-pipe", label: "Runs code it downloads or decodes", re: /\|\s*(sh|bash|zsh|python3?|node|perl|ruby)\b|(^|[\s;&|(])(eval|source)\s|base64\s+(-d|--decode)|\$\(\s*(curl|wget)/ },
+  { kind: "background", label: "Starts something that keeps running", re: /(^|[\s;])(nohup|disown|setsid|screen|tmux|launchctl|systemctl|crontab|at)\s|&\s*$|&\s*(disown)?\s*;/ },
+];
+
+export function classifyCommand(command: string): CommandFlag[] {
+  return FLAGS.filter((f) => f.re.test(command)).map(({ kind, label }) => ({ kind, label }));
+}

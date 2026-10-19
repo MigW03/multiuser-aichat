@@ -124,7 +124,32 @@ It covers the shared folder when it is a git repository (one shared folder, or `
   a hidden kind; hooks are off and `--no-verify`/`--no-gpg-sign` are set; the commit uses the host's own git identity.
 - **Not possible for the AI:** push, pull, fetch, checkout of other branches, reset, amend, delete, any other command.
 
-Later: running commands (every call asks, native confirm window), compaction, live co-editing (Yjs, Zed's model).
+## Commands (built 2026-10-19)
+
+A third host switch, "Let the AI propose commands" (Project settings), off by default, stored on the host's computer.
+Turning it on is confirmed in a window the app itself shows (the page cannot click it). The AI gets one tool, `bash`
+(command, description, workdir, timeoutSec: opencode's shape), and **every command asks, every time**: no "always
+allow", no pattern allow-list, no auto mode.
+
+- **Approval:** the proposal appears in the approval dock with the exact command, folder, time limit, what the AI says
+  it is for, and warnings from a pattern list (deletes files, network or installs, privileges, secrets or environment,
+  runs downloaded code, background jobs: display only, they never approve or block anything). Clicking Approve opens a
+  native confirm window (`dialog.showMessageBox` from the main process) that repeats the command; its default button is
+  Cancel. Cancelling there leaves the card waiting. A script injected into the page can click Approve but not the native
+  window, so it cannot run anything.
+- **Running** (`desktop/src/folder-exec.ts`): `/bin/sh -c` (cmd on Windows) in the shared folder or a folder inside it
+  (no links, nothing hidden, checked again at run time), no standard input, own process group, a trimmed environment
+  (PATH, HOME, USER, SHELL, locale, TMPDIR and a few CI settings; none of the host's tokens or keys), stderr merged in
+  order, 120 s default and 600 s at most, then killed together with everything it started. Stop in the chat, the host's
+  app disconnecting, quitting, or switching commands off also kills it. One command at a time per project. Output keeps
+  the first 30k and last 20k characters, terminal escape sequences and control characters are removed, secret-shaped text is
+  masked, and the AI receives it fenced as data.
+- **No sandbox.** An approved command runs with the host's own rights and can read or change anything the host can,
+  including files outside the shared folder and files the shared folder hides. The approval is the only barrier, which
+  is why the command, folder and time limit are fixed when proposed and the host confirms twice. A macOS or Windows
+  sandbox is a possible later step.
+
+Later: compaction, live co-editing (Yjs, Zed's model), MCP.
 
 ## Decisions
 

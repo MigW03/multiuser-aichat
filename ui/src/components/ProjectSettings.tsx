@@ -33,7 +33,9 @@ function SettingRow({ title, text, note, control }: { title: string; text: strin
 }
 
 type CapSwitch = {
-  key: "edit" | "git";
+  key: "edit" | "git" | "exec";
+  /** Turned on in a window the desktop app shows itself (the page cannot click it), so no confirmation here. */
+  native?: boolean;
   title: string;
   text: string;
   /** The question asked before turning it on. */
@@ -57,6 +59,14 @@ const SWITCHES: Record<CapSwitch["key"], CapSwitch> = {
     confirmTitle: "Let the AI use git?",
     confirmText: (project) =>
       `In ${project}'s chats, the AI will be able to read the git status, diffs and history of the files you share (hidden files like .env are left out, secrets are masked), and members will see changes in the shared folder card. The AI can propose git add, commit, restore and a new branch. Each proposal shows the exact command and what it changes, and nothing runs until you click Approve. Git runs with hooks, filters and your git config switched off, and never pushes. You can switch this off any time.`,
+  },
+  exec: {
+    key: "exec",
+    native: true,
+    title: "Let the AI propose commands",
+    text: "Off by default. When on, the AI can propose shell commands (tests, builds). Every single command appears in the desktop app with the exact text; you approve it and confirm it in a second window before it runs. Nothing runs on its own. There is no sandbox: an approved command can read or change anything you can.",
+    confirmTitle: "",
+    confirmText: () => "",
   },
 };
 
@@ -103,7 +113,7 @@ function CapSetting({ project, which }: { project: ProjectSummary; which: CapSwi
             aria-label={which.title}
             checked={on}
             disabled={note !== null}
-            onChange={(e) => (e.target.checked ? setConfirm(true) : void set(false))}
+            onChange={(e) => (e.target.checked && !which.native ? setConfirm(true) : void set(e.target.checked))}
           />
         }
       />
@@ -147,6 +157,7 @@ export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { projec
           <SettingsSection title="AI and files">
             <CapSetting project={project} which={SWITCHES.edit} />
             <CapSetting project={project} which={SWITCHES.git} />
+            <CapSetting project={project} which={SWITCHES.exec} />
           </SettingsSection>
         </div>
       </div>

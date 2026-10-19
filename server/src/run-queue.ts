@@ -222,7 +222,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
-    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; caps: { edit: boolean; git: boolean } } | null = null;
+    let folder: { tools: ReturnType<typeof folderTools>; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean } } | null = null;
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -262,7 +262,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         const use: FolderUse = { files: new Set(), offline: false, edits: [] };
         // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
         const caps = relay.caps(projectId);
-        const canChange = caps.edit || caps.git;
+        const canChange = caps.edit || caps.git || caps.exec;
         const changes = canChange
           ? {
               askedBy: asker,
@@ -294,11 +294,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git)}` : instructions,
+        instructions: folder ? `${instructions}\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : instructions,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.caps.edit || folder.caps.git ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
+        ...(folder && withTools ? { tools: folder.tools, stopWhen: stepCountIs(folder.caps.edit || folder.caps.git || folder.caps.exec ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });

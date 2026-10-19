@@ -277,7 +277,7 @@ describe("writes", () => {
 });
 
 describe("approvals for git", () => {
-  const hooks = (allowed = true) => ({ onAdd: () => undefined, onGone: () => undefined, stillAllowed: (_p: string, kind: "files" | "git") => allowed && kind === "git" });
+  const hooks = (allowed = true) => ({ onAdd: () => undefined, onGone: () => undefined, stillAllowed: (_p: string, kind: "files" | "git" | "exec") => allowed && kind === "git", confirm: async () => true });
 
   test("nothing runs until the host approves; approving runs it once and returns the command", async () => {
     writeFileSync(join(repo, "src/b.ts"), "b\n");

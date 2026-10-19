@@ -1,3 +1,4 @@
+import { redactSecrets } from "@mc/shared";
 import { FOLDER_LIMITS as L, type FolderEntry, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderMatch, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
 import ignore, { type Ignore } from "ignore";
 import picomatch from "picomatch";
@@ -50,25 +51,7 @@ export function isHiddenName(name: string, isDir: boolean): boolean {
   return HIDDEN_FILES.some((re) => re.test(n));
 }
 
-/** Token formats that must never reach a chat, even from a file that is shown. Best effort: the names above are the real barrier. */
-const SECRET_PATTERNS: RegExp[] = [
-  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g,
-  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
-  /\bsk-[A-Za-z0-9_-]{20,}/g, // OpenAI, Anthropic (sk-ant-...), OpenRouter (sk-or-...)
-  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{30,}/g,
-  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
-  /\bAIza[0-9A-Za-z_-]{35}\b/g,
-  /\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}/g, // Stripe
-  /\bsb_secret_[A-Za-z0-9_-]{16,}/g, // Supabase
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, // JSON web tokens (Supabase keys among them)
-];
-
-export function redactSecrets(text: string): string {
-  let out = text;
-  for (const re of SECRET_PATTERNS) out = out.replace(re, "[redacted secret]");
-  return out;
-}
+export { redactSecrets } from "@mc/shared";
 
 // ------------------------------------------------------------------ paths
 

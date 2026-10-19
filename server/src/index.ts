@@ -12,6 +12,7 @@ import { chats, messages } from "./routes/chats.ts";
 import { folder } from "./routes/folder.ts";
 import { invites, publicInvites } from "./routes/invites.ts";
 import { keys } from "./routes/keys.ts";
+import { mcpOauthPublic, mcpServers } from "./routes/mcp.ts";
 import { projects } from "./routes/projects.ts";
 import { recoverRuns } from "./run-queue.ts";
 
@@ -27,11 +28,14 @@ app.get("/health", (c) => c.json({ ok: true }));
 // The only route that works signed out: the join page previews an invite before there is an account.
 // It must be registered before the auth middleware below.
 app.route("/api/invites", publicInvites);
+// The OAuth provider's redirect for remote MCP servers is a browser navigation without our token; its single-use state is the proof.
+app.route("/api/mcp/oauth", mcpOauthPublic);
 
 app.use("/api/*", requireUser);
 app.route("/api", keys);
 app.route("/api/projects", projects);
 app.route("/api/projects", folder);
+app.route("/api/mcp", mcpServers);
 app.route("/api/chats", chats);
 app.route("/api/messages", messages);
 app.route("/api/invites", invites);

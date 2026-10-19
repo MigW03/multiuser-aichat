@@ -2,13 +2,31 @@ import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { mcpBridge, useMcp, type McpInfo, type McpServer } from "../lib/folder.ts";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput } from "./kit.tsx";
+import { RemoteSection } from "./RemoteMcp.tsx";
 
-// MCP servers in the app's Settings (account menu, bottom left). They belong to the signed-in person and run on their
-// computer, started by the desktop app. Adding one shows its exact command in a window the app opens itself; once a
+// MCP servers in the app's Settings (account menu, bottom left). They belong to the signed-in person. Local ones run on
+// their computer, started by the desktop app (this file); remote ones are called by the chat server (RemoteMcp.tsx). Adding one shows its exact command in a window the app opens itself; once a
 // server is on, the AI uses its tools for the answers this person asks for, without asking each time.
 
 const STATUS: Record<McpServer["status"], string> = { off: "Off", starting: "Starting…", ready: "Running", failed: "Failed" };
 const LINK: Record<McpInfo["link"], string> = { off: "Not connected", connecting: "Connecting…", connected: "Connected to the chat", auth: "Sign-in needs refreshing" };
+
+/** The tools a running server offers, each with a switch for the AI. Shared by local and remote servers. */
+export function ToolList({ tools, busy, onToggle }: { tools: { name: string; description: string; enabled: boolean; usable: boolean; note?: string }[]; busy: boolean; onToggle: (tool: string, on: boolean) => void }) {
+  return (
+    <ul className="mcp-tools">
+      {tools.map((t) => (
+        <li key={t.name}>
+          <input type="checkbox" className="setting-switch" role="switch" aria-label={`${t.name} on for the AI`} checked={t.usable && t.enabled} disabled={busy || !t.usable} onChange={(e) => onToggle(t.name, e.target.checked)} />
+          <div className="grow">
+            <div className="strong mcp-tool-name">{t.name}</div>
+            <p className="small muted">{t.note ?? (t.description || "No description.")}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function ServerRow({ server, onInfo }: { server: McpServer; onInfo: (i: McpInfo) => void }) {
   const bridge = mcpBridge()!;
@@ -58,25 +76,7 @@ function ServerRow({ server, onInfo }: { server: McpServer; onInfo: (i: McpInfo)
           </Button>
         </div>
         {open && (
-          <ul className="mcp-tools">
-            {server.tools.map((t) => (
-              <li key={t.name}>
-                <input
-                  type="checkbox"
-                  className="setting-switch"
-                  role="switch"
-                  aria-label={`${t.name} on for the AI`}
-                  checked={t.usable && t.enabled}
-                  disabled={busy || !t.usable}
-                  onChange={(e) => void run(() => bridge.setTool(server.name, t.name, e.target.checked))}
-                />
-                <div className="grow">
-                  <div className="strong mcp-tool-name">{t.name}</div>
-                  <p className="small muted">{t.note ?? (t.description || "No description.")}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ToolList tools={server.tools} busy={busy} onToggle={(tool, on) => void run(() => bridge.setTool(server.name, tool, on))} />
         )}
       </div>
       <input
@@ -142,22 +142,18 @@ function AddServer({ onClose, onInfo }: { onClose: () => void; onInfo: (i: McpIn
   );
 }
 
-/** The "MCP servers" tab of Settings. */
-export function McpTab() {
+/** The local servers: programs the desktop app starts on this computer. Desktop only. */
+function LocalSection() {
   const bridge = mcpBridge();
   const { info, set } = useMcp();
   const [adding, setAdding] = useState(false);
-
   return (
-    <div className="col" style={{ gap: 16 }}>
-      <h3 className="dialog-title flush">MCP servers</h3>
-      <p className="small muted">
-        MCP servers give the AI extra tools (look things up, call a service). They run on <strong>this computer</strong>, with <strong>your</strong> accounts. The AI uses them only when <strong>you</strong> ask it something, in any chat, and picks the fitting tool on its own. Nobody else can use your servers, but what a tool returns shows up in the chat, so everyone in that chat can read it.
-      </p>
+    <section className="col" style={{ gap: 12 }} aria-label="On this computer">
+      <h4 className="mcp-heading">On this computer</h4>
       {!bridge ? (
         <div className="settings-rows">
           <div className="setting-row">
-            <p className="small muted">MCP servers are set up in the desktop app, on the computer where they run. Open the desktop app and go to Settings &gt; MCP servers. The AI can use them for answers you ask for in the web app only while your desktop app is open and signed in.</p>
+            <p className="small muted">Servers that run as programs on your computer are set up in the <strong>desktop app</strong>. The AI can use them for answers you ask for in the web app only while your desktop app is open and signed in.</p>
           </div>
         </div>
       ) : (
@@ -170,16 +166,16 @@ export function McpTab() {
             <div className="settings-rows">
               {info.servers.length === 0 && (
                 <div className="setting-row">
-                  <p className="small muted">No MCP servers yet. Nothing runs until you add one.</p>
+                  <p className="small muted">No servers on this computer yet. Nothing runs until you add one.</p>
                 </div>
               )}
               {info.servers.map((s) => (
                 <ServerRow key={s.name} server={s} onInfo={set} />
               ))}
               <div className="setting-row" style={{ alignItems: "center" }}>
-                <p className="small muted grow">{info.servers.length === 0 ? "" : `${info.servers.length} of 10 servers`}</p>
+                <p className="small muted grow">{info.servers.length === 0 ? "" : `${info.servers.length} of 10 local servers`}</p>
                 <Button size="sm" onClick={() => setAdding(true)} disabled={info.servers.length >= 10}>
-                  <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Add MCP server
+                  <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Add local server
                 </Button>
               </div>
             </div>
@@ -187,6 +183,20 @@ export function McpTab() {
           </>
         )
       )}
+    </section>
+  );
+}
+
+/** The "MCP servers" tab of Settings: remote servers (everywhere) and servers on this computer (desktop). */
+export function McpTab() {
+  return (
+    <div className="col" style={{ gap: 20 }}>
+      <h3 className="dialog-title flush">MCP servers</h3>
+      <p className="small muted">
+        MCP servers give the AI extra tools (look things up, call a service). The AI uses them only when <strong>you</strong> ask it something, in any chat, and picks the fitting tool on its own. Nobody else can use your servers, but what a tool returns shows up in the chat, so everyone in that chat can read it.
+      </p>
+      <RemoteSection />
+      <LocalSection />
     </div>
   );
 }

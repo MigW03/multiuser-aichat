@@ -1,9 +1,11 @@
-import { MCP_LIMITS as M, type McpCallResult } from "@mc/shared";
+import { cleanOutput, redactSecrets, resultText, toolEntries, type McpCallResult, type ToolEntry } from "@mc/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { mkdirSync } from "node:fs";
-import { cleanOutput, execEnv } from "./folder-exec.ts";
-import { FolderError, redactSecrets } from "./folder-fs.ts";
+import { execEnv } from "./folder-exec.ts";
+import { FolderError } from "./folder-fs.ts";
+
+export { resultText, toolEntries, type ToolEntry };
 
 // One MCP tool server, started as a child process on this computer and spoken to over its standard input and output
 // (the MCP SDK's stdio transport, as opencode's "local" servers). What a server says is written by someone else: tool
@@ -12,10 +14,6 @@ import { FolderError, redactSecrets } from "./folder-fs.ts";
 
 export type ServerStatus = "off" | "starting" | "ready" | "failed";
 
-/** A tool as this app reports it to the host. `usable` is false when it can't be offered to the AI (odd name, huge schema). */
-export type ToolEntry = { name: string; description: string; inputSchema: Record<string, unknown>; usable: boolean; note?: string };
-
-const TOOL_NAME = new RegExp(`^[A-Za-z0-9_.-]{1,${M.toolNameChars}}$`);
 const START_MS = 60_000;
 const LIST_MS = 15_000;
 const MAX_TOOLS_LISTED = 200;
@@ -29,55 +27,6 @@ export function serverEnv(userEnv: Record<string, string>, source: NodeJS.Proces
   for (const [k, v] of Object.entries(base)) if (v !== undefined) out[k] = v;
   return { ...out, ...userEnv };
 }
-
-const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
-const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}…` : s);
-
-/** Turns what `tools/list` returned into entries, dropping or flagging what can't be used. */
-export function toolEntries(raw: unknown[]): ToolEntry[] {
-  const seen = new Set<string>();
-  const out: ToolEntry[] = [];
-  for (const t of raw.slice(0, MAX_TOOLS_LISTED)) {
-    const r = (t ?? {}) as { name?: unknown; description?: unknown; inputSchema?: unknown };
-    if (typeof r.name !== "string" || seen.has(r.name)) continue;
-    seen.add(r.name);
-    const description = typeof r.description === "string" ? clip(oneLine(r.description), M.descriptionChars) : "";
-    const schema = r.inputSchema && typeof r.inputSchema === "object" && !Array.isArray(r.inputSchema) ? (r.inputSchema as Record<string, unknown>) : null;
-    let note: string | undefined;
-    if (!TOOL_NAME.test(r.name)) note = "Its name has characters the AI can't use.";
-    else if (!schema) note = "It does not describe its inputs.";
-    else if (JSON.stringify(schema).length > M.schemaChars) note = "Its input description is too large.";
-    out.push({ name: clip(r.name, M.toolNameChars), description, inputSchema: note ? {} : schema!, usable: !note, ...(note ? { note } : {}) });
-  }
-  return out;
-}
-
-/** A tool's answer as plain text: what it returned, minus anything binary, with secrets masked, cut to the size limit. */
-export function resultText(result: unknown): McpCallResult {
-  const r = (result ?? {}) as { content?: unknown; structuredContent?: unknown; isError?: unknown; toolResult?: unknown };
-  const parts: string[] = [];
-  if (Array.isArray(r.content)) {
-    for (const c of r.content as { type?: unknown; text?: unknown; mimeType?: unknown; data?: unknown; resource?: { uri?: unknown; text?: unknown }; uri?: unknown; name?: unknown }[]) {
-      if (c?.type === "text" && typeof c.text === "string") parts.push(c.text);
-      else if (c?.type === "image" || c?.type === "audio") parts.push(`[${String(c.type)} omitted${typeof c.mimeType === "string" ? `: ${clip(oneLine(c.mimeType), 40)}` : ""}]`);
-      else if (c?.type === "resource" && c.resource) parts.push(typeof c.resource.text === "string" ? c.resource.text : `[binary resource omitted: ${clip(oneLine(String(c.resource.uri ?? "")), 200)}]`);
-      else if (c?.type === "resource_link") parts.push(`[link: ${clip(oneLine(String(c.name ?? "")), 100)} ${clip(oneLine(String(c.uri ?? "")), 300)}]`);
-    }
-  }
-  if (parts.length === 0 && r.structuredContent !== undefined) parts.push(safeJson(r.structuredContent));
-  else if (parts.length === 0 && r.toolResult !== undefined) parts.push(safeJson(r.toolResult));
-  const cleaned = redactSecrets(cleanOutput(parts.join("\n")));
-  const truncated = cleaned.length > M.resultChars;
-  return { text: truncated ? cleaned.slice(0, M.resultChars) : cleaned, isError: r.isError === true, truncated };
-}
-
-const safeJson = (v: unknown) => {
-  try {
-    return JSON.stringify(v, null, 2) ?? "";
-  } catch {
-    return "";
-  }
-};
 
 export type ServerOptions = {
   command: string[];
@@ -150,7 +99,7 @@ export class McpServerConn {
   /** The message for the host, with the end of what the server printed (masked), which usually says why. */
   private reason(message: string): string {
     const tail = redactSecrets(cleanOutput(this.stderr)).trim();
-    return tail ? `${message}\n${clip(tail, 800)}` : message;
+    return tail ? `${message}\n${tail.length > 800 ? `${tail.slice(0, 800)}…` : tail}` : message;
   }
 
   async call(tool: string, args: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal): Promise<McpCallResult> {

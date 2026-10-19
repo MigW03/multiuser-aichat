@@ -11,7 +11,7 @@ const ANA = "11111111-1111-4111-8111-111111111111";
 const BEN = "22222222-2222-4222-8222-222222222222";
 
 const mcp = createMcpRelay({ authenticate: async (t) => (t === "ana-token" ? ANA : t === "ben-token" ? BEN : null) }, { tokenMaxMs: 10_000 });
-const folders = createRelay({ authenticate: async () => null, hostCheck: async () => ({ ok: false, reason: "not_host" }), setOnline: async () => undefined });
+const folders = createRelay({ authenticate: async () => null, connectCheck: async () => ({ ok: false, reason: "not_found" }), sync: async () => [], setOnline: async () => undefined });
 let server: Server;
 let port = 0;
 
@@ -86,7 +86,7 @@ describe("connecting", () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/api/folder-host`);
     const closed = new Promise<number>((r) => ws.on("close", (code) => r(code)));
     await new Promise((r) => ws.on("open", r));
-    ws.send(JSON.stringify({ type: "hello", token: "x", projectId: "33333333-3333-4333-8333-333333333333" }));
+    ws.send(JSON.stringify({ type: "hello", token: "x", projectId: "33333333-3333-4333-8333-333333333333", items: [] }));
     assert.equal(await closed, 4401);
   });
   test("a second app for the same person takes over; nobody else's socket is touched", async () => {

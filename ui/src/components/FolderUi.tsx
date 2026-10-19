@@ -1,5 +1,5 @@
 import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectFolder, type ProjectSummary } from "@mc/shared";
-import { ArrowLeft, ChevronLeft, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { ArrowLeft, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
@@ -288,8 +288,8 @@ function FolderBrowser({ projectId, removable, lone, onRemove }: { projectId: st
     <div className="folder-browser">
       {parts.length > 0 && (
         <nav className="folder-crumbs" aria-label="Folder path">
-          <IconButton label="Up one level" className="sm" onClick={() => { setPath(parts.slice(0, -1).join("/")); setFile(null); }}>
-            <ChevronLeft size={ICON_SM} strokeWidth={STROKE} />
+          <IconButton label="Back to the top" className="sm" onClick={() => { setPath(""); setFile(null); }}>
+            <Home size={ICON_SM} strokeWidth={STROKE} />
           </IconButton>
           {parts.map((p, i) => (
             <span key={`${i}-${p}`} className="row">

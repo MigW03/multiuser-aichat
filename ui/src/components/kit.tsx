@@ -189,7 +189,7 @@ export function InfoTip({ label, children, size = ICON_SM }: { label: string; ch
  * A short hint that floats below its content on hover or keyboard focus. Rendered in a portal like InfoTip, because the
  * desktop app doesn't show the browser's own title tooltips reliably.
  */
-export function Tip({ text, children, className = "" }: { text: string; children: ReactNode; className?: string }) {
+export function Tip({ text, children, className = "", focusable = true }: { text: string; children: ReactNode; className?: string; focusable?: boolean }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
   const id = useId();
@@ -202,7 +202,7 @@ export function Tip({ text, children, className = "" }: { text: string; children
   const hide = () => setPos(null);
   return (
     <>
-      <span ref={ref} className={className} tabIndex={0} aria-describedby={pos ? id : undefined} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onKeyDown={(e) => e.key === "Escape" && hide()}>
+      <span ref={ref} className={className} tabIndex={focusable ? 0 : undefined} aria-describedby={pos ? id : undefined} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onKeyDown={(e) => e.key === "Escape" && hide()}>
         {children}
       </span>
       {pos &&
@@ -291,7 +291,7 @@ export function Dialog({
 // ------------------------------------------------------------------ menus
 
 export type MenuItem =
-  | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean; title?: string }
+  | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean; hint?: string }
   | "divider";
 
 /** A button that opens a small menu. Closes on outside click, Escape and selection. */
@@ -347,14 +347,16 @@ export function Menu({
                 role="menuitem"
                 className={`menu-item ${item.danger ? "danger" : ""}`}
                 disabled={item.disabled}
-                title={item.title}
                 onClick={() => {
                   setOpen(false);
                   item.onSelect();
                 }}
               >
                 {item.icon}
-                <span className="grow">{item.label}</span>
+                <span className="grow">
+                  {item.label}
+                  {item.hint && <span className="menu-hint small muted">{item.hint}</span>}
+                </span>
                 {item.checked ? <span className="menu-check">✓</span> : null}
               </button>
             ),

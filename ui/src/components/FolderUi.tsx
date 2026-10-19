@@ -358,11 +358,13 @@ function RemoveMenu({ name, placement, className, onRemove }: { name: string; pl
       align="end"
       placement={placement}
       className={className}
-      items={[{ label: "Remove", title: "Stops sharing it. Nothing is deleted from your computer.", icon: <X size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => onRemove(name) }]}
+      items={[{ label: "Remove", hint: "Stops sharing it. Nothing is deleted from your computer.", icon: <X size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => onRemove(name) }]}
       trigger={({ toggle, open }) => (
-        <button type="button" className={`icon-btn row-more folder-row-more ${open ? "open" : ""}`} aria-label={`Options for ${name}`} title="Options (removing only stops sharing)" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
-          <MoreHorizontal size={ICON_SM} strokeWidth={STROKE} />
-        </button>
+        <Tip text="Options" focusable={false}>
+          <button type="button" className={`icon-btn row-more folder-row-more ${open ? "open" : ""}`} aria-label={`Options for ${name}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+            <MoreHorizontal size={ICON_SM} strokeWidth={STROKE} />
+          </button>
+        </Tip>
       )}
     />
   );

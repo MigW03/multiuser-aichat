@@ -1,8 +1,9 @@
 import type { ChangePreview } from "@mc/shared";
-import { Check, FilePen, FilePlus, Hourglass, ShieldCheck, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, FilePen, FilePlus, Hourglass, Maximize2, Minimize2, ShieldCheck, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { folderBridge, useHostApprovals, type PendingChange } from "../lib/folder.ts";
-import { Button, ICON_SM, STROKE } from "./kit.tsx";
+import { createPortal } from "react-dom";
+import { Button, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import type { Proposal } from "./useChatRoom.ts";
 
 // AI changes to the shared files. Everybody in the chat sees what the AI proposes (a diff). Only the host decides, and
@@ -13,13 +14,26 @@ import type { Proposal } from "./useChatRoom.ts";
 export function DiffView({ diff, cut }: { diff: string; cut?: boolean }) {
   return (
     <pre className="diff" tabIndex={0}>
-      {diff.split("\n").map((line, i) => (
-        <span key={i} className={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : ""}>
-          {line || " "}
-          {"\n"}
-        </span>
-      ))}
-      {cut && <span className="hunk">The diff is cut here; the full change is applied if approved.{"\n"}</span>}
+      {/* One inner block as wide as the longest line, so every row's tint spans the full scroll width. */}
+      <span className="diff-lines">
+        {diff.split("\n").map((line, i) => {
+          const kind = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : "";
+          const marker = kind === "add" || kind === "del" || (kind === "" && line.startsWith(" ")) ? line[0]! : "";
+          return (
+            <span key={i} className={`dl ${kind}`}>
+              {/* the +/- stays at the left edge while the text scrolls */}
+              <span className="mk" aria-hidden>{marker || " "}</span>
+              <span className="tx">{marker || kind === "hunk" ? line.slice(marker ? 1 : 0) : line}{"\n"}</span>
+            </span>
+          );
+        })}
+        {cut && (
+          <span className="dl hunk">
+            <span className="mk" aria-hidden> </span>
+            <span className="tx">The diff is cut here; the full change is applied if approved.{"\n"}</span>
+          </span>
+        )}
+      </span>
     </pre>
   );
 }
@@ -75,14 +89,28 @@ function minutesLeft(at: number, now: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function PendingCard({ item, projectName }: { item: PendingChange; projectName: string }) {
+/** How one waiting change is shown. Changing it never decides anything: only the Approve and Decline buttons do. */
+type View = "small" | "expanded" | "hidden";
+
+function PendingCard({ item, projectName, view, setView }: { item: PendingChange; projectName: string; view: View; setView: (v: View) => void }) {
   const bridge = folderBridge();
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [now, setNow] = useState(Date.now());
+  const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  const expanded = view === "expanded";
+  useEffect(() => {
+    if (!expanded) return;
+    // Focus the window itself, not a button: pressing Enter must never approve by accident.
+    dialogRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setView("small");
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, setView]);
 
   async function decide(approve: boolean) {
     if (!bridge?.decide) return;
@@ -95,14 +123,46 @@ function PendingCard({ item, projectName }: { item: PendingChange; projectName: 
   }
 
   const c = item.change;
-  return (
-    <section className="dock-card" aria-label={`Change to ${c.path}`}>
+  const left = minutesLeft(item.expiresAt, now);
+
+  // Closed from the big window: nothing is decided and the timer keeps running; a small tab brings it back.
+  if (view === "hidden") {
+    return (
+      <button type="button" className="dock-pill" onClick={() => setView("small")} aria-label={`Show the change to ${c.path}, ${left} left`}>
+        <ShieldCheck size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+        <span className="truncate">Change waiting: {c.path}</span>
+        <span className="muted small">{left}</span>
+      </button>
+    );
+  }
+
+  const card = (
+    <section
+      ref={dialogRef}
+      className={`dock-card ${expanded ? "expanded" : ""}`}
+      aria-label={`Change to ${c.path}`}
+      {...(expanded ? { role: "dialog", "aria-modal": true, tabIndex: -1 } : {})}
+    >
       <header>
         <ShieldCheck size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         <span className="grow">
           <b>{item.askedBy}</b>'s AI wants to {c.created ? "create" : "change"} <b>{c.path}</b> in {projectName}
         </span>
         <Stats change={c} />
+        {expanded ? (
+          <>
+            <IconButton label="Minimize to the small window" className="sm" onClick={() => setView("small")}>
+              <Minimize2 size={ICON_SM} strokeWidth={STROKE} />
+            </IconButton>
+            <IconButton label="Close this window (nothing is approved or declined)" className="sm" onClick={() => setView("hidden")}>
+              <X size={ICON_SM} strokeWidth={STROKE} />
+            </IconButton>
+          </>
+        ) : (
+          <IconButton label="Expand" className="sm" onClick={() => setView("expanded")}>
+            <Maximize2 size={ICON_SM} strokeWidth={STROKE} />
+          </IconButton>
+        )}
       </header>
       {RISKY.test(c.path) && (
         <p className="small risky" role="note">
@@ -111,7 +171,7 @@ function PendingCard({ item, projectName }: { item: PendingChange; projectName: 
       )}
       <DiffView diff={c.diff} cut={c.cut} />
       <p className="small muted">
-        It read {item.readFiles} {item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing is written until you approve. Time left: {minutesLeft(item.expiresAt, now)}.
+        It read {item.readFiles} {item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing is written until you approve. Time left: {left}.
       </p>
       <div className="row dock-actions">
         <Button size="sm" variant="primary" busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide(true)}>
@@ -123,16 +183,26 @@ function PendingCard({ item, projectName }: { item: PendingChange; projectName: 
       </div>
     </section>
   );
+  // The big window sits over the app, centered. The backdrop does nothing when clicked.
+  return expanded ? createPortal(<div className="dock-backdrop">{card}</div>, document.body) : card;
 }
 
 /** The host's approval panel (desktop app only). Shows every change waiting on this computer, whichever chat it came from. */
 export function ApprovalDock({ projectName }: { projectName: (id: string) => string }) {
   const pending = useHostApprovals();
+  const [views, setViews] = useState<Record<string, View>>({});
   if (pending.length === 0) return null;
+  const keyOf = (p: PendingChange) => `${p.projectId}:${p.id}`;
   return (
     <aside className="approval-dock" role="region" aria-label="AI changes waiting for you" aria-live="polite">
       {pending.map((item) => (
-        <PendingCard key={`${item.projectId}:${item.id}`} item={item} projectName={projectName(item.projectId)} />
+        <PendingCard
+          key={keyOf(item)}
+          item={item}
+          projectName={projectName(item.projectId)}
+          view={views[keyOf(item)] ?? "small"}
+          setView={(v) => setViews((cur) => ({ ...cur, [keyOf(item)]: v }))}
+        />
       ))}
     </aside>
   );

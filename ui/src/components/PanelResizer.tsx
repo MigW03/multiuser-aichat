@@ -112,3 +112,85 @@ export function PanelResizer({
     />
   );
 }
+
+// ---------------------------------------------------------------- the right column's split: Files above, Notes below
+
+/** The least height, in px, either card keeps. */
+export const SPLIT_MIN_PX = 120;
+export const SPLIT_DEFAULT = 0.5;
+const SPLIT_KEY_PX = 24;
+const SPLIT_KEY_PX_BIG = 72;
+
+/** The Files card's part of the column, kept so that both cards keep their minimum height. Anything that is not a number falls back to half. */
+export function clampSplit(value: unknown, availablePx: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : SPLIT_DEFAULT;
+  const lo = Math.min(0.5, SPLIT_MIN_PX / Math.max(1, availablePx));
+  return Math.min(1 - lo, Math.max(lo, n));
+}
+
+/** How the column's height is shared between Files and Notes: remembered per person. */
+export function useSplit(userId: string) {
+  const [share, setShare] = useState<number>(() => clampSplit(readPref<number>(PREF.filesShare(userId), SPLIT_DEFAULT), Infinity));
+  const set = (next: number, remember: boolean) => {
+    const v = Math.round(next * 1000) / 1000;
+    setShare(v);
+    if (remember) writePref(PREF.filesShare(userId), v);
+  };
+  return { share, set };
+}
+
+/**
+ * Drag handle in the gap between the Files card and the Notes card, styled like the column handles. `available` is the
+ * height, in px, the two cards share; arrow keys move it by a step, Home and End go to the limits, double-click resets.
+ */
+export function SplitResizer({ share, available, onChange }: { share: number; available: () => number; onChange: (next: number, remember: boolean) => void }) {
+  const [dragging, setDragging] = useState(false);
+  const start = useRef<{ y: number; share: number; room: number } | null>(null);
+  const move = (y: number) => {
+    const s = start.current!;
+    return clampSplit(s.share + (y - s.y) / s.room, s.room);
+  };
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    start.current = { y: e.clientY, share, room: Math.max(1, available()) };
+    setDragging(true);
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (start.current) onChange(move(e.clientY), false);
+  };
+  const end = (e: PointerEvent<HTMLDivElement>) => {
+    if (!start.current) return;
+    onChange(move(e.clientY), true);
+    start.current = null;
+    setDragging(false);
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const room = Math.max(1, available());
+    const step = (e.shiftKey ? SPLIT_KEY_PX_BIG : SPLIT_KEY_PX) / room;
+    const next = e.key === "ArrowUp" ? share - step : e.key === "ArrowDown" ? share + step : e.key === "Home" ? 0 : e.key === "End" ? 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    onChange(clampSplit(next, room), true);
+  };
+
+  return (
+    <div
+      className={`row-resizer ${dragging ? "dragging" : ""}`}
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize files and notes"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(share * 100)}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onDoubleClick={() => onChange(SPLIT_DEFAULT, true)}
+      onKeyDown={onKeyDown}
+    />
+  );
+}

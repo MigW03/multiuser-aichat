@@ -7,6 +7,7 @@ import { folderBridge, useLocalFolder, useProjectShares, type Dropped, type Fold
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
+import { SplitResizer, useSplit } from "./PanelResizer.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared files live in the right column of a project's chats, as the approved hi-fi boards draw it
@@ -46,9 +47,15 @@ export function RightPanelToggle() {
 
 /** The right column of a project's chats: the files card on top, the notes card under it. */
 export function RightColumn({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
+  const { me } = useApp();
+  const split = useSplit(me.id);
+  const column = useRef<HTMLDivElement>(null);
+  // The height the two cards share: the column without the gap between them.
+  const available = () => (column.current?.clientHeight ?? 0) - (column.current ? parseFloat(getComputedStyle(column.current).rowGap) || 0 : 0);
   return (
-    <div className="right-column">
+    <div className="right-column" ref={column} style={{ "--files-grow": split.share, "--notes-grow": 1 - split.share } as React.CSSProperties}>
       <FolderCard project={project} onClose={onClose} />
+      <SplitResizer share={split.share} available={available} onChange={split.set} />
       <NotesCard project={project} />
     </div>
   );

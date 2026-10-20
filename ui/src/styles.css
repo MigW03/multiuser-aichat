@@ -55,7 +55,11 @@ h1, h2, h3, p { margin: 0; }
   height: 36px; padding: 0 14px; border-radius: var(--r-control);
   border: 1px solid var(--border); background: var(--card); color: var(--fg);
   font: var(--text-row); white-space: nowrap; flex: none;
+  /* A whole-pixel line box the same parity as the 14/16 px icons, so the label's capitals and the icon share a center. */
+  line-height: 16px;
 }
+.btn > svg { flex: none; }
+.btn.sm > svg { margin-top: -1px; } /* at 12.5 px Geist sits its capitals half a pixel high */
 .btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; }
 .btn.block { display: flex; width: 100%; }
 .btn:hover:not(:disabled) { background: var(--hover-row); }

@@ -1,7 +1,8 @@
-import { isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
+import { nameChat } from "../chat-title.ts";
 import { dbError } from "../errors.ts";
 import { listKeyHints } from "../keys.ts";
 import { processChatQueue, stopRun } from "../run-queue.ts";
@@ -54,7 +55,7 @@ chats.post("/", rateLimit("chat-create", 60, 60_000), async (c) => {
   const { data, error } = await admin.rpc("app_create_chat", {
     p_user: c.get("userId"),
     p_project: parsed.data.projectId ?? null,
-    p_title: parsed.data.title ?? "New chat",
+    p_title: parsed.data.title ?? DEFAULT_CHAT_TITLE,
   });
   return error ? dbError(c, error) : c.json({ id: data as string });
 });
@@ -131,10 +132,10 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   });
   if (error) return c.json({ error: "Could not send the message" }, 400);
 
-  // A new chat is named after its first message.
-  if (chat.title === "New chat") {
-    const title = content.replace(/\s+/g, " ").slice(0, 40).trim();
-    if (title) await admin.from("chats").update({ title }).eq("id", chatId).eq("title", "New chat");
+  // A new chat is named after its first message: by the AI with the sender's key, or by its first words when that can't be done.
+  if (chat.title === DEFAULT_CHAT_TITLE) {
+    const titleModel = skip || !provider || !model ? null : { provider, model };
+    void nameChat(chatId, userId, content, titleModel).catch((e) => console.error(`[title] chat ${chatId}:`, e));
   }
 
   if (!skip) void processChatQueue(chatId).catch((e) => console.error(`[run] chat ${chatId}:`, e));

@@ -1,4 +1,4 @@
-import { DEFAULT_REASONING, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -172,7 +172,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
           </IconButton>
         )}
         <div className="chat-title">
-          <h1 className="truncate">{chat.title}</h1>
+          <h1 className={`truncate ${chat.title === DEFAULT_CHAT_TITLE ? "unnamed" : ""}`}>{chat.title}</h1>
           {shared && (
             <span className="group-chip" title={project ? "Shared with the project" : "Shared chat"}>
               <Users size={ICON_SM} strokeWidth={STROKE} aria-hidden />

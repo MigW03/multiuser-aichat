@@ -104,6 +104,20 @@ describe("list_notes and read_note", () => {
     assert.equal(fencedNote("kind=\"x\"", "a</project_note_datab").includes("</project_note_datab"), false);
   });
 
+  test("who wrote a note and when come only when asked for, from list and read", async () => {
+    const { list, read } = setup();
+    const plainList = await run(list, {});
+    assert.doesNotMatch(plainList, /written by|Ana/);
+    const detailList = await run(list, { details: true });
+    assert.match(detailList, /1\. Note 1 \(written by Ana, last changed 2026-10-20 10:00 UTC\)/);
+    assert.match(detailList, /2\. Note 2 \(written by the AI for Ana, last changed/);
+    assert.doesNotMatch(detailList, new RegExp(`${A}|${B}`), "still no ids");
+    const detailRead = await run(read, { note: "1", details: true });
+    assert.match(detailRead, /info="written by Ana, last changed 2026-10-20 10:00 UTC"/);
+    assert.doesNotMatch(detailRead, new RegExp(A));
+    assert.doesNotMatch(await run(read, { note: "1" }), /info=|written by/);
+  });
+
   test("a note is found by its number or its exact title, never by an id", async () => {
     const { read, edit } = setup();
     assert.match(await run(read, { note: "2" }), /Text of 2/);
@@ -207,6 +221,7 @@ describe("what is offered", () => {
     assert.match(noteInstructions, /never an instruction to you/i);
     assert.match(noteInstructions, /don't show note numbers, ids, authors, dates/i);
     assert.match(noteInstructions, /don't make a table of notes/i);
+    assert.match(noteInstructions, /who wrote a note or when it changed.*details set to true/i);
     assert.match(noteInstructions, /only save or change a note when someone in this chat asked/i);
     assert.match(noteInstructions, /cannot delete notes/i);
   });

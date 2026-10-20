@@ -577,6 +577,11 @@ h1, h2, h3, p { margin: 0; }
 .note-row:hover .note-more, .note-row:focus-within .note-more, .note-more.open { opacity: 1; }
 .note-row:hover .note-time, .note-row:focus-within .note-time { visibility: hidden; }
 @media (hover: none) { .note-more { opacity: 1; } .note-row .note-time { visibility: hidden; } }
+.note-reader { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.note-reader.ai { background: var(--t4); border-color: var(--t20); }
+.note-reader-head { display: flex; align-items: center; gap: 8px; }
+.note-reader-title { margin: 0; font: var(--text-row); font-weight: 600; overflow-wrap: anywhere; }
+.note-reader-body { font: var(--text-row); font-weight: 400; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; user-select: text; }
 .note-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--p); box-shadow: 0 0 0 3px var(--t12); border-radius: 10px; background: var(--card); }
 .note-edit-title { border: 0; outline: 0; background: none; font: var(--text-row); font-weight: 600; padding: 0; }
 .note-edit-body { border: 0; outline: 0; resize: vertical; min-height: 80px; max-height: 320px; background: none; font: var(--text-row); line-height: 18px; padding: 0; }

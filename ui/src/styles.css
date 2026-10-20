@@ -193,6 +193,9 @@ h1, h2, h3, p { margin: 0; }
 .usage-ring-arc { stroke: var(--p); }
 .usage-ring-arc.warn { stroke: var(--warning); }
 .usage-ring-arc.full { stroke: var(--danger); }
+/* The Steel accent barely shows on the dark card, so the ring is white there. Warn and full keep their colours. */
+:root[data-theme="dark"] .usage-ring-track { stroke: color-mix(in srgb, #fff 30%, var(--card)); }
+:root[data-theme="dark"] .usage-ring-arc:not(.warn):not(.full) { stroke: #fff; }
 .usage-popover { width: 280px; max-width: calc(100vw - 32px); padding: 12px; }
 .usage { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .usage-row { display: flex; flex-direction: column; gap: 4px; }
@@ -463,8 +466,9 @@ h1, h2, h3, p { margin: 0; }
 .markdown pre { background: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
 .markdown pre code { background: none; padding: 0; font-size: 13px; }
 .markdown blockquote { padding-left: 12px; border-left: 3px solid var(--t40); color: var(--muted-fg); }
-.markdown table { border-collapse: collapse; display: block; overflow-x: auto; }
-.markdown th, .markdown td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+.markdown table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
+/* No mid-word breaks in cells: the .markdown "anywhere" wrap would shrink columns to one letter. Wide tables scroll instead. */
+.markdown th, .markdown td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; min-width: 5em; }
 .markdown th { background: var(--muted); }
 .markdown hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 

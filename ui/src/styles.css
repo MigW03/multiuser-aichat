@@ -433,7 +433,7 @@ h1, h2, h3, p { margin: 0; }
 .composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; padding: 6px 0; max-height: 200px; line-height: 1.5; font-size: 14.5px; }
 .send-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--p); color: var(--p-fg); display: inline-flex; align-items: center; justify-content: center; }
 .send-btn:hover:not(:disabled) { filter: brightness(1.1); }
-.send-btn.stop { background: var(--fg); color: var(--bg); }
+.send-btn.stop { background: var(--p); color: var(--p-fg); }
 .send-btn:disabled { background: var(--muted); color: var(--muted-fg); cursor: default; }
 .reply-strip { display: flex; align-items: center; gap: 8px; margin: 8px 8px 0 14px; padding: 2px 0 2px 10px; border-left: 3px solid var(--p); color: var(--muted-fg); font: var(--text-small); }
 .reply-strip b { color: var(--fg); }

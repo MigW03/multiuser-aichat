@@ -1,5 +1,5 @@
 import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, Folder, Pencil, Plug, RotateCcw, Sparkles } from "lucide-react";
+import { Copy, CornerUpLeft, FileText, Folder, Pencil, Plug, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
@@ -25,6 +25,8 @@ export type MessageListProps = {
   onReply: (m: ChatMessage, quote?: string) => void;
   onRetry: (m: ChatMessage) => void;
   onCopy: (m: ChatMessage) => void;
+  /** Present in project chats: saves a message to the project's Notes. */
+  onSaveNote?: (m: ChatMessage) => void;
   onAddKey: () => void;
   onUpdateKey: () => void;
   emptyState: ReactNode;
@@ -286,6 +288,11 @@ function AssistantMessage(props: RowProps) {
             <button type="button" className="act" onClick={() => props.onCopy(m)}>
               <Copy size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Copy
             </button>
+            {props.onSaveNote && (
+              <button type="button" className="act" onClick={() => props.onSaveNote?.(m)}>
+                <FileText size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Save as note
+              </button>
+            )}
             {forMe && (
               <button type="button" className="act" onClick={() => props.onRetry(m)}>
                 <RotateCcw size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Retry

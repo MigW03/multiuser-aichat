@@ -18,6 +18,7 @@ import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet 
 import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
+import { noteInstructions, noteTools } from "./notes-tools.ts";
 import { mcpRelay } from "./mcp.ts";
 import { remoteMcp } from "./mcp-servers.ts";
 import { folderAccess, hub } from "./folders.ts";
@@ -233,6 +234,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let connected: { tools: ToolSet; state: McpState } | null = null;
     /** "server: tool" for each connected tool this answer used, for the note under it. */
     const mcpUsed = new Set<string>();
+    /** The AI can add a note in a project chat; notes are the asker's own, and shared with the project. */
+    let noting: ToolSet | null = null;
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -266,6 +269,13 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       // A project chat can read the project's shared folder, if one is shared. The check is the asker's own membership.
       const { data: chatRow } = await db.from("chats").select("project_id").eq("id", chatId).maybeSingle();
       const projectId = (chatRow?.project_id as string | null | undefined) ?? null;
+      if (projectId) {
+        noting = noteTools(async (title, body) => {
+          const { error } = await db.rpc("app_note_create", { p_user: authorId, p_project: projectId, p_title: title, p_body: body, p_ai: true });
+          if (error) console.error(`[run] chat ${chatId}: take_note failed:`, error.message);
+          return error ? { ok: false, code: error.message.trim() } : { ok: true };
+        });
+      }
       const access = projectId ? await folderAccess(authorId, projectId) : null;
       if (projectId && access?.ok) {
         folderName = access.name;
@@ -297,7 +307,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         return { servers: [] } as McpState;
       });
       if (localState.servers.length || remoteState.servers.length) {
-        const reserved = Object.keys(folder?.tools ?? {});
+        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(noting ?? {})];
         const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
         const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
         connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
@@ -323,11 +333,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected) ? { tools: { ...connected?.tools, ...folder?.tools }, stopWhen: stepCountIs(folder?.caps.edit || folder?.caps.git || folder?.caps.exec || connected ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
+        ...(withTools && (folder || connected || noting) ? { tools: { ...connected?.tools, ...folder?.tools, ...noting }, stopWhen: stepCountIs(folder?.caps.edit || folder?.caps.git || folder?.caps.exec || connected ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
@@ -350,7 +360,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let streamError = await attempt(true);
     // Some connections refuse tools (a model without tool support, or a ChatGPT plan backend that changed). Rather than
     // fail the answer, answer once more without the folder, and say why.
-    if (streamError && (folder || connected) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
+    if (streamError && (folder || connected || noting) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
       console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder and connected tools (${streamError.statusCode})`);
       streamError = await attempt(false);
       if (!streamError) {

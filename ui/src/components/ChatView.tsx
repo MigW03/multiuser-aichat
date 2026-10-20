@@ -1,4 +1,4 @@
-import { DEFAULT_REASONING, LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_REASONING, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -13,6 +13,7 @@ import { DeleteChatDialog, RenameDialog, SummarizeDialog } from "./Dialogs.tsx";
 import { EmptyChat } from "./EmptyStates.tsx";
 import { RightPanelToggle } from "./FolderUi.tsx";
 import { MessageList, OPTIMISTIC_SEQ } from "./Messages.tsx";
+import { noteTitleFrom } from "./NotesUi.tsx";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, IconButton, ICON, ICON_SM, Menu, STROKE, useToast } from "./kit.tsx";
 import { useChatRoom } from "./useChatRoom.ts";
@@ -134,6 +135,17 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     toast.push((await copyText(m.content)) ? "Copied" : "Could not copy", "info");
   }
 
+  async function saveNote(m: ChatMessage) {
+    if (!project) return;
+    try {
+      await api.addNote(project.id, { title: noteTitleFrom(m.content), body: m.content.slice(0, NOTE_LIMITS.bodyChars) });
+      notifyChanged();
+      toast.push("Saved to Notes");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "Could not save the note.", "error");
+    }
+  }
+
   function replyTo(m: ChatMessage, quote?: string) {
     setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
   }
@@ -208,6 +220,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         onReply={replyTo}
         onRetry={(m) => void retry(m)}
         onCopy={(m) => void copy(m)}
+        {...(project ? { onSaveNote: (m: ChatMessage) => void saveNote(m) } : {})}
         onAddKey={openAddKey}
         onUpdateKey={() => openSettings("key")}
         emptyState={room.loaded ? <EmptyChat shared={shared} hasKey={hasKey} onAddKey={openAddKey} /> : null}

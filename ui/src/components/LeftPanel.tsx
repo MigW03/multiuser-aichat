@@ -1,4 +1,4 @@
-import { canManagePeople, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
+import { canManagePeople, DEFAULT_CHAT_TITLE, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
 import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
 import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -355,7 +355,7 @@ function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: 
     <li className={`chat-row ${active ? "active" : ""}`}>
       <button type="button" className="row-item" onClick={onOpen} aria-current={active ? "page" : undefined}>
         <span className="grow">
-          <span className={`row-title truncate block ${unread > 0 && !active ? "strong" : ""}`}>
+          <span className={`row-title truncate block ${unread > 0 && !active ? "strong" : ""} ${chat.title === DEFAULT_CHAT_TITLE ? "unnamed" : ""}`}>
             {chat.pinned && <Pin size={11} strokeWidth={2} className="pin-mark" aria-label="Pinned" />}
             {shared && <Users size={12} strokeWidth={STROKE} className="group-mark" aria-label="Shared chat" />}
             {chat.title}

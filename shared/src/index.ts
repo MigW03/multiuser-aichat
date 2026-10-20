@@ -54,6 +54,9 @@ export function fitReasoning(levels: readonly Reasoning[], wanted: Reasoning): R
 }
 export const DEFAULT_REASONING: Reasoning = "medium";
 
+/** What a chat is called until its first message names it. The database default is the same text. */
+export const DEFAULT_CHAT_TITLE = "New chat";
+
 /** Limits enforced by both the server and the database. */
 export const LIMITS = {
   messageChars: 16_000,

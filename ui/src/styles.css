@@ -318,6 +318,8 @@ h1, h2, h3, p { margin: 0; }
 .row-item.subtle { min-height: 34px; color: var(--muted-fg); font: var(--text-row); }
 .row-title { font: var(--text-row); }
 .row-title.strong { font-weight: 650; }
+/* A chat the AI has not named yet. */
+.unnamed { color: var(--muted-fg); font-style: italic; }
 .row-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
 .chat-row { position: relative; }
 .chat-row.active .row-item { background: var(--t12); }

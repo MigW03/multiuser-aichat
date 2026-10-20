@@ -18,7 +18,7 @@ import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet 
 import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
-import { noteInstructions, noteTools } from "./notes-tools.ts";
+import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
 import { mcpRelay } from "./mcp.ts";
 import { remoteMcp } from "./mcp-servers.ts";
 import { folderAccess, hub } from "./folders.ts";
@@ -148,6 +148,55 @@ export async function processChatQueue(chatId: string): Promise<void> {
   } while (await hasPending(chatId));
 }
 
+/**
+ * The project's notes as one asker may use them. Each call re-checks that the asker is in the project, and only notes of
+ * this chat's project are reachable, whatever id the model passes. Writes go through the same database functions the
+ * Notes panel uses, so the same rules apply (sizes, the 200-note cap, who may edit).
+ */
+function notesFor(db: Admin, chatId: string, projectId: string, userId: string): NoteStore {
+  const member = async () => !!(await db.rpc("project_role_of", { p_user: userId, p_project: projectId })).data;
+  const COLUMNS = "id, title, body, by_ai, updated_at, author:profiles!created_by(display_name)";
+  type NoteRowDb = { id: string; title: string; body: string; by_ai: boolean; updated_at: string; author: { display_name: string } | null };
+  const who = (r: NoteRowDb) => (r.author ? promptName(r.author.display_name) : "someone");
+  const failure = (what: string, error: { message: string }) => {
+    console.error(`[run] chat ${chatId}: ${what} failed:`, error.message);
+    return { ok: false as const, code: error.message.trim() };
+  };
+  return {
+    async list() {
+      if (!(await member())) return null;
+      const [{ data, error }, { count }] = await Promise.all([
+        db.from("project_notes").select(COLUMNS).eq("project_id", projectId).order("updated_at", { ascending: false }).limit(NOTES_LISTED),
+        db.from("project_notes").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      ]);
+      if (error) {
+        console.error(`[run] chat ${chatId}: list_notes failed:`, error.message);
+        return null;
+      }
+      const rows = (data ?? []) as unknown as NoteRowDb[];
+      return { total: count ?? rows.length, notes: rows.map((r) => ({ id: r.id, title: r.title, preview: r.body.replace(/\s+/g, " ").trim().slice(0, NOTE_PREVIEW_CHARS), author: who(r), by_ai: r.by_ai, updated_at: r.updated_at })) };
+    },
+    async get(id) {
+      if (!(await member())) return null;
+      const { data, error } = await db.from("project_notes").select(COLUMNS).eq("project_id", projectId).eq("id", id).maybeSingle();
+      if (error) console.error(`[run] chat ${chatId}: read_note failed:`, error.message);
+      const r = data as unknown as NoteRowDb | null;
+      return r ? { id: r.id, title: r.title, body: r.body, author: who(r), by_ai: r.by_ai, updated_at: r.updated_at } : null;
+    },
+    async create(title, body) {
+      const { error } = await db.rpc("app_note_create", { p_user: userId, p_project: projectId, p_title: title, p_body: body, p_ai: true });
+      return error ? failure("take_note", error) : { ok: true };
+    },
+    async update(id, title, body) {
+      // The note must be this project's: the database function only checks the asker belongs to the note's own project.
+      const { data } = await db.from("project_notes").select("id").eq("project_id", projectId).eq("id", id).maybeSingle();
+      if (!data) return { ok: false, code: "not_found" };
+      const { error } = await db.rpc("app_note_update", { p_user: userId, p_note: id, p_title: title, p_body: body });
+      return error ? failure("edit_note", error) : { ok: true };
+    },
+  };
+}
+
 /** After a restart: put interrupted work back in line and resume every chat that has waiting messages. */
 export async function recoverRuns(): Promise<void> {
   const { data, error } = await admin.rpc("app_recover_stale_runs");
@@ -270,11 +319,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       const { data: chatRow } = await db.from("chats").select("project_id").eq("id", chatId).maybeSingle();
       const projectId = (chatRow?.project_id as string | null | undefined) ?? null;
       if (projectId) {
-        noting = noteTools(async (title, body) => {
-          const { error } = await db.rpc("app_note_create", { p_user: authorId, p_project: projectId, p_title: title, p_body: body, p_ai: true });
-          if (error) console.error(`[run] chat ${chatId}: take_note failed:`, error.message);
-          return error ? { ok: false, code: error.message.trim() } : { ok: true };
-        });
+        noting = noteTools(notesFor(db, chatId, projectId, authorId));
       }
       const access = projectId ? await folderAccess(authorId, projectId) : null;
       if (projectId && access?.ok) {

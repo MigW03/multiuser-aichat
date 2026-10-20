@@ -1,6 +1,8 @@
 import { canManagePeople, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
 import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { APP_NAME } from "../config.ts";
 import { notifyChanged, useApp } from "../data.tsx";
@@ -140,21 +142,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
               </div>
             ) : (
               <ul className="rows">
-                {projects.map((p) => (
-                  <li key={p.id}>
-                    <button type="button" className="row-item" onClick={() => go({ name: "project", projectId: p.id, chatId: null })}>
-                      <ProjectTile name={p.name} size={28} />
-                      <span className="grow">
-                        <span className="row-title truncate block">{p.name}</span>
-                        <span className="small muted">
-                          {p.member_count} {p.member_count === 1 ? "person" : "people"}
-                        </span>
-                      </span>
-                      <UnreadBadge people={p.unread_people} ai={p.unread_ai} />
-                      <ChevronRight size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden />
-                    </button>
-                  </li>
-                ))}
+                <SortableProjects projects={projects} onOpen={(p) => go({ name: "project", projectId: p.id, chatId: null })} />
                 <li>
                   <button type="button" className="row-item subtle" onClick={() => setDialog("join")}>
                     <Link2 size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Join with a link
@@ -241,6 +229,99 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
       )}
       {dialog === "delete-project" && project && <DeleteProjectDialog project={project} onClose={() => setDialog(null)} />}
     </aside>
+  );
+}
+
+/** How long a press must be held before a project row lifts. A quick tap still opens the project; a quick swipe still scrolls. */
+const HOLD_MS = 400;
+
+/**
+ * The projects list. Press and hold a row, then drag it to where it should go. Works with a mouse and with touch.
+ * The new order shows at once and is saved for the signed-in person only; if saving fails the list goes back.
+ */
+function SortableProjects({ projects, onOpen }: { projects: ProjectSummary[]; onOpen: (p: ProjectSummary) => void }) {
+  // The order while a save is in flight (or just finished); null = whatever the server list says.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const saving = useRef(0);
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { delay: HOLD_MS, tolerance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: HOLD_MS, tolerance: 8 } }),
+  );
+
+  // A fresh list from the server replaces the local order, unless a save is still running.
+  useEffect(() => {
+    if (saving.current === 0) setOrder(null);
+  }, [projects]);
+
+  const shown = useMemo(() => {
+    if (!order) return projects;
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    const known = order.flatMap((id) => byId.get(id) ?? []);
+    // Anything that arrived meanwhile (a project just joined) goes first, like on the server.
+    return [...projects.filter((p) => !order.includes(p.id)), ...known];
+  }, [projects, order]);
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const ids = shown.map((p) => p.id);
+    const next = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
+    setOrder(next);
+    saving.current++;
+    api
+      .reorderProjects(next)
+      .catch(() => setOrder(null))
+      .finally(() => {
+        saving.current--;
+        notifyChanged();
+      });
+  };
+
+  if (shown.length < 2) {
+    return <>{shown.map((p) => <ProjectRow key={p.id} project={p} onOpen={onOpen} />)}</>;
+  }
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={shown.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+        {shown.map((p) => (
+          <SortableProject key={p.id} project={p} onOpen={onOpen} />
+        ))}
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableProject({ project, onOpen }: { project: ProjectSummary; onOpen: (p: ProjectSummary) => void }) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: project.id });
+  // Rows only move up and down.
+  const style = { transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined, transition };
+  return (
+    <li ref={setNodeRef} style={style} className={`sortable-row${isDragging ? " dragging" : ""}`} {...listeners}>
+      <ProjectRowButton project={project} onOpen={onOpen} />
+    </li>
+  );
+}
+
+function ProjectRow({ project, onOpen }: { project: ProjectSummary; onOpen: (p: ProjectSummary) => void }) {
+  return (
+    <li>
+      <ProjectRowButton project={project} onOpen={onOpen} />
+    </li>
+  );
+}
+
+function ProjectRowButton({ project: p, onOpen }: { project: ProjectSummary; onOpen: (p: ProjectSummary) => void }) {
+  return (
+    <button type="button" className="row-item" onClick={() => onOpen(p)}>
+      <ProjectTile name={p.name} size={28} />
+      <span className="grow">
+        <span className="row-title truncate block">{p.name}</span>
+        <span className="small muted">
+          {p.member_count} {p.member_count === 1 ? "person" : "people"}
+        </span>
+      </span>
+      <UnreadBadge people={p.unread_people} ai={p.unread_ai} />
+      <ChevronRight size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden />
+    </button>
   );
 }
 

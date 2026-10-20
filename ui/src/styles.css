@@ -312,6 +312,9 @@ h1, h2, h3, p { margin: 0; }
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .row-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 9px; background: none; text-align: left; }
 .row-item:hover { background: var(--hover-row); }
+/* Project rows lift when held and dragged. */
+.sortable-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.sortable-row.dragging { position: relative; z-index: 2; border-radius: 9px; background: var(--card); box-shadow: 0 6px 18px rgb(0 0 0 / 0.22); }
 .row-item.subtle { min-height: 34px; color: var(--muted-fg); font: var(--text-row); }
 .row-title { font: var(--text-row); }
 .row-title.strong { font-weight: 650; }

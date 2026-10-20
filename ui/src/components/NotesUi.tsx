@@ -10,7 +10,7 @@ import { AiAvatar, Avatar, Button, ErrorLine, ICON_SM, IconButton, Menu, Spinner
 
 // Notes sit under the files card in the right column, as the approved boards draw them ("Hi-fi · light", "Notes states"):
 // short notes shared with everyone in the project. Anyone in the project can add and edit; the note's author, the host and
-// admins can delete. A note the AI wrote (someone said "take a note", or Save as note under an answer) shows the AI's
+// admins can delete. Clicking a note opens it to READ (the whole text, nothing editable); Edit is a separate step. A note the AI wrote (someone said "take a note", or Save as note under an answer) shows the AI's
 // avatar when the AI wrote it, and the person's avatar otherwise ("AI note options", option A). The list is live.
 
 type NoteRow = ProjectNote & { author_name: string };
@@ -43,16 +43,20 @@ export function NotesCard({ project }: { project: ProjectSummary }) {
   const { me } = useApp();
   const notes = useProjectNotes(project.id);
   const [filter, setFilter] = useState<Filter>("all");
+  /** The note opened for reading. Reading is the default when a note is clicked; editing is a separate step. */
+  const [open, setOpen] = useState<string | null>(null);
   /** The note being edited in place, or "new" for the one being added. */
   const [editing, setEditing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<NoteRow | null>(null);
   const manager = project.my_role === "host" || project.my_role === "admin";
 
   const all = notes.data;
-  // Someone else deleted the note being edited: close the editor.
+  // Someone else deleted the note being read or edited: close it.
   useEffect(() => {
-    if (all && editing && editing !== "new" && !all.some((n) => n.id === editing)) setEditing(null);
-  }, [all, editing]);
+    if (!all) return;
+    if (editing && editing !== "new" && !all.some((n) => n.id === editing)) setEditing(null);
+    if (open && !all.some((n) => n.id === open)) setOpen(null);
+  }, [all, editing, open]);
 
   const shown = useMemo(() => (all ?? []).filter((n) => (filter === "all" ? true : filter === "ai" ? n.by_ai : !n.by_ai)), [all, filter]);
 
@@ -87,9 +91,29 @@ export function NotesCard({ project }: { project: ProjectSummary }) {
             {all.length > 0 && shown.length === 0 && <p className="notes-empty small muted">Nothing here yet.</p>}
             {shown.map((n) =>
               editing === n.id ? (
-                <NoteEditor key={n.id} projectId={project.id} note={n} onDone={() => setEditing(null)} />
+                <NoteEditor
+                  key={n.id}
+                  projectId={project.id}
+                  note={n}
+                  onDone={() => {
+                    setEditing(null);
+                    setOpen(n.id);
+                  }}
+                />
+              ) : open === n.id ? (
+                <NoteReader key={n.id} note={n} onClose={() => setOpen(null)} onEdit={() => setEditing(n.id)} />
               ) : (
-                <NoteRowView key={n.id} note={n} canDelete={n.created_by === me.id || manager} onOpen={() => setEditing(n.id)} onDelete={() => setDeleting(n)} />
+                <NoteRowView
+                  key={n.id}
+                  note={n}
+                  canDelete={n.created_by === me.id || manager}
+                  onOpen={() => setOpen(n.id)}
+                  onEdit={() => {
+                    setOpen(null);
+                    setEditing(n.id);
+                  }}
+                  onDelete={() => setDeleting(n)}
+                />
               ),
             )}
           </>
@@ -113,7 +137,7 @@ export function NotesCard({ project }: { project: ProjectSummary }) {
   );
 }
 
-function NoteRowView({ note, canDelete, onOpen, onDelete }: { note: NoteRow; canDelete: boolean; onOpen: () => void; onDelete: () => void }) {
+function NoteRowView({ note, canDelete, onOpen, onEdit, onDelete }: { note: NoteRow; canDelete: boolean; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
     <div className={`note-row ${note.by_ai ? "ai" : ""}`}>
       <button type="button" className="note-open" onClick={onOpen} aria-label={`Open note: ${note.title}`}>
@@ -129,7 +153,7 @@ function NoteRowView({ note, canDelete, onOpen, onDelete }: { note: NoteRow; can
           label="Note options"
           align="end"
           items={[
-            { label: "Edit", icon: <Pencil size={ICON_SM} strokeWidth={STROKE} />, onSelect: onOpen },
+            { label: "Edit", icon: <Pencil size={ICON_SM} strokeWidth={STROKE} />, onSelect: onEdit },
             ...(canDelete ? [{ label: "Delete", danger: true, icon: <Trash2 size={ICON_SM} strokeWidth={STROKE} />, onSelect: onDelete }] : []),
           ]}
           trigger={({ toggle, open }) => (
@@ -140,6 +164,31 @@ function NoteRowView({ note, canDelete, onOpen, onDelete }: { note: NoteRow; can
         />
       </span>
     </div>
+  );
+}
+
+/** A note opened to read: the whole text as plain text, who wrote it and when. Nothing is editable until Edit is chosen. */
+function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => void; onEdit: () => void }) {
+  return (
+    <article className={`note-reader ${note.by_ai ? "ai" : ""}`} aria-label={note.title} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <header className="note-reader-head">
+        <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} size={22} /> : null}</span>
+        <h3 className="note-reader-title">{note.title}</h3>
+      </header>
+      {note.body ? <div className="note-reader-body">{note.body}</div> : <p className="small muted">No text.</p>}
+      <div className="note-edit-actions">
+        <span className="small muted grow truncate">
+          {note.by_ai ? "Claude for " : ""}
+          {note.author_name} · {listTime(note.updated_at)}
+        </span>
+        <Button size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button size="sm" variant="primary" onClick={onEdit} autoFocus>
+          <Pencil size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Edit
+        </Button>
+      </div>
+    </article>
   );
 }
 

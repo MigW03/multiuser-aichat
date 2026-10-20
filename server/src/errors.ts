@@ -8,6 +8,7 @@ const KNOWN: Record<string, [ContentfulStatusCode, string]> = {
   invalid_name: [400, "That name isn't valid."],
   invalid_email: [400, "That email address doesn't look right."],
   invalid_role: [400, "That role isn't valid."],
+  notes_full: [409, "This project has 200 notes already. Delete one first."],
   invalid_scope: [400, "Invalid request."],
   already_member: [409, "That person is already in here."],
   project_full: [409, "This project is full. A project holds up to 10 people, pending invites included."],

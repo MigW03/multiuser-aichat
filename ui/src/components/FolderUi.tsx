@@ -6,10 +6,11 @@ import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectShares, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
+import { NotesCard } from "./NotesUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared files live in the right column of a project's chats, as the approved hi-fi boards draw it
-// ("Hi-fi · light": a 320 px column, the files card on top, Notes under it later). The chat header's right-panel button
+// ("Hi-fi · light": a 320 px column, the files card on top, the notes card under it). The chat header's right-panel button
 // shows and hides the column. Every member can browse the files (read only; AI changes are proposals their owner
 // approves, see Changes.tsx). Several people share here, each from their own computer: every item has a presence dot for
 // its owner's app, the host and admins share directly, a member's request waits for the host or an admin, and the owner
@@ -43,11 +44,12 @@ export function RightPanelToggle() {
   );
 }
 
-/** The right column of a project's chats. Notes will sit under the files card. */
+/** The right column of a project's chats: the files card on top, the notes card under it. */
 export function RightColumn({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
   return (
     <div className="right-column">
       <FolderCard project={project} onClose={onClose} />
+      <NotesCard project={project} />
     </div>
   );
 }

@@ -462,6 +462,20 @@ export type ProjectShare = { id: string; project_id: string; owner_id: string; n
 /** One row per person who shares in a project: whether their desktop app is connected, so their items can be read right now. */
 export type ProjectShareHost = { project_id: string; owner_id: string; online: boolean; linked_at: string };
 
+/** A short note shared with everyone in a project. `by_ai`: the AI wrote it for `created_by`, who asked. */
+export type ProjectNote = {
+  id: string;
+  project_id: string;
+  title: string;
+  body: string;
+  created_by: string | null;
+  by_ai: boolean;
+  created_at: string;
+  updated_at: string;
+  updated_by: string | null;
+};
+export const NOTE_LIMITS = { titleChars: 120, bodyChars: 8000, perProject: 200 } as const;
+
 // ---- Realtime broadcast events on the private channel `chat:<id>`
 
 /** Full text so far of an assistant message that is still streaming (sent by the server). */

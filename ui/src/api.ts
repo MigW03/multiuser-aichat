@@ -86,6 +86,10 @@ export const api = {
   inviteToProject: (projectId: string, email: string, role: AssignableRole) => call<InviteCreated>("POST", `/api/projects/${projectId}/invites`, { email, role }),
   projectInvites: (projectId: string) => call<{ invites: InviteRow[] }>("GET", `/api/projects/${projectId}/invites`),
 
+  addNote: (projectId: string, body: { title: string; body: string }) => call<{ id: string }>("POST", `/api/projects/${projectId}/notes`, body),
+  updateNote: (projectId: string, noteId: string, body: { title: string; body: string }) => call<{ ok: true }>("PATCH", `/api/projects/${projectId}/notes/${noteId}`, body),
+  deleteNote: (projectId: string, noteId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/notes/${noteId}`),
+
   /** The host or an admin answers a member's request to share something. */
   decideShare: (projectId: string, shareId: string, approve: boolean) => call<{ ok: true }>("POST", `/api/projects/${projectId}/shares/${shareId}/decision`, { approve }),
   /** Stops sharing one item: its owner, the host or an admin. */

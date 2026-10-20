@@ -74,7 +74,7 @@ export function NotesCard({ project }: { project: ProjectSummary }) {
       </header>
       {all && all.length > 0 && (
         <div className="notes-filter" role="tablist" aria-label="Filter notes">
-          {([["all", "All"], ["ai", "By Claude"], ["people", "By people"]] as const).map(([id, label]) => (
+          {([["all", "All"], ["ai", "By AI"], ["people", "By people"]] as const).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={filter === id} className={`notes-tab ${filter === id ? "on" : ""}`} onClick={() => setFilter(id)}>
               {label}
             </button>
@@ -178,7 +178,7 @@ function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => v
       {note.body ? <div className="note-reader-body">{note.body}</div> : <p className="small muted">No text.</p>}
       <div className="note-edit-actions">
         <span className="small muted grow truncate">
-          {note.by_ai ? "Claude for " : ""}
+          {note.by_ai ? "AI for " : ""}
           {note.author_name} · {listTime(note.updated_at)}
         </span>
         <Button size="sm" onClick={onClose}>
@@ -243,7 +243,7 @@ function NoteEditor({ projectId, note, onDone }: { projectId: string; note?: Not
       <textarea className="note-edit-body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write a note" maxLength={NOTE_LIMITS.bodyChars} rows={5} aria-label="Note text" />
       {error && <ErrorLine>{error}</ErrorLine>}
       <div className="note-edit-actions">
-        {note && <span className="small muted grow truncate">{note.by_ai ? "Claude · " : ""}{note.author_name}</span>}
+        {note && <span className="small muted grow truncate">{note.by_ai ? "AI for " : ""}{note.author_name}</span>}
         <Button size="sm" onClick={onDone}>
           Cancel
         </Button>

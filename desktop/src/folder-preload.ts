@@ -70,6 +70,25 @@ export const folderApi = {
     ipcRenderer.on("folder:approval-gone", listener);
     return () => void ipcRenderer.removeListener("folder:approval-gone", listener);
   },
+  /**
+   * Commands this person chose to always allow (ticked in the app's own confirmation window: the page cannot add one). The
+   * page can list them and revoke them, and hears when one ran without asking.
+   */
+  allow: {
+    list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke("folder:allow-list", projectId),
+    revoke: (projectId: string, ruleId: string): Promise<boolean> => ipcRenderer.invoke("folder:allow-revoke", projectId, ruleId),
+    revokeAll: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:allow-revoke-all", projectId),
+    onChange: (callback: (projectId: string) => void): (() => void) => {
+      const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
+      ipcRenderer.on("folder:allow-changed", listener);
+      return () => void ipcRenderer.removeListener("folder:allow-changed", listener);
+    },
+    onRan: (callback: (ran: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, ran: unknown) => callback(ran);
+      ipcRenderer.on("folder:auto-ran", listener);
+      return () => void ipcRenderer.removeListener("folder:auto-ran", listener);
+    },
+  },
   onChange: (callback: (projectId: string) => void): (() => void) => {
     const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
     ipcRenderer.on("folder:changed", listener);

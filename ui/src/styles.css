@@ -772,6 +772,11 @@ h1, h2, h3, p { margin: 0; }
 .exec-command { margin: 6px 0 0; max-height: 240px; overflow: auto; user-select: text; }
 .dock-card.expanded .exec-command { max-height: none; flex: 1; min-height: 0; }
 .exec-facts { margin: 4px 0 0; }
+.dock-ran header code { font: var(--text-mono, inherit); }
+.allowed-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; }
+.allowed-list li { display: flex; gap: 12px; align-items: center; padding: 8px 0; }
+.allowed-list li + li { border-top: 1px solid var(--border); }
+.allowed-list code { display: block; }
 
 /* Scripts tab (the Files card): tabs in the card head, one row per package.json script with Run / Stop, and its log. */
 .files-tabs { padding: 0; gap: 2px; }

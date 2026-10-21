@@ -1,7 +1,7 @@
 import { classifyCommand, type ChangePreview } from "@mc/shared";
 import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, Terminal, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { folderBridge, useHostApprovals, type PendingChange } from "../lib/folder.ts";
+import { folderBridge, useAutoRan, useHostApprovals, type AutoRan, type PendingChange } from "../lib/folder.ts";
 import { createPortal } from "react-dom";
 import { Button, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import type { Proposal } from "./useChatRoom.ts";
@@ -234,6 +234,9 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
           ? `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. It runs with your own rights, and nothing limits what it can read or change. Approving opens a second window where you confirm. Nothing runs until you do. Time left: ${left}.`
           : `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing ${c.kind === "git" ? "runs" : "is written"} until you approve. Time left: ${left}.`}
       </p>
+      {c.kind === "exec" && item.canAlwaysAllow && (
+        <p className="small muted">In the next window you can choose to always allow this exact {c.script ? "script" : "command"} in this folder.</p>
+      )}
       <div className="row dock-actions">
         <Button size="sm" variant="primary" busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide(true)}>
           <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {c.kind === "exec" ? "Review and run…" : c.kind === "git" ? "Approve and run" : "Approve and write"}
@@ -248,11 +251,48 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
   return expanded ? createPortal(<div className="dock-backdrop">{card}</div>, document.body) : card;
 }
 
+/** A command that just ran because the owner always allowed it. Shown so it never happens unseen; Revoke takes the permission back. */
+function AutoRanRow({ ran, projectName, dismiss }: { ran: AutoRan; projectName: string; dismiss: () => void }) {
+  const allow = folderBridge()?.allow;
+  const [error, setError] = useState<string | null>(null);
+  async function revoke() {
+    if (!allow || !ran.ruleId) return;
+    try {
+      if (await allow.revoke(ran.projectId, ran.ruleId)) dismiss();
+      else setError("It was already revoked or has expired.");
+    } catch {
+      setError("Could not revoke it.");
+    }
+  }
+  return (
+    <section className="dock-card dock-ran" aria-label="A command ran without asking">
+      <header>
+        <Terminal size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+        <span className="grow">
+          {ran.ok ? "Ran" : "Tried to run"} without asking: <code>{ran.command}</code>
+          <span className="muted"> · {ran.folder || projectName}</span>
+        </span>
+        {ran.ruleId && (
+          <Button size="sm" onClick={() => void revoke()}>
+            Revoke
+          </Button>
+        )}
+        <IconButton label="Dismiss" className="sm" onClick={dismiss}>
+          <X size={ICON_SM} strokeWidth={STROKE} />
+        </IconButton>
+      </header>
+      <p className="small muted">You always allowed this exact command in {projectName}. Revoke makes it ask every time again.</p>
+      {error && <p className="small risky">{error}</p>}
+    </section>
+  );
+}
+
 /** The host's approval panel (desktop app only). Shows every change waiting on this computer, whichever chat it came from. */
 export function ApprovalDock({ projectName }: { projectName: (id: string) => string }) {
   const pending = useHostApprovals();
+  const ran = useAutoRan();
   const [views, setViews] = useState<Record<string, View>>({});
-  if (pending.length === 0) return null;
+  if (pending.length === 0 && ran.rows.length === 0) return null;
   const keyOf = (p: PendingChange) => `${p.projectId}:${p.id}`;
   return (
     <aside className="approval-dock" role="region" aria-label="AI changes waiting for you" aria-live="polite">
@@ -264,6 +304,9 @@ export function ApprovalDock({ projectName }: { projectName: (id: string) => str
           view={views[keyOf(item)] ?? "small"}
           setView={(v) => setViews((cur) => ({ ...cur, [keyOf(item)]: v }))}
         />
+      ))}
+      {ran.rows.map((r) => (
+        <AutoRanRow key={r.id} ran={r} projectName={projectName(r.projectId)} dismiss={() => ran.dismiss(r.id)} />
       ))}
     </aside>
   );

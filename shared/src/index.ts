@@ -557,5 +557,19 @@ export function classifyCommand(command: string): CommandFlag[] {
   return FLAGS.filter((f) => f.re.test(command)).map(({ kind, label }) => ({ kind, label }));
 }
 
+/**
+ * Whether a command is plain enough to be "always allowed": single words made of letters, digits and `_ . / : @ = + , -`,
+ * separated by single spaces. Anything that chains, pipes, redirects, quotes, substitutes or expands (`; & | < > ` $ ( ) " ' * ? ~ # ! % ^ \`,
+ * line breaks), starts with a `NAME=value` prefix or trips one of the warnings above is refused: it asks every time.
+ */
+const PLAIN_COMMAND = /^[A-Za-z0-9_./:@=+,-]+( [A-Za-z0-9_./:@=+,-]+)*$/;
+export const ALWAYS_ALLOW_MAX_CHARS = 200;
+export function alwaysAllowable(command: string): boolean {
+  return command.length <= ALWAYS_ALLOW_MAX_CHARS && PLAIN_COMMAND.test(command) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(command) && classifyCommand(command).length === 0;
+}
+
+/** A command the owner chose to always allow, as the page lists it. Never carries a path. */
+export type AllowedCommand = { id: string; command: string; folder: string; script: boolean; createdAt: number; lastRunAt: number | null; expiresAt: number };
+
 export * from "./mcp-text.ts";
 export * from "./preview-url.ts";

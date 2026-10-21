@@ -13,7 +13,7 @@ import type { Item } from "./folder-items.ts";
 // builds `npm run <name>` (or pnpm, yarn, bun by the lock file). A name that is not in package.json cannot run, and a name
 // is only letters, digits and `: _ . -`, so nothing can be added to the command. Running goes through the same approvals as
 // a command the AI proposes: the request waits in the approval dock, and the app asks once more in a window the page cannot
-// click (folder-ipc.ts). Nothing is remembered: every start asks again.
+// click (folder-ipc.ts). Every start asks again, unless the host ticked "always allow" there (folder-allow.ts).
 //
 // A script is meant to keep running (a dev server), so unlike a command the AI proposes it has no time limit, its output
 // is streamed into a log and several can run at once (up to L.scriptsRunning in a project). It runs with the same trimmed
@@ -72,6 +72,14 @@ async function readAll(dir: string): Promise<[string, string][]> {
   }
   if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) return [];
   return Object.entries(scripts as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string");
+}
+
+/** A script as written in `dir/package.json` ("name: body"), then the `pre` and `post` hooks npm runs around it. Empty when there is no such script. */
+export async function readScriptTexts(dir: string, name: string): Promise<string[]> {
+  const all = await readAll(dir);
+  const main = all.find(([n]) => n === name);
+  if (!main) return [];
+  return [`${name}: ${main[1]}`, ...all.filter(([n]) => n === `pre${name}` || n === `post${name}`).map(([n, b]) => `${n}: ${b}`)];
 }
 
 /** The runnable scripts of `dir/package.json`, in the order they are listed. Empty when there is no readable package.json. */
@@ -138,6 +146,7 @@ export async function stageScript(items: Item[], req: Request, start: (cwd: stri
     id,
     exec: true,
     change,
+    cwd: item.abs,
     run: async () => {
       // What the host read is what runs: if package.json (or the lock file) changed meanwhile, ask again.
       const now = await read();

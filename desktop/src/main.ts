@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parseDeepLink, SCHEME } from "./deeplink.ts";
 import { setupFolderHost } from "./folder-ipc.ts";
 import { setupMcp } from "./mcp-ipc.ts";
+import { setupPreview } from "./preview.ts";
 
 // Production loads the web build from a private app:// origin (not file://, which would give the page
 // access to the whole disk). Development loads the Vite dev server.
@@ -108,6 +109,8 @@ if (!app.requestSingleInstanceLock()) {
       if (originOf(e.senderFrame?.url) !== (DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN)) return;
       if (pref === "light" || pref === "dark" || pref === "system") nativeTheme.themeSource = pref;
     });
+    // A project's own web page, served from this computer, shown in the main panel.
+    setupPreview({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -248,6 +248,18 @@ sections: Remote servers (everywhere) and On this computer (desktop).
 
 Later: compaction, live co-editing (Yjs, Zed's model).
 
+## Preview of a localhost page (built 2026-10-21, desktop app only)
+
+A person developing a web project on their own computer can show it in the main panel, beside the chat or filling the panel. Entry points: the Preview button in the chat header, a localhost address written out in an AI answer (link or button under it), and the address box of the empty state, which lists dev servers found running.
+
+- **Engine:** an Electron `WebContentsView` owned by the main process (`desktop/src/preview.ts`), laid over a placeholder box the page reserves (`ui/src/components/PreviewPanel.tsx` sends its rectangle). Not an iframe: a frame gets third-party cookies, is stopped by `X-Frame-Options`, and gives no load-failed event. Not the `<webview>` tag: Electron advises against it and the app switches it off.
+- **Wall:** its own process with no preload (no `window.desktop`), `sandbox`, no node, its own cookie jar (`persist:preview` session), permissions and downloads refused, popups denied. The app's CSP is unchanged.
+- **Addresses:** `parsePreviewUrl` (`shared/src/preview-url.ts`) accepts only http(s) to `localhost`, `127.0.0.1` or `[::1]`, any port, no user name. The page checks, the main process checks again on open, on navigation and on redirects; an https address outside localhost goes to the person's browser.
+- **Floating view:** it sits above the page's own layers, so the panel hides it (and leaves a JPEG picture of it) while a dialog, menu or notice reaches its rectangle, and follows layout changes frame by frame.
+- **Server not running:** `did-fail-load` with `ERR_CONNECTION_REFUSED` shows "Nothing is running at ..." and retries every 3 seconds.
+- **Web:** none. The server cannot reach a person's localhost, and a page on https may or may not frame it depending on the browser, with no way to see whether it is running. In a browser the button and chips do not show.
+- Nothing about a preview is shared: other members never see it, nothing is uploaded or stored on the server. The last address per project and the panel width stay in the device's local storage.
+
 ## Decisions
 
 - TypeScript everywhere: one language and one CRDT library (Yjs) across server, web and desktop.

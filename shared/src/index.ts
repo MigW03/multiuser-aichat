@@ -538,3 +538,4 @@ export function classifyCommand(command: string): CommandFlag[] {
 }
 
 export * from "./mcp-text.ts";
+export * from "./preview-url.ts";

@@ -33,6 +33,12 @@ const desktop = (globalThis as { desktop?: DesktopBridge }).desktop;
  */
 export const authRedirectUrl = (): string => desktop?.authRedirect ?? `${location.origin}${location.pathname}`;
 
+/** The desktop app opens Google in the system browser; a browser tab just goes there itself. */
+export const isDesktopApp = (): boolean => !!desktop;
+
+/** Google sign-in needs somewhere to come back to. A desktop build the OS can't send links to (a dev run) has none, so it hides the button. */
+export const googleSignInAvailable = (): boolean => !desktop || !!desktop.authRedirect;
+
 /** The address a "copy link" button builds on, followed by #/p/... In the desktop app, VITE_WEB_URL (if set) else its own link. */
 export const shareBaseUrl = (): string => {
   const web = (env.VITE_WEB_URL as string | undefined)?.trim().replace(/\/$/, "");

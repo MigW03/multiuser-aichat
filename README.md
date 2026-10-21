@@ -163,7 +163,15 @@ Authentication:
 - **Providers > Email:** turn on **Confirm email**. Invites are locked to the invited address, and that only means
   something when people have to prove they own it.
 - **URL Configuration:** add the web app's address (for example `http://localhost:5173`) to the redirect URL
-  allow-list, so the links in confirmation and password reset emails come back to the app.
+  allow-list, so the links in confirmation and password reset emails come back to the app. Add `multiuserchat://auth`
+  too, so the desktop app gets sign-in links (email and Google) back.
+- **Providers > Google** (optional: without it the Google button shows an error): create an OAuth client of
+  type "Web application" in Google Cloud Console, with `https://<project>.supabase.co/auth/v1/callback` as its authorized
+  redirect URI. Ask only for `openid email profile`, and publish the consent screen so anyone can sign in. Paste the
+  client ID and secret into the Supabase Google provider and turn it on. Keep **Confirm email** on: a Google account
+  whose email matches an email account is linked to it automatically. Migration `0019` takes the new person's name from
+  Google. The desktop app opens Google in the system browser and comes back through `multiuserchat://auth`; a dev run
+  of the desktop app has no such link, so it hides the Google button.
 
 Migration `0010` makes the chat tables read-only for clients (every change goes through the server) and drops the old
 chat invite links and the per-chat model columns. Existing chats become "Your chats".

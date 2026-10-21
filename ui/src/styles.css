@@ -277,6 +277,9 @@ h1, h2, h3, p { margin: 0; }
 .auth-form { display: flex; flex-direction: column; gap: 16px; }
 .auth-form.center-text { align-items: center; }
 .auth-forgot { margin-top: -6px; }
+.auth-or { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--muted-fg); }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.google-wait { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 38px; font-size: 13.5px; color: var(--muted-fg); }
 .auth-switch { text-align: center; font-size: 13.5px; color: var(--muted-fg); }
 .brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: var(--p); color: var(--p-fg); flex: none; }
 .brand-mark.small { width: 26px; height: 26px; border-radius: 8px; }

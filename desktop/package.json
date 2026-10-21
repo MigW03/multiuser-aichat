@@ -28,11 +28,11 @@
     "tsx": "^4.23.15"
   },
   "version": "0.1.0",
-  "description": "Multiuser Chat desktop app",
+  "description": "Nido desktop app",
   "author": "Miguel Weber",
   "build": {
     "appId": "com.multiuserchat.desktop",
-    "productName": "Multiuser Chat",
+    "productName": "Nido",
     "directories": {
       "output": "release"
     },
@@ -48,7 +48,7 @@
     ],
     "protocols": [
       {
-        "name": "Multiuser Chat",
+        "name": "Nido",
         "schemes": [
           "multiuserchat"
         ]

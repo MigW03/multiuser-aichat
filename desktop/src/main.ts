@@ -41,6 +41,10 @@ function serveWebBuild() {
   });
 }
 
+// The packaged app used to be called "Multiuser Chat" and Electron names the data folder after the app. Keep the old
+// folder so saved shared folders, MCP servers and the signed-in session survive the rename to Nido.
+if (app.isPackaged) app.setPath("userData", join(app.getPath("appData"), "Multiuser Chat"));
+
 // --- deep links ---------------------------------------------------------------------------------------------------
 
 let mainWindow: BrowserWindow | null = null;
@@ -130,7 +134,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
     height: 720,
-    title: "Multiuser Chat",
+    title: "Nido",
     // Same as the app background (--bg), so nothing flashes before the page paints.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#2a2a2e" : "#fafafa",
     webPreferences: {

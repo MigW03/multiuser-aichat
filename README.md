@@ -1,6 +1,6 @@
-# Multiuser Chat
+# Nido
 
-A group chat where everyone shares one AI. Each person brings their own API key and model; the AI sees who said
+Nido is a group chat where everyone shares one AI. Each person brings their own API key and model; the AI sees who said
 what and answers in the shared conversation, live for everyone.
 
 Full TypeScript: one small server and two thin clients (web and desktop) that share the same React UI.
@@ -42,7 +42,7 @@ Build from the repo root (needs `.env.local` for the Supabase values):
 
 | What | Command | Output |
 | --- | --- | --- |
-| Mac disk image | `npm run dist:mac -w desktop` | `desktop/release/Multiuser Chat-<version>-<arch>.dmg` |
+| Mac disk image | `npm run dist:mac -w desktop` | `desktop/release/Nido-<version>-<arch>.dmg` |
 | Windows installer (not tested yet) | `npm run dist:win -w desktop` | `desktop/release/` |
 | Unpacked app for a quick look | `npm run pack -w desktop` | `desktop/release/` |
 
@@ -52,7 +52,7 @@ The web build for the installer goes to `desktop/web-dist`, so `web/dist` (the w
 
 **Not signed yet.** The Mac app is ad-hoc signed only (no Apple Developer ID, no notarization). Opening a downloaded
 copy shows "Apple could not verify..." or "is damaged": right-click the app > Open, or System Settings > Privacy &
-Security > Open Anyway, or run `xattr -dr com.apple.quarantine "/Applications/Multiuser Chat.app"` once. A copy you
+Security > Open Anyway, or run `xattr -dr com.apple.quarantine "/Applications/Nido.app"` once. A copy you
 built yourself opens without that. Windows shows a SmartScreen "unknown publisher" warning the same way.
 
 **Email links.** The app registers `multiuserchat://`. Confirmation and password-reset emails sent from the desktop

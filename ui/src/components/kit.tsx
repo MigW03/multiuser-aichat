@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight, Info, Sparkles } from "lucide-react";
+import { safeAvatarUrl } from "../lib/avatar.ts";
 import {
   createContext,
   useCallback,
@@ -79,8 +80,11 @@ export function initials(name: string) {
 }
 
 /** People are gray; the gray is picked from the id so a person keeps theirs everywhere. */
-export function Avatar({ id, name, size = 28, online, ring }: { id: string; name: string; size?: number; online?: boolean; ring?: boolean }) {
+export function Avatar({ id, name, size = 28, online, ring, src }: { id: string; name: string; size?: number; online?: boolean; ring?: boolean; src?: string | null }) {
   const n = hashIndex(id, 3) + 1;
+  const photo = safeAvatarUrl(src);
+  // A photo that cannot load (offline, link gone) is dropped and the initials underneath stay.
+  const [failed, setFailed] = useState<string | null>(null);
   return (
     <span
       className={`avatar ${ring ? "ring" : ""}`}
@@ -89,6 +93,9 @@ export function Avatar({ id, name, size = 28, online, ring }: { id: string; name
       aria-label={name}
     >
       {initials(name)}
+      {photo && failed !== photo && (
+        <img className="avatar-img" src={photo} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(photo)} />
+      )}
       {online !== undefined && <span className={`presence ${online ? "on" : ""}`} aria-label={online ? "Online" : "Offline"} />}
     </span>
   );

@@ -170,7 +170,8 @@ Authentication:
   redirect URI. Ask only for `openid email profile`, and publish the consent screen so anyone can sign in. Paste the
   client ID and secret into the Supabase Google provider and turn it on. Keep **Confirm email** on: a Google account
   whose email matches an email account is linked to it automatically. Migration `0019` takes the new person's name from
-  Google. The desktop app opens Google in the system browser and comes back through `multiuserchat://auth`; a dev run
+  Google, and `0020` keeps their Google profile picture link (`profiles.avatar_url`, filled by a trigger on `auth.identities`,
+  only links on Google's image host) so it shows as their avatar. Apply `0020` before deploying the app that reads it. The desktop app opens Google in the system browser and comes back through `multiuserchat://auth`; a dev run
   of the desktop app has no such link, so it hides the Google button.
 
 Migration `0010` makes the chat tables read-only for clients (every change goes through the server) and drops the old

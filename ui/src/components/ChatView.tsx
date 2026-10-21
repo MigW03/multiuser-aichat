@@ -43,10 +43,11 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const toast = useToast();
   const room = useChatRoom(chat.id, me.id);
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
-  const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name }]);
+  const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url }]);
   const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [dialog, setDialog] = useState<"rename" | "delete" | "summarize" | null>(null);
   const [extraNames, setExtraNames] = useState<Map<string, string>>(new Map());
+  const [extraAvatars, setExtraAvatars] = useState<Map<string, string | null>>(new Map());
   const asked = useRef(new Set<string>());
 
   const names = useMemo(() => {
@@ -55,6 +56,13 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     map.set(me.id, me.display_name);
     return map;
   }, [extraNames, people, me]);
+
+  const avatars = useMemo(() => {
+    const map = new Map(extraAvatars);
+    for (const p of people) map.set(p.id, p.avatar_url ?? null);
+    map.set(me.id, me.avatar_url);
+    return map;
+  }, [extraAvatars, people, me]);
 
   // Authors who left the project still show under their name.
   useEffect(() => {
@@ -68,9 +76,13 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     missing.forEach((id) => asked.current.add(id));
     void supabase
       .from("profiles")
-      .select("id, display_name")
+      .select("id, display_name, avatar_url")
       .in("id", [...missing])
-      .then(({ data }) => data && setExtraNames((prev) => new Map([...prev, ...data.map((d) => [d.id, d.display_name] as const)])));
+      .then(({ data }) => {
+        if (!data) return;
+        setExtraNames((prev) => new Map([...prev, ...data.map((d) => [d.id, d.display_name] as const)]));
+        setExtraAvatars((prev) => new Map([...prev, ...data.map((d) => [d.id, d.avatar_url as string | null] as const)]));
+      });
   }, [room.messages, names]);
 
   const others = people.filter((p) => p.id !== me.id);
@@ -189,7 +201,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         {shared && !project && (
           <span className="header-people" aria-label="People in this chat">
             {people.slice(0, 5).map((p) => (
-              <Avatar key={p.id} id={p.id} name={p.display_name} size={26} online={(project ? projectOnline : room.online).has(p.id)} ring />
+              <Avatar key={p.id} id={p.id} name={p.display_name} src={p.avatar_url} size={26} online={(project ? projectOnline : room.online).has(p.id)} ring />
             ))}
           </span>
         )}
@@ -220,6 +232,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         proposals={room.proposals}
         meId={me.id}
         names={names}
+        avatars={avatars}
         readSeq={room.readSeq ?? null}
         hasKey={hasKey}
         onReply={replyTo}

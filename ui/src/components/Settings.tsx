@@ -9,7 +9,7 @@ import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
-import { Button, Dialog, ErrorLine, Field, ICON, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
+import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
 
 export type SettingsTab = "account" | "key" | "appearance" | "mcp";
 
@@ -73,6 +73,12 @@ function AccountTab() {
 
   return (
     <div className="col" style={{ gap: 24 }}>
+      {me.avatar_url && (
+        <div className="row" style={{ alignItems: "center", gap: 12 }}>
+          <Avatar id={me.id} name={me.display_name} src={me.avatar_url} size={44} />
+          <span className="small muted">Your Google photo. To change it, change it in your Google account and log in again.</span>
+        </div>
+      )}
       <form className="col" style={{ gap: 16 }} onSubmit={saveName}>
         <Field label="Your name" htmlFor="set-name" hint="This is what other people see." error={nameError}>
           <div className="row">

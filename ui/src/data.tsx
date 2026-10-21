@@ -7,6 +7,7 @@ export type Me = {
   id: string;
   display_name: string;
   email: string;
+  avatar_url: string | null;
   ai_provider: ProviderId | null;
   ai_model: string | null;
   ai_reasoning: Reasoning | null;
@@ -91,31 +92,32 @@ export const fetchChats = (projectId: string | null) =>
     [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.last_message_at.localeCompare(a.last_message_at)),
   );
 
-type MemberRow = { user_id: string; role: ProjectMember["role"]; joined_at: string; profiles: { id: string; display_name: string; email: string } | null };
+type MemberRow = { user_id: string; role: ProjectMember["role"]; joined_at: string; profiles: { id: string; display_name: string; email: string; avatar_url: string | null } | null };
 
 export async function fetchProjectMembers(projectId: string): Promise<ProjectMember[]> {
   const rows = await must<MemberRow[]>(
-    supabase.from("project_members").select("user_id, role, joined_at, profiles(id, display_name, email)").eq("project_id", projectId).order("joined_at") as never,
+    supabase.from("project_members").select("user_id, role, joined_at, profiles(id, display_name, email, avatar_url)").eq("project_id", projectId).order("joined_at") as never,
     "the people in this project",
   );
-  return rows.filter((r) => r.profiles).map((r) => ({ id: r.user_id, display_name: r.profiles!.display_name, email: r.profiles!.email, role: r.role, joined_at: r.joined_at }));
+  return rows.filter((r) => r.profiles).map((r) => ({ id: r.user_id, display_name: r.profiles!.display_name, email: r.profiles!.email, avatar_url: r.profiles!.avatar_url, role: r.role, joined_at: r.joined_at }));
 }
 
 export async function fetchChatPeople(chatId: string): Promise<(Person & { joined_at: string })[]> {
   const rows = await must<{ user_id: string; joined_at: string; profiles: Person | null }[]>(
-    supabase.from("chat_members").select("user_id, joined_at, profiles(id, display_name)").eq("chat_id", chatId).order("joined_at") as never,
+    supabase.from("chat_members").select("user_id, joined_at, profiles(id, display_name, avatar_url)").eq("chat_id", chatId).order("joined_at") as never,
     "the people in this chat",
   );
-  return rows.filter((r) => r.profiles).map((r) => ({ id: r.user_id, display_name: r.profiles!.display_name, joined_at: r.joined_at }));
+  return rows.filter((r) => r.profiles).map((r) => ({ id: r.user_id, display_name: r.profiles!.display_name, avatar_url: r.profiles!.avatar_url ?? null, joined_at: r.joined_at }));
 }
 
 export async function fetchMe(userId: string): Promise<Me> {
-  const { data, error } = await supabase.from("profiles").select("id, display_name, email, ai_provider, ai_model, ai_reasoning").eq("id", userId).single();
+  const { data, error } = await supabase.from("profiles").select("id, display_name, email, avatar_url, ai_provider, ai_model, ai_reasoning").eq("id", userId).single();
   if (error || !data) throw new Error("Could not load your profile.");
   return {
     id: data.id,
     display_name: data.display_name,
     email: data.email,
+    avatar_url: data.avatar_url ?? null,
     ai_provider: isProvider(data.ai_provider) ? data.ai_provider : null,
     ai_model: data.ai_model,
     ai_reasoning: isReasoning(data.ai_reasoning) ? data.ai_reasoning : null,

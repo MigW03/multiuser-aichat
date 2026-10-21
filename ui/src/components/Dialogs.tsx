@@ -461,7 +461,7 @@ export function MembersDialog({
       <ul className="people-list">
         {members.map((m) => (
           <li key={m.id}>
-            <Avatar id={m.id} name={m.display_name} size={32} online={online.has(m.id)} />
+            <Avatar id={m.id} name={m.display_name} src={m.avatar_url} size={32} online={online.has(m.id)} />
             <div className="grow">
               <div className="truncate">
                 <b>{m.display_name}</b>

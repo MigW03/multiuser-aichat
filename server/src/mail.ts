@@ -7,8 +7,8 @@ export async function sendInviteEmail(opts: { to: string; inviter: string; what:
   if (!env.resendApiKey || !env.mailFrom) return false;
   const inviter = opts.inviter.replace(/[\r\n]+/g, " ").slice(0, 80);
   const what = opts.what.replace(/[\r\n]+/g, " ").slice(0, 100);
-  const text = `${inviter} invited you to ${what} on Multiuser Chat.\n\nOpen this link to join (it only works with this email address and expires in ${opts.days} days):\n${opts.link}\n`;
-  const html = `<p>${escapeHtml(inviter)} invited you to <b>${escapeHtml(what)}</b> on Multiuser Chat.</p><p><a href="${escapeHtml(opts.link)}">Join</a></p><p style="color:#6b6f76">The link only works with this email address and expires in ${opts.days} days.</p>`;
+  const text = `${inviter} invited you to ${what} on Nido.\n\nOpen this link to join (it only works with this email address and expires in ${opts.days} days):\n${opts.link}\n`;
+  const html = `<p>${escapeHtml(inviter)} invited you to <b>${escapeHtml(what)}</b> on Nido.</p><p><a href="${escapeHtml(opts.link)}">Join</a></p><p style="color:#6b6f76">The link only works with this email address and expires in ${opts.days} days.</p>`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

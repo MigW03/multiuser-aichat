@@ -47,4 +47,4 @@ export const shareBaseUrl = (): string => {
 };
 
 /** Shown in the app. The product name is not final. */
-export const APP_NAME = "Multiuser Chat";
+export const APP_NAME = "Nido";

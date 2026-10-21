@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
+import { imagePathsOfChats, removeImageFiles } from "../images.ts";
 import { admin } from "../supabase.ts";
 import { createInviteFor, listInvitesFor } from "./invites.ts";
 
@@ -39,8 +40,13 @@ projects.patch("/:id", async (c) => {
 
 projects.delete("/:id", async (c) => {
   if (!uuid.safeParse(c.req.param("id")).success) return c.json({ error: "Invalid request" }, 400);
+  // The pictures' files go from storage once the database accepts the delete (it checks that the caller is the host).
+  const { data: chatRows } = await admin.from("chats").select("id").eq("project_id", c.req.param("id"));
+  const paths = await imagePathsOfChats((chatRows ?? []).map((r) => r.id as string));
   const { error } = await admin.rpc("app_delete_project", { p_user: c.get("userId"), p_project: c.req.param("id") });
-  return error ? dbError(c, error) : c.json({ ok: true });
+  if (error) return dbError(c, error);
+  void removeImageFiles(paths);
+  return c.json({ ok: true });
 });
 
 // Which members have saved an AI key (not which key). Shown in the members list.

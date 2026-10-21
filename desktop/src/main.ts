@@ -16,7 +16,8 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  // Pictures in chats: the local copy of one being sent (blob:) and the signed addresses of Supabase storage.
+  "img-src 'self' data: blob: https://*.supabase.co",
   // Supabase (REST + realtime) and the chat server. The local server is for development builds only.
   `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.fly.dev${app.isPackaged ? "" : " http://localhost:8787"}`,
   "object-src 'none'",

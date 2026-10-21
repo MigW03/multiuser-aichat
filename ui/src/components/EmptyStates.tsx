@@ -4,6 +4,7 @@ import { RightPanelToggle } from "./FolderUi.tsx";
 import { useRef } from "react";
 import { api } from "../api.ts";
 import { notifyChanged, useApp } from "../data.tsx";
+import { uploadPictures } from "../lib/images.ts";
 import { greeting } from "../lib/time.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
@@ -98,9 +99,11 @@ export function Landing({
       // If the chat was created but the message failed, the next try reuses that chat.
       const chatId = created.current ?? (await api.createChat(project?.id ?? null)).id;
       created.current = chatId;
+      await uploadPictures(chatId, out.pictures);
       await api.sendMessage(chatId, {
         id: crypto.randomUUID(),
         content: out.content,
+        ...(out.pictures.length ? { images: out.pictures.map((p) => p.id) } : {}),
         ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
         mentions: out.mentions,
       });

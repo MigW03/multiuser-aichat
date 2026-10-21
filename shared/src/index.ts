@@ -72,6 +72,25 @@ export const LIMITS = {
   modelIdPattern: /^[A-Za-z0-9._:/@-]{1,200}$/,
 } as const;
 
+/** Pictures attached to a message. The same numbers are enforced by the browser, the server and the storage bucket. */
+export const IMAGE_LIMITS = {
+  perMessage: 4,
+  /** Bytes per picture, after the browser has shrunk it. Under every provider's own limit. */
+  bytes: 5 * 1024 * 1024,
+  /** The browser shrinks bigger pictures to this many pixels on the long side. */
+  maxSide: 2000,
+  types: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+  /** The AI sees this many of the newest pictures of a chat on each turn; older ones are left out to keep long chats cheap. */
+  sentToAi: 4,
+  /** Pictures a person can have uploaded without sending them yet. */
+  waitingPerPerson: 12,
+} as const;
+export type ImageType = (typeof IMAGE_LIMITS.types)[number];
+/** What a message with pictures and no text is saved as, so lists and the AI have something to show. Clients hide it. */
+export const IMAGE_ONLY_TEXT = "(image)";
+/** Signed addresses for pictures: id -> address, valid for a while. Ids the person can't see are left out. */
+export type ImageUrlsResponse = { urls: Record<string, string> };
+
 export type Role = "host" | "admin" | "member";
 export const ROLE_LABELS: Record<Role, string> = { host: "Host", admin: "Admin", member: "Member" };
 /** Roles an invite or a role change can assign. The host is whoever created the project. */
@@ -141,11 +160,13 @@ export type ChatMessage = {
   key_user_id: string | null;
   run_id: string | null;
   meta: MessageMeta;
+  /** Ids of the pictures attached to this message (see IMAGE_LIMITS). */
+  images: string[];
 };
 
 /** Columns the clients select. Keep in step with ChatMessage. */
 export const MESSAGE_COLUMNS =
-  "id, chat_id, author_id, role, kind, content, status, seq, created_at, provider, model, reasoning, reply_to, mentions, skip_reason, for_user_id, key_user_id, run_id, meta";
+  "id, chat_id, author_id, role, kind, content, status, seq, created_at, provider, model, reasoning, reply_to, mentions, skip_reason, for_user_id, key_user_id, run_id, meta, images";
 
 export type ChatSummary = {
   id: string;
@@ -179,7 +200,14 @@ export type Person = { id: string; display_name: string };
 export type ProjectMember = Person & { email: string; role: Role; joined_at: string };
 export type ModelChoice = { provider: ProviderId; model: string; reasoning: Reasoning };
 /** `reasoning` lists the thinking levels the model accepts, lowest first. Empty: it does not think (or cannot be told how). */
-export type ModelInfo = { id: string; name: string; pricing?: { input: number; output: number }; reasoning?: Reasoning[] };
+export type ModelInfo = {
+  id: string;
+  name: string;
+  pricing?: { input: number; output: number };
+  reasoning?: Reasoning[];
+  /** Whether the model can look at pictures. Missing: the provider does not say, so pictures are allowed and it may refuse. */
+  vision?: boolean;
+};
 
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */
 export function modelLabel(model: string | null | undefined): string {
@@ -213,6 +241,8 @@ export type SendMessageRequest = {
   replyTo?: string;
   /** With replyTo: the part of that answer the reply is about. */
   quote?: string;
+  /** Pictures already uploaded to this chat by the sender (up to IMAGE_LIMITS.perMessage). With pictures the text may be empty. */
+  images?: string[];
 };
 export type SendMessageResponse = { id: string; skipped: SkipReason | null };
 export type SummarizeRequest = { id: string; scope: SummaryScope; provider: ProviderId; model: string; reasoning?: Reasoning };

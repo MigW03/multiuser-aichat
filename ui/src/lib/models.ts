@@ -44,3 +44,26 @@ export function useModelReasoning(choice: ModelChoice | null): { levels: Reasoni
   if (!choice) return { levels: null, effective: null };
   return { levels: known, effective: known ? fitReasoning(known, choice.reasoning) : choice.reasoning };
 }
+
+/**
+ * Whether the chosen model can look at pictures: true or false when the provider says, null while that is unknown (still
+ * loading, or the provider does not say). Unknown counts as allowed; the provider may still refuse.
+ */
+export function useModelVision(choice: ModelChoice | null): boolean | null {
+  const [vision, setVision] = useState<{ key: string; vision: boolean | null } | null>(null);
+  const key = choice ? `${choice.provider}:${choice.model}` : null;
+  useEffect(() => {
+    if (!choice || !key) return;
+    let live = true;
+    loadModels(choice.provider).then(
+      (models) => live && setVision({ key, vision: models.find((m) => m.id === choice.model)?.vision ?? null }),
+      () => live && setVision({ key, vision: null }),
+    );
+    return () => {
+      live = false;
+    };
+    // the model, not the whole choice: changing only the level must not refetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return vision && vision.key === key ? vision.vision : null;
+}

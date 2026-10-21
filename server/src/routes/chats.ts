@@ -1,9 +1,10 @@
-import { DEFAULT_CHAT_TITLE, isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { nameChat } from "../chat-title.ts";
 import { dbError } from "../errors.ts";
+import { claimImages, imagePathsOfChats, releaseImages, removeImageFiles, signedUrls, storeImage } from "../images.ts";
 import { listKeyHints } from "../keys.ts";
 import { processChatQueue, stopRun } from "../run-queue.ts";
 import { admin } from "../supabase.ts";
@@ -23,16 +24,20 @@ const modelBody = {
   model: z.string().regex(LIMITS.modelIdPattern),
   reasoning: z.enum(REASONING_LEVELS).optional(),
 };
-const sendBody = z.object({
-  id: z.uuid(), // chosen by the client so its optimistic copy matches the saved row
-  content: z.string().trim().min(1).max(LIMITS.messageChars),
-  provider: modelBody.provider.optional(),
-  model: modelBody.model.optional(),
-  reasoning: modelBody.reasoning,
-  mentions: z.array(z.uuid()).max(10).optional(),
-  replyTo: z.uuid().optional(),
-  quote: z.string().trim().min(1).max(LIMITS.quoteChars).optional(),
-});
+const sendBody = z
+  .object({
+    id: z.uuid(), // chosen by the client so its optimistic copy matches the saved row
+    content: z.string().trim().max(LIMITS.messageChars),
+    provider: modelBody.provider.optional(),
+    model: modelBody.model.optional(),
+    reasoning: modelBody.reasoning,
+    mentions: z.array(z.uuid()).max(10).optional(),
+    replyTo: z.uuid().optional(),
+    quote: z.string().trim().min(1).max(LIMITS.quoteChars).optional(),
+    images: z.array(z.uuid()).max(IMAGE_LIMITS.perMessage).optional(),
+  })
+  .refine((b) => b.content.length > 0 || (b.images?.length ?? 0) > 0);
+const imageUrlsBody = z.object({ ids: z.array(z.uuid()).min(1).max(100) });
 // For "unread" the client passes the read marker it had when the chat was opened (the live marker moves as it reads).
 const summarizeBody = z.object({ id: z.uuid(), scope: z.enum(["unread", "day", "all"]), fromSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1).optional(), ...modelBody });
 
@@ -69,8 +74,12 @@ chats.patch("/:id", async (c) => {
 
 chats.delete("/:id", async (c) => {
   if (!uuid.safeParse(c.req.param("id")).success) return c.json({ error: "Invalid request" }, 400);
+  // The pictures' files are removed from storage once the database accepts the delete (it checks who may delete).
+  const paths = await imagePathsOfChats([c.req.param("id")]);
   const { error } = await admin.rpc("app_delete_chat", { p_user: c.get("userId"), p_chat: c.req.param("id") });
-  return error ? dbError(c, error) : c.json({ ok: true });
+  if (error) return dbError(c, error);
+  void removeImageFiles(paths);
+  return c.json({ ok: true });
 });
 
 chats.post("/:id/invites", rateLimit("invite", 20, 60 * 60_000), async (c) => {
@@ -89,7 +98,10 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   const parsed = sendBody.safeParse(await c.req.json().catch(() => null));
   if (!uuid.safeParse(chatId).success || !parsed.success) return c.json({ error: "Invalid message" }, 400);
   const userId = c.get("userId");
-  const { id, content, provider, model, reasoning, replyTo, quote } = parsed.data;
+  const { id, provider, model, reasoning, replyTo, quote } = parsed.data;
+  const imageIds = [...new Set(parsed.data.images ?? [])];
+  // A message with pictures and no words is saved with a short placeholder so lists and the AI have something to show.
+  const content = parsed.data.content || IMAGE_ONLY_TEXT;
 
   if (!(await canAccess(userId, chatId))) return c.json({ error: NOT_FOUND }, 404);
   const { data: chat } = await admin.from("chats").select("id, title, project_id").eq("id", chatId).single();
@@ -114,6 +126,9 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   if (mentions.length > 0) skip = "mention";
   else if (!provider || !model || !(await listKeyHints(userId)).some((k) => k.provider === provider)) skip = "no_key";
 
+  // The sender's own uploaded, unsent pictures of this chat are attached to this message.
+  if (!(await claimImages(userId, chatId, id, imageIds))) return c.json({ error: "One of the pictures is no longer available. Add it again." }, 400);
+
   const { error } = await admin.from("messages").insert({
     id,
     chat_id: chatId,
@@ -129,17 +144,44 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
     reply_to: replyTo ?? null,
     meta,
     skip_reason: skip,
+    images: imageIds,
   });
-  if (error) return c.json({ error: "Could not send the message" }, 400);
+  if (error) {
+    await releaseImages(id);
+    return c.json({ error: "Could not send the message" }, 400);
+  }
 
   // A new chat is named after its first message: by the AI with the sender's key, or by its first words when that can't be done.
   if (chat.title === DEFAULT_CHAT_TITLE) {
-    const titleModel = skip || !provider || !model ? null : { provider, model };
-    void nameChat(chatId, userId, content, titleModel).catch((e) => console.error(`[title] chat ${chatId}:`, e));
+    // Words name the chat; pictures alone give the AI nothing to name it from.
+    const titleModel = skip || !provider || !model || content === IMAGE_ONLY_TEXT ? null : { provider, model };
+    void nameChat(chatId, userId, content === IMAGE_ONLY_TEXT ? "Image" : content, titleModel).catch((e) => console.error(`[title] chat ${chatId}:`, e));
   }
 
   if (!skip) void processChatQueue(chatId).catch((e) => console.error(`[run] chat ${chatId}:`, e));
   return c.json({ id, skipped: skip } satisfies SendMessageResponse);
+});
+
+// Uploads one picture to a chat (the raw file as the body). The client picks the id so the message that carries it can show
+// the picture before the upload is done. It stays unsent until a message claims it.
+chats.post("/:id/images", rateLimit("image-upload", 30, 60_000), async (c) => {
+  const chatId = c.req.param("id");
+  const id = c.req.query("id");
+  if (!uuid.safeParse(chatId).success || !id || !uuid.safeParse(id).success) return c.json({ error: "Invalid request" }, 400);
+  const userId = c.get("userId");
+  if (!(await canAccess(userId, chatId))) return c.json({ error: NOT_FOUND }, 404);
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  const stored = await storeImage(userId, chatId, id, bytes);
+  return stored.ok ? c.json({ id: stored.id }) : c.json({ error: stored.error }, stored.status);
+});
+
+// Addresses for showing pictures of a chat. Only members get them, and ids from other chats are left out.
+chats.post("/:id/images/urls", async (c) => {
+  const chatId = c.req.param("id");
+  const parsed = imageUrlsBody.safeParse(await c.req.json().catch(() => null));
+  if (!uuid.safeParse(chatId).success || !parsed.success) return c.json({ error: "Invalid request" }, 400);
+  if (!(await canAccess(c.get("userId"), chatId))) return c.json({ error: NOT_FOUND }, 404);
+  return c.json({ urls: await signedUrls(chatId, parsed.data.ids) } satisfies ImageUrlsResponse);
 });
 
 // Asks for a recap. It runs in the same queue as questions, with the requester's key, and posts for everyone.

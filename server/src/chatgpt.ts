@@ -442,6 +442,7 @@ type RemoteModel = {
   visibility?: unknown;
   priority?: unknown;
   supported_reasoning_levels?: unknown;
+  input_modalities?: unknown;
 };
 
 function levelsOf(raw: unknown): Reasoning[] | undefined {
@@ -474,5 +475,5 @@ export async function listChatGptModels(accessToken: string): Promise<ModelInfo[
     .filter((m): m is RemoteModel & { slug: string } => !!m && typeof m === "object" && typeof m.slug === "string" && /^[\w./:@+-]{1,100}$/.test(m.slug))
     .filter((m) => !["hide", "hidden"].includes(String(m.visibility ?? "").toLowerCase()))
     .sort((a, b) => (typeof a.priority === "number" ? a.priority : 1e4) - (typeof b.priority === "number" ? b.priority : 1e4))
-    .map((m) => ({ id: m.slug, name: typeof m.display_name === "string" && m.display_name.trim() ? m.display_name.trim().slice(0, 80) : m.slug, reasoning: levelsOf(m.supported_reasoning_levels) }));
+    .map((m) => ({ id: m.slug, name: typeof m.display_name === "string" && m.display_name.trim() ? m.display_name.trim().slice(0, 80) : m.slug, reasoning: levelsOf(m.supported_reasoning_levels), vision: Array.isArray(m.input_modalities) ? m.input_modalities.includes("image") : undefined }));
 }

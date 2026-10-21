@@ -20,7 +20,7 @@ import { previewBridge } from "../lib/preview.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { loadModels } from "../lib/models.ts";
 import { navigate, useRoute } from "../lib/router.ts";
-import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
+import { NEW_CHAT_SHORTCUT, PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { supabase } from "../supabase.ts";
 import { ResetPassword } from "./Auth.tsx";
 import { ChatView } from "./ChatView.tsx";
@@ -214,6 +214,27 @@ export function Shell({ userId }: { userId: string }) {
     // setCollapsedPersisted only closes over userId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow, collapsed, userId]);
+
+  // Cmd+N in the desktop app, Cmd+Shift+O everywhere: new chat, also while typing. Not under a dialog or menu, and on a
+  // fresh chat it only puts the cursor in the message box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!NEW_CHAT_SHORTCUT.matches(e) || e.repeat || !me) return;
+      e.preventDefault();
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return;
+      const fresh = route.name === "home" || (route.name === "project" && route.draft && !route.view);
+      if (fresh) {
+        document.querySelector<HTMLTextAreaElement>(".composer-input textarea")?.focus();
+        return;
+      }
+      if (route.name === "homeChat") navigate({ name: "home" });
+      else if (route.name === "project") navigate({ name: "project", projectId: route.projectId, chatId: null, draft: true });
+      else return;
+      if (narrow) setDrawer(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [route, me, narrow]);
 
   const ctx = useMemo<AppContextValue | null>(
     () =>

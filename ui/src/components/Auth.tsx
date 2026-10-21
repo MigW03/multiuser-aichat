@@ -1,9 +1,10 @@
 import { LIMITS } from "@mc/shared";
 import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { navigate } from "../lib/router.ts";
 import { PREF, writePref } from "../lib/prefs.ts";
-import { authRedirectUrl } from "../config.ts";
+import { authErrorMessage, clearAuthError, peekAuthError } from "../lib/authError.ts";
+import { authRedirectUrl, config, googleSignInAvailable, isDesktopApp } from "../config.ts";
 import { supabase } from "../supabase.ts";
 import { Button, ErrorLine, Field, IconButton, ICON, STROKE, TextInput } from "./kit.tsx";
 
@@ -47,6 +48,85 @@ function friendly(message: string): string {
   return message;
 }
 
+const GOOGLE_WAIT_MS = 3 * 60 * 1000;
+
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.5 17.7 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z" />
+      <path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z" />
+      <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z" />
+    </svg>
+  );
+}
+
+/**
+ * Sign in with Google. In a browser the page goes to Google and comes back. In the desktop app the Google page opens in the
+ * system browser and the multiuserchat://auth link brings the person back (the app reloads signed in), so here it waits.
+ * `email` (an invite) is passed as a hint so the account chooser starts on the invited address.
+ */
+function GoogleButton({ label, email, joinToken, onError }: { label: string; email?: string; joinToken?: string; onError: (message: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setWaiting(false), GOOGLE_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [waiting]);
+
+  // Coming back to this page with the browser's back button must not leave the button stuck.
+  useEffect(() => {
+    const show = (e: PageTransitionEvent) => e.persisted && setBusy(false);
+    window.addEventListener("pageshow", show);
+    return () => window.removeEventListener("pageshow", show);
+  }, []);
+
+  async function start() {
+    onError(null);
+    setBusy(true);
+    if (joinToken) writePref(PREF.pendingJoin, joinToken);
+    const inApp = isDesktopApp();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: authRedirectUrl(),
+        skipBrowserRedirect: inApp,
+        queryParams: { prompt: "select_account", ...(email ? { login_hint: email } : {}) },
+      },
+    });
+    // The address comes from Supabase; still only ever hand the system browser our own Supabase address.
+    if (error || (inApp && !data.url?.startsWith(`${config.supabaseUrl.replace(/\/$/, "")}/auth/v1/authorize`))) {
+      setBusy(false);
+      return onError("Google sign-in is not available right now. Use email instead.");
+    }
+    if (inApp) {
+      window.open(data.url, "_blank", "noopener");
+      setBusy(false);
+      setWaiting(true);
+    }
+  }
+
+  if (waiting) {
+    return (
+      <div className="google-wait">
+        <span className="spinner" aria-hidden />
+        <span>Waiting for Google in your browser…</span>
+        <button type="button" className="link-btn small" onClick={() => setWaiting(false)}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  return (
+    <Button size="md" block busy={busy} onClick={() => void start()}>
+      {!busy && <GoogleMark />}
+      {label}
+    </Button>
+  );
+}
+
 export type AuthMode = "login" | "signup";
 
 /**
@@ -71,11 +151,20 @@ export function AuthForm({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Came back from a failed Google sign-in or an expired email link: say so.
+  const [error, setError] = useState<string | null>(() => {
+    const code = peekAuthError();
+    return code ? authErrorMessage(code) : null;
+  });
   const [checkEmail, setCheckEmail] = useState<string | null>(null);
   const signup = mode === "signup";
 
+  useEffect(() => clearAuthError(), []);
+
+  const shownMode = useRef(mode);
   useEffect(() => {
+    if (shownMode.current === mode) return;
+    shownMode.current = mode;
     setError(null);
     setPassword("");
     setConfirm("");
@@ -109,6 +198,19 @@ export function AuthForm({
 
   return (
     <form className="auth-form" onSubmit={submit} noValidate>
+      {googleSignInAvailable() && (
+        <>
+          <GoogleButton
+            label={joinLabel ? `${joinLabel} with Google` : signup ? "Sign up with Google" : "Continue with Google"}
+            email={fixedEmail}
+            joinToken={joinToken}
+            onError={setError}
+          />
+          <div className="auth-or" role="separator">
+            <span>or</span>
+          </div>
+        </>
+      )}
       <Field label={signup ? "Your name" : "Email"} htmlFor="auth-first" hint={undefined}>
         {signup ? (
           <TextInput id="auth-first" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={LIMITS.displayNameChars} placeholder="Name others will see" required />

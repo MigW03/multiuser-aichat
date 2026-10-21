@@ -1,4 +1,4 @@
-import { cleanOutput, FOLDER_LIMITS as L, redactSecrets, type ChangePreview, type ExecResult, type ScriptInfo, type ScriptRun, type ScriptState } from "@mc/shared";
+import { classifyCommand, cleanOutput, FOLDER_LIMITS as L, keepsRunning, redactSecrets, type ChangePreview, type ExecResult, type ScriptInfo, type ScriptRun, type ScriptState } from "@mc/shared";
 import { spawn } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -104,6 +104,28 @@ export async function listScripts(items: Item[]): Promise<ScriptInfo[]> {
     for (const s of list) out.push({ key: item.key, folder: item.name, name: s.name, body: shown(s.body), command: `${manager} run ${s.name}` });
   }
   return out;
+}
+
+/** `npm run dev`, `yarn start`, `pnpm test`: a package manager running one script by name. */
+const PM_SCRIPT = /^\s*(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?([A-Za-z0-9_][A-Za-z0-9:_.-]*)\s*$/;
+
+/**
+ * Why a command the AI proposes is not run from chat, or null when it is fine: it keeps running until someone stops it (a dev
+ * server, a watcher), so it would hold the one command slot for its whole time limit and the host could not see or stop it.
+ * Those start from the Scripts tab. The text is for the AI, who tells the person.
+ */
+export async function longRunningRefusal(items: Item[], command: unknown): Promise<string | null> {
+  if (typeof command !== "string") return null;
+  const name = PM_SCRIPT.exec(command)?.[1];
+  const script = name ? (await listScripts(items)).find((s) => s.name === name) : undefined;
+  const background = classifyCommand(command).some((f) => f.kind === "background"); // nohup, setsid, a trailing &
+  if (!background && !keepsRunning(command) && !(script && keepsRunning(script.body))) return null;
+  const folders = new Set(items.filter((i) => i.kind === "dir").map((i) => i.name));
+  const where = script ? `"${script.name}"${folders.size > 1 ? ` in ${script.folder}` : ""}` : null;
+  const head = "That keeps running until someone stops it, so it is not started from chat. It was not run and no approval was asked. Do not propose it again.";
+  return where
+    ? `${head} It is the ${where} script in package.json. Tell the person who shares the folder to press Run on ${where} in the Scripts tab of the Files card: it stays visible there and they can stop it.`
+    : `${head} Tell the person who shares the folder to start it in their own terminal, or to add it as a script in package.json: scripts show in the Scripts tab of the Files card with Run and Stop buttons.`;
 }
 
 type Request = { id?: unknown; key?: unknown; name?: unknown };

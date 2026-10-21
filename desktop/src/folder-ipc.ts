@@ -7,7 +7,7 @@ import { AllowStore, boundTexts, offerable } from "./folder-allow.ts";
 import { Approvals, type AllowVerdict, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
 import { stageExec } from "./folder-exec.ts";
-import { listScripts, ScriptRunner, stageScript } from "./folder-scripts.ts";
+import { listScripts, longRunningRefusal, ScriptRunner, stageScript } from "./folder-scripts.ts";
 import { stageGitChange } from "./folder-git.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
@@ -222,6 +222,11 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const exec = op === "exec";
     const allowed = exec ? capsOf(projectId).exec : git ? capsOf(projectId).git : capsOf(projectId).edit;
     if (!allowed) return { id, ok: false, code: "disabled", message: exec ? "This person has not allowed commands." : git ? "This person has not allowed git." : "This person has not allowed AI changes to files." };
+    // A dev server or watcher is not started from chat: it would sit on the one command slot until its time limit, out of sight. The Scripts tab runs those.
+    if (exec) {
+      const refusal = await longRunningRefusal(itemsOf(projectId), (req as { command?: unknown }).command);
+      if (refusal) return { id, ok: false, code: "long_running", message: refusal };
+    }
     // One command at a time per project: a second is refused while one waits or runs.
     if (exec && approvals.execBusy(projectId)) return { id, ok: false, code: "busy", message: "A command is already waiting for its owner or running. Wait for it to finish." };
     if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the owner. Wait for them to be decided." };

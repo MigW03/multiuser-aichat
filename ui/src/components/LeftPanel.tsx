@@ -1,5 +1,5 @@
 import { canManagePeople, DEFAULT_CHAT_TITLE, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
-import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, Users, X } from "lucide-react";
 import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -7,7 +7,6 @@ import { api } from "../api.ts";
 import { APP_NAME } from "../config.ts";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setPinned } from "../lib/actions.ts";
-import { PREF, readPref, writePref } from "../lib/prefs.ts";
 import { navigate, openProjectSettings } from "../lib/router.ts";
 import { listTime } from "../lib/time.ts";
 import { supabase } from "../supabase.ts";
@@ -81,7 +80,18 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
           <ProjectTile name={project.name} size={32} />
           <div className="grow">
             <div className="project-name truncate">{project.name}</div>
-            <div className="small muted">{ROLE_LABELS[project.my_role]}</div>
+            {members ? (
+              <button type="button" className="people-link" onClick={() => setDialog("members")} aria-label={`People, ${members.length}`}>
+                <span className="people-stack">
+                  {members.slice(0, 3).map((m) => (
+                    <Avatar key={m.id} id={m.id} name={m.display_name} size={18} online={online.has(m.id)} ring />
+                  ))}
+                </span>
+                {members.length} {members.length === 1 ? "person" : "people"}
+              </button>
+            ) : (
+              <div className="small muted">{ROLE_LABELS[project.my_role]}</div>
+            )}
           </div>
           <Menu
             label="Project options"
@@ -185,7 +195,6 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
         )}
       </div>
 
-      {project && members && <PeopleCard project={project} members={members} online={online} onManage={() => setDialog("members")} />}
       <AccountCard />
 
       {rowDialog?.kind === "rename" && (
@@ -383,60 +392,6 @@ function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: 
         )}
       />
     </li>
-  );
-}
-
-function PeopleCard({ project, members, online, onManage }: { project: ProjectSummary; members: ProjectMember[]; online: Set<string>; onManage: () => void }) {
-  const { me, openInvite } = useApp();
-  // Collapsed by default: avatars and an Invite button. The person's choice is remembered.
-  const [open, setOpen] = useState(() => readPref(PREF.peopleOpen(me.id), false));
-  const manage = canManagePeople(project.my_role);
-  const toggle = () => {
-    setOpen((o) => {
-      writePref(PREF.peopleOpen(me.id), !o);
-      return !o;
-    });
-  };
-  return (
-    <div className="people-card">
-      <div className="people-head">
-        <button type="button" className="people-toggle" onClick={toggle} aria-expanded={open}>
-          <ChevronRight size={ICON_SM} strokeWidth={STROKE} className={open ? "turn" : ""} aria-hidden />
-          <span className="section-text">People · {members.length}</span>
-        </button>
-        {manage && (
-          <Button size="sm" variant="ghost" onClick={() => openInvite({ kind: "project", projectId: project.id })}>
-            <UserPlus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Invite
-          </Button>
-        )}
-      </div>
-      {open ? (
-        <ul className="people-rows">
-          {members.map((m) => (
-            <li key={m.id}>
-              <Avatar id={m.id} name={m.display_name} size={24} online={online.has(m.id)} />
-              <span className="grow truncate">
-                {m.display_name}
-                {m.id === me.id && <span className="muted"> (you)</span>}
-              </span>
-              <span className="small muted">{ROLE_LABELS[m.role]}</span>
-            </li>
-          ))}
-          <li>
-            <Button size="sm" variant="ghost" onClick={onManage}>
-              Manage people
-            </Button>
-          </li>
-        </ul>
-      ) : (
-        <button type="button" className="people-avatars" onClick={toggle} aria-label="Show people">
-          {members.slice(0, 6).map((m) => (
-            <Avatar key={m.id} id={m.id} name={m.display_name} size={24} online={online.has(m.id)} ring />
-          ))}
-          {members.length > 6 && <span className="small muted">+{members.length - 6}</span>}
-        </button>
-      )}
-    </div>
   );
 }
 

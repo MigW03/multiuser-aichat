@@ -335,15 +335,10 @@ h1, h2, h3, p { margin: 0; }
 .chat-row:hover .row-meta, .chat-row:focus-within .row-meta { visibility: hidden; }
 .pin-mark, .group-mark { display: inline-block; vertical-align: -1px; margin-right: 4px; color: var(--muted-fg); }
 
-.people-card { margin: 0 8px; padding: 8px 6px 6px; border-top: 1px solid var(--border); }
-.people-head { display: flex; align-items: center; justify-content: space-between; }
-.people-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 0; background: none; color: var(--muted-fg); }
-.people-toggle .turn { transform: rotate(90deg); }
-.section-text { font: var(--text-label); letter-spacing: 0.06em; text-transform: uppercase; }
-.people-avatars { display: flex; align-items: center; gap: 4px; padding: 6px 4px; border: 0; background: none; }
-.people-avatars .avatar + .avatar { margin-left: -2px; }
-.people-rows { list-style: none; margin: 0; padding: 4px 0 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
-.people-rows li { display: flex; align-items: center; gap: 8px; padding: 2px 4px; font-size: 13.5px; }
+.people-link { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 0 -4px; padding: 2px 6px 2px 4px; border: 0; border-radius: var(--r-full); background: none; color: var(--muted-fg); font: var(--text-small); }
+.people-link:hover { background: var(--hover-row); color: var(--fg); }
+.people-stack { display: inline-flex; }
+.people-stack .avatar + .avatar { margin-left: -6px; }
 .account-card { padding: 8px; border-top: 1px solid var(--border); }
 .account-menu { display: flex; width: 100%; }
 .account-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 9px; background: none; text-align: left; }

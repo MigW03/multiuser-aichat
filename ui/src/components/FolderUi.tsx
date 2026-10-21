@@ -473,6 +473,7 @@ function RemoveMenu({ row, mine, placement, onRemove }: { row: ShareRow; mine: b
       align="end"
       placement={placement}
       className="folder-row-menu"
+      portal
       items={[
         {
           label: waiting ? "Cancel request" : "Remove",

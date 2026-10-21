@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type InputHTMLAttributes,
   type ReactNode,
 } from "react";
@@ -458,6 +459,7 @@ export function Menu({
   label,
   className = "",
   width,
+  portal = false,
 }: {
   trigger: (props: { open: boolean; toggle: () => void; id: string }) => ReactNode;
   items: MenuItem[];
@@ -466,16 +468,40 @@ export function Menu({
   label: string;
   className?: string;
   width?: number;
+  /** Draw the menu in <body>, fixed to the button, for a button inside a list that scrolls or clips. */
+  portal?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
+  const [at, setAt] = useState<CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !portal) return setAt(null);
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      setAt({
+        position: "fixed",
+        ...(placement === "above" ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+        ...(align === "end" ? { right: window.innerWidth - r.right } : { left: r.left }),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true); // the list under the button can scroll
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, portal, align, placement]);
 
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
+      const inBody = e.target instanceof Element && e.target.closest("[data-menu-of]")?.getAttribute("data-menu-of") === id; // a portal menu lives in <body>
       const inFlyout = e.target instanceof Element && e.target.closest("[data-submenu-of]")?.getAttribute("data-submenu-of") === id; // a flyout lives in <body>
-      if (!ref.current?.contains(e.target as Node) && !inFlyout) setOpen(false);
+      if (!ref.current?.contains(e.target as Node) && !inFlyout && !inBody) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -488,11 +514,31 @@ export function Menu({
     };
   }, [open]);
 
+  const box = (children: ReactNode) => {
+    const props = { role: "menu", "aria-label": label };
+    if (!portal) {
+      return (
+        <div className={`menu ${align} ${placement}`} {...props} style={width ? { minWidth: width } : undefined}>
+          {children}
+        </div>
+      );
+    }
+    return at
+      ? createPortal(
+          <div className="menu portal" data-menu-of={id} {...props} style={{ ...at, ...(width ? { minWidth: width } : null) }}>
+            {children}
+          </div>,
+          document.body,
+        )
+      : null;
+  };
+
   return (
     <div className={`menu-wrap ${className}`} ref={ref}>
       {trigger({ open, toggle: () => setOpen((o) => !o), id })}
-      {open && (
-        <div className={`menu ${align} ${placement}`} role="menu" aria-label={label} style={width ? { minWidth: width } : undefined}>
+      {open &&
+        box(
+          <>
           {items.map((item, i) =>
             item === "divider" ? (
               <div key={i} className="menu-divider" role="separator" />
@@ -521,8 +567,8 @@ export function Menu({
               </button>
             ),
           )}
-        </div>
-      )}
+          </>,
+        )}
     </div>
   );
 }

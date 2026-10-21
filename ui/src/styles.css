@@ -149,6 +149,7 @@ h1, h2, h3, p { margin: 0; }
   position: absolute; z-index: 30; min-width: 180px; padding: 4px; display: flex; flex-direction: column;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu);
 }
+.menu.portal { z-index: 45; }
 .menu.below { top: calc(100% + 4px); }
 .menu.above { bottom: calc(100% + 4px); }
 .menu.start { left: 0; }

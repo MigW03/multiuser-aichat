@@ -165,8 +165,8 @@ h1, h2, h3, p { margin: 0; }
 .menu-divider { height: 1px; margin: 4px 2px; background: var(--border); }
 .menu-check { color: var(--p-text); }
 .menu-sub-wrap { display: flex; flex-direction: column; }
-.menu-sub { position: absolute; z-index: 31; left: calc(100% + 6px); bottom: 0; min-width: 240px; padding: 4px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
-.menu-sub.inline { position: static; min-width: 0; padding: 0 0 0 16px; border: 0; box-shadow: none; background: none; }
+.menu-sub { position: fixed; z-index: 45; max-height: calc(100vh - 24px); overflow-y: auto; min-width: 240px; padding: 4px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
+.menu-sub.inline { position: static; max-height: none; overflow: visible; min-width: 0; padding: 0 0 0 16px; border: 0; box-shadow: none; background: none; }
 .menu-sub-wrap > .menu-item[aria-expanded="true"] { background: var(--hover-row); }
 .mcp-empty { padding: 6px 10px; }
 .mcp-skeleton { display: flex; flex-direction: column; gap: 14px; padding: 10px; }

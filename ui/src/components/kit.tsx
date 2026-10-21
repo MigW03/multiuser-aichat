@@ -356,12 +356,14 @@ export type MenuItem =
   | "divider";
 
 /** A menu item with a flyout: opens on hover (after a short delay), click, tap or →; closes on Esc, ←, or when the pointer leaves. */
-function SubmenuItem({ label, icon, badge, closeMenu, children }: { label: string; icon?: ReactNode; badge?: ReactNode; closeMenu: () => void; children: (closeMenu: () => void) => ReactNode }) {
+function SubmenuItem({ label, icon, badge, menuId, closeMenu, children }: { label: string; icon?: ReactNode; badge?: ReactNode; menuId: string; closeMenu: () => void; children: (closeMenu: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const narrow = useNarrow();
   const id = useId();
   const timer = useRef<number | undefined>(undefined);
   const wrap = useRef<HTMLDivElement>(null);
+  const flyout = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   const viaKey = useRef(false);
   const clear = () => window.clearTimeout(timer.current);
   const later = (value: boolean, ms: number) => {
@@ -369,15 +371,34 @@ function SubmenuItem({ label, icon, badge, closeMenu, children }: { label: strin
     timer.current = window.setTimeout(() => setOpen(value), ms);
   };
   useEffect(() => clear, []);
-  const rows = () => Array.from(wrap.current?.querySelectorAll<HTMLElement>(".menu-sub [role=menuitem]:not([aria-disabled=true])") ?? []);
+  const rows = () => Array.from(flyout.current?.querySelectorAll<HTMLElement>("[role=menuitem]:not([aria-disabled=true])") ?? []);
+  // The flyout sits in <body>, not in the menu: the panels beside the menu (the left panel clips, the chat card paints later) would cover it.
+  useLayoutEffect(() => {
+    if (!open || narrow) return setAt(null);
+    const place = () => {
+      const r = wrap.current?.closest(".menu")?.getBoundingClientRect();
+      if (r) setAt({ left: r.right + 6, bottom: window.innerHeight - r.bottom });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, narrow]);
   useEffect(() => {
-    if (open && viaKey.current) rows()[0]?.focus();
-    viaKey.current = false;
-  }, [open]);
+    if (!open) viaKey.current = false;
+    else if (viaKey.current && (narrow || at)) {
+      rows()[0]?.focus(); // opened with →: land on the first row once the flyout is placed
+      viaKey.current = false;
+    }
+  }, [open, narrow, at]);
   const back = () => {
     setOpen(false);
     wrap.current?.querySelector<HTMLElement>(":scope > .menu-item")?.focus();
   };
+  const flyoutBox = (inline: boolean) => (
+    <div ref={flyout} id={id} data-submenu-of={menuId} className={`menu-sub ${inline ? "inline" : ""}`} style={inline || !at ? undefined : { left: at.left, bottom: at.bottom }} role="menu" aria-label={label}>
+      {children(closeMenu)}
+    </div>
+  );
   return (
     <div
       ref={wrap}
@@ -423,11 +444,7 @@ function SubmenuItem({ label, icon, badge, closeMenu, children }: { label: strin
         {badge}
         {narrow ? <ChevronDown size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden /> : <ChevronRight size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden />}
       </button>
-      {open && (
-        <div id={id} className={`menu-sub ${narrow ? "inline" : ""}`} role="menu" aria-label={label}>
-          {children(closeMenu)}
-        </div>
-      )}
+      {open && (narrow ? flyoutBox(true) : at && createPortal(flyoutBox(false), document.body))}
     </div>
   );
 }
@@ -457,7 +474,8 @@ export function Menu({
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const inFlyout = e.target instanceof Element && e.target.closest("[data-submenu-of]")?.getAttribute("data-submenu-of") === id; // a flyout lives in <body>
+      if (!ref.current?.contains(e.target as Node) && !inFlyout) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -479,7 +497,7 @@ export function Menu({
             item === "divider" ? (
               <div key={i} className="menu-divider" role="separator" />
             ) : "submenu" in item ? (
-              <SubmenuItem key={i} label={item.label} icon={item.icon} badge={item.badge} closeMenu={() => setOpen(false)}>
+              <SubmenuItem key={i} label={item.label} icon={item.icon} badge={item.badge} menuId={id} closeMenu={() => setOpen(false)}>
                 {item.submenu}
               </SubmenuItem>
             ) : (

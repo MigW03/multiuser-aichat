@@ -262,7 +262,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
                     pick(p);
                   }}
                 >
-                  <Avatar id={p.id} name={p.display_name} size={22} />
+                  <Avatar id={p.id} name={p.display_name} src={p.avatar_url} size={22} />
                   <span className="truncate">{p.display_name}</span>
                 </button>
               ))}

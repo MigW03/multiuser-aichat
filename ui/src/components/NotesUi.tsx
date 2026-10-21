@@ -13,7 +13,7 @@ import { AiAvatar, Avatar, Button, ErrorLine, ICON_SM, IconButton, Menu, Spinner
 // admins can delete. Clicking a note opens it to READ (the whole text, nothing editable); Edit is a separate step. A note the AI wrote (someone said "take a note", or Save as note under an answer) shows the AI's
 // avatar when the AI wrote it, and the person's avatar otherwise ("AI note options", option A). The list is live.
 
-type NoteRow = ProjectNote & { author_name: string };
+type NoteRow = ProjectNote & { author_name: string; author_avatar: string | null };
 type Filter = "all" | "ai" | "people";
 
 const messageOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
@@ -22,11 +22,11 @@ function useProjectNotes(projectId: string) {
   return useLive<NoteRow[]>(async () => {
     const { data, error } = await supabase
       .from("project_notes")
-      .select("id, project_id, title, body, created_by, by_ai, created_at, updated_at, updated_by, author:profiles!created_by(display_name)")
+      .select("id, project_id, title, body, created_by, by_ai, created_at, updated_at, updated_by, author:profiles!created_by(display_name, avatar_url)")
       .eq("project_id", projectId)
       .order("updated_at", { ascending: false });
     if (error) throw new Error("Could not load the notes.");
-    return ((data ?? []) as unknown as (ProjectNote & { author: { display_name: string } | null })[]).map(({ author, ...n }) => ({ ...n, author_name: author?.display_name ?? "Someone" }));
+    return ((data ?? []) as unknown as (ProjectNote & { author: { display_name: string; avatar_url: string | null } | null })[]).map(({ author, ...n }) => ({ ...n, author_name: author?.display_name ?? "Someone", author_avatar: author?.avatar_url ?? null }));
   }, [projectId]);
 }
 
@@ -141,7 +141,7 @@ function NoteRowView({ note, canDelete, onOpen, onEdit, onDelete }: { note: Note
   return (
     <div className={`note-row ${note.by_ai ? "ai" : ""}`}>
       <button type="button" className="note-open" onClick={onOpen} aria-label={`Open note: ${note.title}`}>
-        <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} size={22} /> : null}</span>
+        <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} src={note.author_avatar} size={22} /> : null}</span>
         <span className="note-text">
           <span className="note-title truncate">{note.title}</span>
           {note.body && <span className="note-preview small muted truncate">{preview(note.body)}</span>}
@@ -172,7 +172,7 @@ function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => v
   return (
     <article className={`note-reader ${note.by_ai ? "ai" : ""}`} aria-label={note.title} onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <header className="note-reader-head">
-        <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} size={22} /> : null}</span>
+        <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} src={note.author_avatar} size={22} /> : null}</span>
         <h3 className="note-reader-title">{note.title}</h3>
       </header>
       {note.body ? <div className="note-reader-body">{note.body}</div> : <p className="small muted">No text.</p>}

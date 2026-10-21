@@ -19,6 +19,8 @@ export type MessageListProps = {
   meId: string;
   /** id -> display name, for everyone who ever wrote in the chat */
   names: Map<string, string>;
+  /** id -> Google profile picture link, for people who have one */
+  avatars: Map<string, string | null>;
   /** the read marker when the chat was opened; messages after it get the "new" divider */
   readSeq: number | null;
   /** whether the person has any AI key (for the "AI can't answer you yet" card) */
@@ -154,7 +156,7 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
 }
 
 function UserMessage(props: RowProps) {
-  const { m, meId, names, queued, answerRunning, showKeylessCard } = props;
+  const { m, meId, names, avatars, queued, answerRunning, showKeylessCard } = props;
   const own = m.author_id === meId;
   const name = names.get(m.author_id ?? "") ?? "Someone";
   const waiting = queued && answerRunning;
@@ -163,7 +165,7 @@ function UserMessage(props: RowProps) {
   const body = pictureOnly ? null : <Markdown text={m.content} chat mentions={tagged} />;
   return (
     <div className={`msg ${own ? "own" : "other"}`}>
-      {!own && <Avatar id={m.author_id ?? name} name={name} size={28} />}
+      {!own && <Avatar id={m.author_id ?? name} name={name} src={avatars.get(m.author_id ?? "")} size={28} />}
       <div className="msg-main">
         {!own && (
           <div className="msg-meta">

@@ -67,7 +67,7 @@ function InviteCard({ preview }: { preview: InvitePreview }) {
           <ul>
             {preview.members.map((m, i) => (
               <li key={i}>
-                <Avatar id={`${m.name}-${i}`} name={m.name} size={24} />
+                <Avatar id={`${m.name}-${i}`} name={m.name} src={m.avatar} size={24} />
                 <span>{m.name}</span>
                 {m.role !== "member" && <span className="muted small">· {ROLE_LABELS[m.role].toLowerCase()}</span>}
               </li>

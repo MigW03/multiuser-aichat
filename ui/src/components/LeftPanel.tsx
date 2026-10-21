@@ -85,7 +85,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
               <button type="button" className="people-link" onClick={() => setDialog("members")} aria-label={`People, ${members.length}`}>
                 <span className="people-stack">
                   {members.slice(0, 3).map((m) => (
-                    <Avatar key={m.id} id={m.id} name={m.display_name} size={18} online={online.has(m.id)} ring />
+                    <Avatar key={m.id} id={m.id} name={m.display_name} src={m.avatar_url} size={18} online={online.has(m.id)} ring />
                   ))}
                 </span>
                 {members.length} {members.length === 1 ? "person" : "people"}
@@ -416,7 +416,7 @@ function AccountCard() {
         ]}
         trigger={({ toggle, open }) => (
           <button type="button" className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open}>
-            <Avatar id={me.id} name={me.display_name} size={30} />
+            <Avatar id={me.id} name={me.display_name} src={me.avatar_url} size={30} />
             <span className="grow">
               <span className="row-title truncate block">{me.display_name}</span>
               <span className="small muted truncate block">{me.email}</span>

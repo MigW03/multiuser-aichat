@@ -198,7 +198,8 @@ export type ProjectSummary = {
   unread_ai: number;
 };
 
-export type Person = { id: string; display_name: string };
+/** `avatar_url` is the person's Google profile picture (a link on Google's servers), when they signed in with Google. */
+export type Person = { id: string; display_name: string; avatar_url?: string | null };
 export type ProjectMember = Person & { email: string; role: Role; joined_at: string };
 export type ModelChoice = { provider: ProviderId; model: string; reasoning: Reasoning };
 /** `reasoning` lists the thinking levels the model accepts, lowest first. Empty: it does not think (or cannot be told how). */
@@ -285,7 +286,7 @@ export type InvitePreview = {
   /** Full address when the caller is signed out or is that account; otherwise a masked hint like "d•••@example.com". */
   email: string | null;
   emailMasked: boolean;
-  members: { name: string; role: Role }[];
+  members: { name: string; role: Role; avatar?: string | null }[];
 };
 export type AcceptInviteResponse = { projectId: string | null; chatId: string | null };
 

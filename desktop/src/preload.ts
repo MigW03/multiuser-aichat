@@ -1,4 +1,4 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import { folderApi, mcpApi } from "./folder-preload.ts";
 
 // The renderer is the same React app as the web version. Only expose what it needs, as plain data.
@@ -7,6 +7,8 @@ import { folderApi, mcpApi } from "./folder-preload.ts";
 const deepLinks = process.argv.includes("--mc-deeplinks");
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
+  // Tells the window frame to match the app theme ("system" | "light" | "dark").
+  setTheme: (pref: "system" | "light" | "dark") => ipcRenderer.send("theme:set", pref),
   folder: folderApi,
   mcp: mcpApi,
   ...(deepLinks ? { authRedirect: "multiuserchat://auth", shareBase: "multiuserchat://open" } : {}),

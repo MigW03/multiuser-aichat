@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, net, protocol, session, shell } from "electron";
 import { join, normalize, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseDeepLink, SCHEME } from "./deeplink.ts";
@@ -64,6 +64,14 @@ function openLink(raw: string) {
   }, () => undefined);
 }
 
+const originOf = (url: string | undefined): string | null => {
+  try {
+    return url ? new URL(url).origin : null;
+  } catch {
+    return null;
+  }
+};
+
 const linkFrom = (argv: string[]) => argv.find((a) => a.startsWith(`${SCHEME}://`));
 
 // One window only: a second launch (Windows and Linux deliver deep links this way) hands its link to the first.
@@ -91,6 +99,11 @@ if (!app.requestSingleInstanceLock()) {
     if (!DEV_URL) serveWebBuild();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    // The window frame (title bar) follows the app's own light/dark choice instead of the computer's.
+    ipcMain.on("theme:set", (e, pref: unknown) => {
+      if (originOf(e.senderFrame?.url) !== (DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN)) return;
+      if (pref === "light" || pref === "dark" || pref === "system") nativeTheme.themeSource = pref;
+    });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -111,7 +124,8 @@ function createWindow() {
     width: 1100,
     height: 720,
     title: "Multiuser Chat",
-    backgroundColor: "#16171b",
+    // Same as the app background (--bg), so nothing flashes before the page paints.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#2a2a2e" : "#fafafa",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       // Tells the preload script whether multiuserchat:// links come back to this app.

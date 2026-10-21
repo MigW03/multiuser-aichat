@@ -152,6 +152,11 @@ let accentInUse = DEFAULT_ACCENT;
 let prefInUse: ThemePref = "system";
 let watching = false;
 
+/** The desktop app also colours its window frame (title bar) to match; a browser has no such bridge. */
+function syncWindowFrame() {
+  (globalThis as { desktop?: { setTheme?: (pref: ThemePref) => void } }).desktop?.setTheme?.(prefInUse);
+}
+
 function paint(root: HTMLElement) {
   const mode = resolveMode(prefInUse);
   for (const [name, value] of Object.entries(buildTokens(accentInUse, mode))) root.style.setProperty(name, value);
@@ -164,6 +169,7 @@ export function applyTheme(root: HTMLElement = document.documentElement, accent:
   accentInUse = accent;
   prefInUse = getThemePref();
   paint(root);
+  syncWindowFrame();
   if (!watching && typeof matchMedia === "function") {
     watching = true;
     // "System" follows the computer and switches by itself.
@@ -179,4 +185,5 @@ export function setThemePref(pref: ThemePref, root: HTMLElement = document.docum
     /* not remembered, still applied */
   }
   paint(root);
+  syncWindowFrame();
 }

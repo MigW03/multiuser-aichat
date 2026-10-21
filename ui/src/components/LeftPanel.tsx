@@ -112,9 +112,6 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
       )}
 
       <div className="panel-actions">
-        <Button variant="primary" block onClick={newChat}>
-          <MessageSquarePlus size={ICON} strokeWidth={STROKE} aria-hidden /> New chat
-        </Button>
         <label className="search-field">
           <Search size={ICON_SM} strokeWidth={STROKE} aria-hidden />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={project ? "Search this project" : "Search your chats"} aria-label="Search" />
@@ -124,6 +121,9 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
             </button>
           )}
         </label>
+        <Button variant="ghost" className="new-chat" block onClick={newChat}>
+          <MessageSquarePlus size={ICON} strokeWidth={STROKE} aria-hidden /> New chat
+        </Button>
       </div>
 
       <div className="panel-scroll">

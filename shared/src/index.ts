@@ -77,8 +77,10 @@ export const IMAGE_LIMITS = {
   perMessage: 4,
   /** Bytes per picture, after the browser has shrunk it. Under every provider's own limit. */
   bytes: 5 * 1024 * 1024,
-  /** The browser shrinks bigger pictures to this many pixels on the long side. */
-  maxSide: 2000,
+  /** The browser shrinks bigger pictures to this many pixels on the long side, to keep storage small. */
+  maxSide: 1280,
+  /** Quality (0-1) when the browser saves a shrunk picture as WebP or JPEG. */
+  quality: 0.8,
   types: ["image/jpeg", "image/png", "image/webp", "image/gif"],
   /** The AI sees this many of the newest pictures of a chat on each turn; older ones are left out to keep long chats cheap. */
   sentToAi: 4,

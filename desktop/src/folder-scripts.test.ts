@@ -6,7 +6,8 @@ import { after, before, describe, test } from "node:test";
 import { Approvals } from "./folder-approvals.ts";
 import { FolderError } from "./folder-fs.ts";
 import { nameItems, type Item } from "./folder-items.ts";
-import { LineLog, listScripts, managerOf, readScripts, ScriptRunner, scriptEnv, stageScript } from "./folder-scripts.ts";
+import { keepsRunning } from "@mc/shared";
+import { LineLog, listScripts, longRunningRefusal, managerOf, readScripts, ScriptRunner, scriptEnv, stageScript } from "./folder-scripts.ts";
 
 const posix = process.platform !== "win32";
 const FAKE_TOKEN = ["sk", "ant", "api03", "x".repeat(40)].join("-");
@@ -191,6 +192,51 @@ describe("staging a Run click", () => {
     await off.decide(PID, "a3", true);
     assert.equal(((await res) as { ok: boolean }).ok, false);
     assert.equal(started, 1);
+  });
+});
+
+describe("commands that keep running are not run from chat", () => {
+  test("dev servers, watchers and followers are recognised", () => {
+    for (const c of [
+      "npm run dev", "npm start", "yarn dev", "pnpm run serve", "bun run watch", "npm run storybook", "cd app && npm run dev", "FOO=1 npm run dev",
+      "vite", "vite --port 3000", "vite dev", "npx vite", "next dev", "next start -p 4000", "nodemon server.js", "tsx watch src/index.ts", "webpack serve", "ng serve",
+      "jest --watch", "vitest --watch", "npm test -- --watch", "tsc -w", "tsc --watch --noEmit", "tail -f log.txt", "tail -F app.log", "docker compose up", "docker-compose up web",
+      "python -m http.server 8000", "python3 manage.py runserver", "flask run", "uvicorn app:app", "rails server", "sleep infinity", "serve .", "npm run build && npm run dev",
+    ]) assert.ok(keepsRunning(c), c);
+  });
+
+  test("ordinary commands are not", () => {
+    for (const c of [
+      "npm test", "npm run build", "npm run lint", "npm run dev:build", "npm install", "vite build", "vitest run", "tsc --noEmit", "next build", "git status", "ls -la", "cat package.json",
+      "echo dev", "grep -r serve src", "tail -n 50 log.txt", "docker compose up -d", "docker compose up --detach web", "docker compose build", "python script.py", "node build.js", "npm run preview:check",
+    ]) assert.ok(!keepsRunning(c), c);
+  });
+
+  test("a refusal tells the AI to use the Scripts tab, naming the script when package.json has it", async () => {
+    const dev = await longRunningRefusal(items, "npm run dev");
+    assert.match(dev ?? "", /"dev" script/);
+    assert.match(dev ?? "", /Scripts tab/);
+    assert.match(dev ?? "", /no approval was asked/);
+    const nohup = await longRunningRefusal(items, "nohup node server.js &");
+    assert.match(nohup ?? "", /their own terminal/);
+    const bare = nameItems([{ abs: project("bare", { name: "x" }), kind: "dir", key: "kz" }]);
+    assert.match((await longRunningRefusal(bare, "npm run dev")) ?? "", /their own terminal/); // no such script in package.json
+    assert.equal(await longRunningRefusal(items, "npm test"), null);
+    assert.equal(await longRunningRefusal(items, "npm run build"), null);
+    assert.equal(await longRunningRefusal(items, 5), null);
+  });
+
+  test("a script whose body is a server is refused even under an ordinary name", async () => {
+    const d = project("body-server", { scripts: { up: "vite --host", check: "tsc --noEmit" } });
+    const its = nameItems([{ abs: d, kind: "dir", key: "kb" }]);
+    assert.match((await longRunningRefusal(its, "npm run up")) ?? "", /"up" script/);
+    assert.equal(await longRunningRefusal(its, "npm run check"), null);
+  });
+
+  test("when several folders are shared the refusal names the folder", async () => {
+    const other = project("docs2", { scripts: { dev: "astro dev" } });
+    const both = nameItems([{ abs: app, kind: "dir", key: "k1" }, { abs: other, kind: "dir", key: "k2" }]);
+    assert.match((await longRunningRefusal(both, "npm run dev")) ?? "", /"dev" in app/);
   });
 });
 

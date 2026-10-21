@@ -390,6 +390,7 @@ export type FolderErrorCode =
   | "git_failed" // git refused; the message says why in words that hold no paths from the host's computer
   | "nothing" // nothing to add, commit or restore
   | "exec_failed" // the command could not be started
+  | "long_running" // a command that keeps running (a dev server, a watcher): not started from chat, the Scripts tab does that
   // connected tools (MCP); these travel on their own relay (see MCP_LIMITS below) but share the error type
   | "mcp_unavailable" // the server is off, not running, or does not have that tool
   | "mcp_failed"; // the tool server failed or did not answer
@@ -555,6 +556,32 @@ const FLAGS: { kind: CommandFlag["kind"]; label: string; re: RegExp }[] = [
 
 export function classifyCommand(command: string): CommandFlag[] {
   return FLAGS.filter((f) => f.re.test(command)).map(({ kind, label }) => ({ kind, label }));
+}
+
+// Commands that never end by themselves: dev servers, watchers, followers. They are not run from chat (the AI's bash tool
+// refuses them before asking the host): the host starts them from the Scripts tab, where they stay visible and can be stopped.
+// A pattern list, so an odd command can slip through; the time limit still stops those. A pattern that does not match means nothing.
+/** What may come before the program: NAME=value settings, and npx / yarn / pnpm exec / bunx. */
+const LEAD = String.raw`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:npx|bunx|yarn|pnpm\s+(?:exec|dlx)|npm\s+exec\s+--)\s+)?`;
+const lead = (program: string) => new RegExp(LEAD + program);
+const LONG_RUNNING: RegExp[] = [
+  // package scripts that are servers by convention
+  lead(String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch|storybook|preview)(?=\s|$)`),
+  lead(String.raw`(?:vite(?=\s*$|\s+-|\s+(?:dev|serve|preview)(?:\s|$))|next\s+(?:dev|start)|nuxt\s+(?:dev|preview)|astro\s+(?:dev|preview)|remix\s+dev|ng\s+serve|expo\s+start|react-scripts\s+start|storybook\s+dev|webpack\s+serve|webpack-dev-server|nodemon|ts-node-dev|tsx\s+watch|node\s+--watch|cargo\s+watch|http-server|live-server|serve(?=\s|$)|php\s+-S|flask\s+run|uvicorn|gunicorn|rails\s+(?:s|server)|(?:python3?|py)\s+(?:-m\s+http\.server|\S*manage\.py\s+runserver))(?=\s|$)`),
+  // watch mode and following output, wherever they appear
+  /(?:^|\s)--watch(?:All)?(?=[\s=]|$)/,
+  /(?:^|\s)tsc\s+(?:-w|--watch)(?=\s|$)/,
+  /(?:^|\s)tail\s+(?:-\w*[fF]\w*|--follow(?:=\w+)?)(?=\s|$)/,
+  /(?:^|\s)docker(?:-|\s+)compose\s+up(?!.*(?:\s-d\b|--detach))/,
+  /(?:^|\s)sleep\s+infinity(?=\s|$)/,
+];
+
+/** Whether a command (or a step of a chain) keeps running until someone stops it. */
+export function keepsRunning(command: string): boolean {
+  return command
+    .split(/&&|\|\||[;|\n]/)
+    .map((step) => step.trim())
+    .some((step) => LONG_RUNNING.some((re) => re.test(step)));
 }
 
 /**

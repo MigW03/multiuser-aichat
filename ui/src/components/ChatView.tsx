@@ -186,7 +186,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
           )}
         </div>
         <div className="grow" />
-        {shared && (
+        {shared && !project && (
           <span className="header-people" aria-label="People in this chat">
             {people.slice(0, 5).map((p) => (
               <Avatar key={p.id} id={p.id} name={p.display_name} size={26} online={(project ? projectOnline : room.online).has(p.id)} ring />

@@ -40,4 +40,7 @@ export const PREF = {
   lastRoute: (userId: string) => `mc.lastRoute.${userId}`,
   /** The shared folder panel is open (on wide screens; a small screen opens it as a drawer each time). */
   folderOpen: (userId: string) => `mc.folderOpen.${userId}`,
+  /** The preview's width beside the chat (px) and the last address opened in it, per project ("home" for chats outside projects). */
+  previewWidth: (userId: string) => `mc.previewWidth.${userId}`,
+  previewUrl: (userId: string, projectId: string | null) => `mc.previewUrl.${userId}.${projectId ?? "home"}`,
 } as const;

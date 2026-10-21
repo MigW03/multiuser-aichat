@@ -96,3 +96,31 @@ export const mcpApi = {
     return () => void ipcRenderer.removeListener("mcp:changed", listener);
   },
 };
+
+// The preview of a web page from this computer (localhost), shown by the app in a browser view of its own over the space the
+// page reserves for it. The page sends addresses and rectangles; the app checks the address again and is the only one that
+// ever loads the previewed page, which has no connection back to the app.
+export const previewApi = {
+  /** Opens (or moves to) a localhost address in the preview, within the rectangle the page reserves. Resolves to the address opened, or null when it is not allowed. */
+  open: (url: string, bounds: unknown): Promise<{ ok: boolean; url?: string }> => ipcRenderer.invoke("preview:open", url, bounds),
+  setBounds: (bounds: unknown): void => ipcRenderer.send("preview:bounds", bounds),
+  /** Hides or shows the preview (it floats above the page, so a dialog needs the space). Hiding resolves to a picture of it to leave in its place. */
+  setVisible: (visible: boolean): Promise<string | null> => ipcRenderer.invoke("preview:visible", visible),
+  /** `quiet`: a retry in the background, the error stays shown until the address answers. */
+  reload: (quiet = false): void => ipcRenderer.send("preview:reload", quiet),
+  back: (): void => ipcRenderer.send("preview:back"),
+  forward: (): void => ipcRenderer.send("preview:forward"),
+  close: (): void => ipcRenderer.send("preview:close"),
+  /** Opens the current address in the person's own browser. */
+  openExternal: (): void => ipcRenderer.send("preview:external"),
+  get: (): Promise<unknown> => ipcRenderer.invoke("preview:get"),
+  /** Which common dev-server ports on this computer accept connections now. */
+  scan: (): Promise<number[]> => ipcRenderer.invoke("preview:scan"),
+  /** Forgets the previewed site's cookies and stored data. */
+  clearData: (): Promise<boolean> => ipcRenderer.invoke("preview:clear"),
+  onState: (callback: (state: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, state: unknown) => callback(state);
+    ipcRenderer.on("preview:state", listener);
+    return () => void ipcRenderer.removeListener("preview:state", listener);
+  },
+};

@@ -1,5 +1,5 @@
 import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
-import { Link2, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
+import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
@@ -38,7 +38,7 @@ function typingText(names: string[]): string | null {
 }
 
 export function ChatView({ chat, project, projectPeople, projectOnline, leftCollapsed, onShowLeft }: Props) {
-  const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite } = useApp();
+  const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite, preview } = useApp();
   const thinking = useModelReasoning(choice);
   const toast = useToast();
   const room = useChatRoom(chat.id, me.id);
@@ -209,6 +209,11 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
           <IconButton label="Invite someone to this chat" onClick={() => openInvite({ kind: "chat", chatId: chat.id })}>
             <UserPlus size={ICON} strokeWidth={STROKE} />
           </IconButton>
+        )}
+        {preview.available && (
+          <button type="button" className={`btn sm ${preview.open ? "active" : ""}`} aria-pressed={preview.open} onClick={() => (preview.open ? preview.close() : preview.show())} title="Preview a web page from this computer">
+            <Monitor size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Preview
+          </button>
         )}
         <button type="button" className="btn sm" onClick={() => setDialog("summarize")} disabled={doneCount < 2}>
           <Sparkles size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Summarize

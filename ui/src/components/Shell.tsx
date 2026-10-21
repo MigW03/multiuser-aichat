@@ -16,6 +16,7 @@ import {
 } from "../data.tsx";
 import { useFolderHost, useMcpHost } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
+import { previewBridge } from "../lib/preview.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
 import { loadModels } from "../lib/models.ts";
 import { navigate, useRoute } from "../lib/router.ts";
@@ -31,6 +32,7 @@ import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
 import { LeftPanel } from "./LeftPanel.tsx";
 import { PanelResizer, useLeftWidth, useRightWidth } from "./PanelResizer.tsx";
+import { clampPreviewWidth, PreviewPanel, PreviewResizer } from "./PreviewPanel.tsx";
 import { defaultModelFor } from "./Pickers.tsx";
 import { AddKeyDialog, SettingsDialog, type SettingsTab } from "./Settings.tsx";
 import { Button, Spinner } from "./kit.tsx";
@@ -151,14 +153,48 @@ export function Shell({ userId }: { userId: string }) {
   const [folderPinned, setFolderPinned] = useState(() => readPref(PREF.folderOpen(userId), true));
   const [folderDrawer, setFolderDrawer] = useState(false);
   useEffect(() => setFolderDrawer(false), [narrow, projectId, activeChatId]);
-  const folderOpen = narrow ? folderDrawer : folderPinned;
+
+  // The preview of a localhost page (desktop app only) shares the main panel with the chat. null: closed; url null: open, no address yet.
+  const previewApi = useMemo(() => previewBridge(), []);
+  const [preview, setPreview] = useState<{ url: string | null; full: boolean } | null>(null);
+  const previewOpen = !!preview;
+  const [previewStored, setPreviewStored] = useState<number | null>(() => readPref<number | null>(PREF.previewWidth(userId), null));
+  const [mainRoom, setMainRoom] = useState(0);
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => setPreview(null), [projectId]);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el || !previewOpen || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setMainRoom(el.clientWidth));
+    observer.observe(el);
+    setMainRoom(el.clientWidth);
+    return () => observer.disconnect();
+  }, [previewOpen]);
+  const previewCtx = useMemo(
+    () => ({
+      available: !!previewApi,
+      open: previewOpen,
+      show: (url?: string) => setPreview((cur) => (previewApi ? { url: url ?? cur?.url ?? null, full: cur?.full ?? false } : cur)),
+      close: () => setPreview(null),
+    }),
+    [previewApi, previewOpen],
+  );
+
+  // The files column steps aside while the preview is open beside the chat, and comes back when it closes.
+  const folderOpen = narrow ? folderDrawer : folderPinned && !previewOpen;
   const toggleFolder = useCallback(() => {
     if (narrow) return setFolderDrawer((v) => !v);
+    if (previewOpen) {
+      setPreview(null);
+      setFolderPinned(true);
+      writePref(PREF.folderOpen(userId), true);
+      return;
+    }
     setFolderPinned((v) => {
       writePref(PREF.folderOpen(userId), !v);
       return !v;
     });
-  }, [narrow, userId]);
+  }, [narrow, previewOpen, userId]);
 
   const setCollapsedPersisted = (v: boolean) => {
     setCollapsed(v);
@@ -192,8 +228,9 @@ export function Shell({ userId }: { userId: string }) {
         openAddKey: () => setAddKey(true),
         openInvite: (target) => setInviteReq(target),
         folderPanel: { open: folderOpen, drawer: narrow, toggle: toggleFolder },
+        preview: previewCtx,
       },
-    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder],
+    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder, previewCtx],
   );
 
   if (route.name === "reset") return <ResetPassword />;
@@ -283,7 +320,38 @@ export function Shell({ userId }: { userId: string }) {
             {!narrow && <PanelResizer width={left.width} max={left.max} onChange={left.set} />}
           </div>
         )}
-        <main className="main">{main}</main>
+        <main className={`main ${previewApi && preview && !narrow && !preview.full ? "with-preview" : ""}`} ref={mainRef}>
+          {/* The chat stays mounted behind a full-size preview, so nothing typed or scrolled is lost. */}
+          <div className={`main-slot ${preview && (narrow || preview.full) ? "hidden" : ""}`}>{main}</div>
+          {previewApi && preview && (
+            <div className={`preview-slot ${narrow || preview.full ? "full" : ""}`} style={narrow || preview.full ? undefined : { width: clampPreviewWidth(previewStored, mainRoom) }}>
+              <PreviewPanel
+                bridge={previewApi}
+                url={preview.url}
+                remembered={readPref<string | null>(PREF.previewUrl(userId, projectId), null)}
+                full={preview.full}
+                narrow={narrow}
+                onNavigate={(url) => {
+                  writePref(PREF.previewUrl(userId, projectId), url);
+                  setPreview((cur) => (cur ? { ...cur, url } : cur));
+                }}
+                onFull={(full) => setPreview((cur) => (cur ? { ...cur, full } : cur))}
+                onClose={() => setPreview(null)}
+              />
+              {!narrow && !preview.full && (
+                <PreviewResizer
+                  width={clampPreviewWidth(previewStored, mainRoom)}
+                  room={mainRoom}
+                  onChange={(next, remember) => {
+                    const v = clampPreviewWidth(next, mainRoom);
+                    setPreviewStored(v);
+                    if (remember) writePref(PREF.previewWidth(userId), v);
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </main>
         {project && folderOpen && (
           <>
             {narrow && <div className="drawer-backdrop" onClick={toggleFolder} />}

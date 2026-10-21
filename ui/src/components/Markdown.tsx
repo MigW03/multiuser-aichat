@@ -1,18 +1,31 @@
-import { useMemo } from "react";
+import { parsePreviewUrl } from "@mc/shared";
+import { useContext, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AppContext } from "../data.tsx";
 
 // AI output is untrusted. Raw HTML in the text is shown as text (no rehype-raw), unsafe link schemes are dropped
 // by defaultUrlTransform, links open outside the app, and remote images are shown as links instead of loaded.
+// A localhost address written out as the link text opens in the app's preview (desktop app). A link that only says something
+// else ("click here") never does: what it points to is shown under the message instead, where the address can be read.
+function Link({ href, children }: { href?: string; children?: ReactNode }) {
+  const preview = useContext(AppContext)?.preview;
+  if (!href) return <span>{children}</span>;
+  const local = preview?.available && typeof children === "string" && children === href ? parsePreviewUrl(href) : null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...(local ? { title: "Show in the preview", onClick: (e: { preventDefault: () => void }) => (e.preventDefault(), preview?.show(local)) } : {})}
+    >
+      {children}
+    </a>
+  );
+}
+
 const components: Components = {
-  a: ({ href, children }) =>
-    href ? (
-      <a href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    ),
+  a: Link,
   img: ({ src, alt }) =>
     typeof src === "string" && src ? (
       <a href={src} target="_blank" rel="noopener noreferrer">

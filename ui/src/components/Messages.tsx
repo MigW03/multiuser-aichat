@@ -1,6 +1,7 @@
-import { IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, FileText, RotateCcw, Sparkles } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
+import { Copy, CornerUpLeft, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
+import { Fragment, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { AppContext } from "../data.tsx";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
 import { Markdown } from "./Markdown.tsx";
@@ -210,6 +211,22 @@ function SummaryRequest({ m, names }: RowProps) {
   );
 }
 
+/** A button under an answer for each localhost address it mentions, in the desktop app: shows that page in the preview. */
+function PreviewChips({ text }: { text: string }) {
+  const preview = useContext(AppContext)?.preview;
+  const urls = useMemo(() => (preview?.available ? findPreviewUrls(text, 2) : []), [preview?.available, text]);
+  if (urls.length === 0) return null;
+  return (
+    <div className="preview-offers">
+      {urls.map((u) => (
+        <button key={u} type="button" className="btn secondary sm" onClick={() => preview?.show(u)}>
+          <Monitor size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Preview {previewLabel(u)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AssistantMessage(props: RowProps) {
   const { m, meId, names, streamingText, isLatestAnswer } = props;
   const asker = names.get(m.for_user_id ?? "") ?? null;
@@ -250,6 +267,7 @@ function AssistantMessage(props: RowProps) {
             )}
           </div>
         )}
+        {!streaming && !failed && <PreviewChips text={text} />}
         {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>

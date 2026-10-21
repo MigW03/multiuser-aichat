@@ -142,6 +142,8 @@ export type AppContextValue = {
   openInvite: (target: { kind: "project"; projectId: string } | { kind: "chat"; chatId: string }) => void;
   /** The files column on the right of a project's chats. `drawer`: a small screen shows it as a drawer. */
   folderPanel: { open: boolean; drawer: boolean; toggle: () => void };
+  /** The preview of a localhost page in the main panel. `available`: only the desktop app has it. `show` without an address opens it empty. */
+  preview: { available: boolean; open: boolean; show: (url?: string) => void; close: () => void };
 };
 
 export const AppContext = createContext<AppContextValue | null>(null);

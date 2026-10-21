@@ -33,15 +33,6 @@ export type MessageListProps = {
   emptyState: ReactNode;
 };
 
-/** Highlights @Name for the people the message tagged. */
-function withMentions(content: string, mentions: string[], names: Map<string, string>): ReactNode {
-  const tagged = mentions.map((id) => names.get(id)).filter((n): n is string => !!n);
-  if (tagged.length === 0) return content;
-  const escaped = tagged.sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const parts = content.split(new RegExp(`(@(?:${escaped.join("|")}))(?![\\p{L}\\p{N}_])`, "u"));
-  return parts.map((part, i) => (i % 2 === 1 ? <span key={i} className="mention">{part}</span> : <Fragment key={i}>{part}</Fragment>));
-}
-
 function TypingDots() {
   return (
     <span className="dots" aria-hidden>
@@ -168,7 +159,8 @@ function UserMessage(props: RowProps) {
   const name = names.get(m.author_id ?? "") ?? "Someone";
   const waiting = queued && answerRunning;
   const pictureOnly = m.images.length > 0 && m.content === IMAGE_ONLY_TEXT;
-  const body = pictureOnly ? null : withMentions(m.content, m.mentions, names);
+  const tagged = m.mentions.map((id) => names.get(id)).filter((n): n is string => !!n);
+  const body = pictureOnly ? null : <Markdown text={m.content} chat mentions={tagged} />;
   return (
     <div className={`msg ${own ? "own" : "other"}`}>
       {!own && <Avatar id={m.author_id ?? name} name={name} size={28} />}

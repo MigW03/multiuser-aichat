@@ -5,6 +5,7 @@ import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
 import { IMAGE_ACCEPT, preparePicture, type Picture } from "../lib/images.ts";
 import { useModelReasoning, useModelVision } from "../lib/models.ts";
+import { MarkdownBackdrop } from "./MarkdownBackdrop.tsx";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
 import { Avatar, ICON, ICON_SM, STROKE } from "./kit.tsx";
@@ -57,6 +58,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
   const [warning, setWarning] = useState<{ kind: string; snippet: string } | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
 
   // After a name is inserted the caret goes right behind it, before anything typed next.
   useLayoutEffect(() => {
@@ -78,7 +80,13 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    syncBackdrop();
   }, [text]);
+
+  // The styled copy scrolls along with the textarea.
+  function syncBackdrop() {
+    if (backdrop.current && ref.current) backdrop.current.style.transform = `translateY(${-ref.current.scrollTop}px)`;
+  }
 
   // "@ben" typed at the caret opens the list of people.
   const token = useMemo(() => {
@@ -306,29 +314,34 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
                 e.target.value = "";
               }}
             />
-            <textarea
-              ref={ref}
-              rows={1}
-              value={text}
-              maxLength={LIMITS.messageChars}
-              placeholder={placeholder}
-              aria-label="Message"
-              onChange={(e) => {
-                setText(e.target.value);
-                setCaret(e.target.selectionStart);
-                if (e.target.value) onTyping();
-              }}
-              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-              onKeyDown={onKeyDown}
-              onPaste={(e) => {
-                // A copied picture (a screenshot) attaches; copied text, even with a picture beside it, pastes as text.
-                const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
-                if (files.length > 0 && !e.clipboardData.getData("text/plain")) {
-                  e.preventDefault();
-                  void addFiles(files);
-                }
-              }}
-            />
+            <div className="composer-input">
+              <textarea
+                ref={ref}
+                className="md-live"
+                rows={1}
+                value={text}
+                maxLength={LIMITS.messageChars}
+                placeholder={placeholder}
+                aria-label="Message"
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setCaret(e.target.selectionStart);
+                  if (e.target.value) onTyping();
+                }}
+                onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+                onKeyDown={onKeyDown}
+                onScroll={syncBackdrop}
+                onPaste={(e) => {
+                  // A copied picture (a screenshot) attaches; copied text, even with a picture beside it, pastes as text.
+                  const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+                  if (files.length > 0 && !e.clipboardData.getData("text/plain")) {
+                    e.preventDefault();
+                    void addFiles(files);
+                  }
+                }}
+              />
+              <MarkdownBackdrop text={text} innerRef={backdrop} />
+            </div>
             {showStop ? (
               <button type="button" className="send-btn stop" aria-label="Stop answering" title="Stop" onClick={onStop}>
                 <Square size={13} strokeWidth={0} fill="currentColor" aria-hidden />

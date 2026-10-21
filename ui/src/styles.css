@@ -397,6 +397,7 @@ h1, h2, h3, p { margin: 0; }
 .msg-meta { font: var(--text-small); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .ai-name { color: var(--p-text); }
 .bubble { padding: 9px 14px; border-radius: var(--r-bubble); overflow-wrap: anywhere; white-space: pre-wrap; max-width: 100%; }
+.bubble .markdown { white-space: normal; }
 .bubble.own { background: var(--bubble-own); border-top-right-radius: var(--r-tail); }
 .bubble.other { background: var(--bubble-other); border-top-left-radius: var(--r-tail); }
 .bubble.ai { background: var(--bubble-ai); border: 1px solid var(--bubble-ai-border); border-top-left-radius: var(--r-tail); white-space: normal; }
@@ -453,7 +454,30 @@ h1, h2, h3, p { margin: 0; }
 .composer { position: relative; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-composer); background: var(--card); box-shadow: var(--shadow-panel); }
 .composer:focus-within { border-color: var(--p); box-shadow: 0 0 0 3px var(--t12); }
 .composer-row { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; }
-.composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; padding: 6px 0; max-height: 200px; line-height: 1.5; font-size: 14.5px; }
+.composer-input { position: relative; flex: 1; min-width: 0; display: flex; margin: 0 -4px; }
+.composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; padding: 6px 4px; max-height: 200px; line-height: 1.5; font-size: 14.5px; overflow-wrap: break-word; scrollbar-width: none; }
+.composer textarea::-webkit-scrollbar { display: none; }
+/* Live Markdown: the textarea keeps the caret and selection but its text is see-through; the backdrop above it draws
+   the same characters, styled. Nothing in it may change a character's width (see MarkdownBackdrop.tsx). */
+.composer textarea.md-live { color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg); }
+.md-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.md-inner { padding: 6px 4px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+.md-line { margin: 0 -4px; padding: 0 4px; }
+.md-line.fence, .md-line.code { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.md-line.add { background: color-mix(in srgb, #2ea043 24%, transparent); }
+.md-line.del { background: color-mix(in srgb, var(--danger) 24%, transparent); }
+.md-line.fence { color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.md-line.first { border-radius: 8px 8px 0 0; }
+.md-line.last { border-radius: 0 0 8px 8px; }
+.md-line.first.last { border-radius: 8px; }
+.md-line.heading { -webkit-text-stroke: 0.6px currentColor; }
+.md-line.quote { color: var(--muted-fg); }
+.md-mark { color: color-mix(in srgb, var(--fg) 40%, transparent); -webkit-text-stroke: 0; }
+.md-bold { -webkit-text-stroke: 0.5px currentColor; }
+.md-italic { font-style: italic; }
+.md-strike { text-decoration: line-through; }
+.md-code { background: color-mix(in srgb, var(--fg) 10%, transparent); border-radius: 4px; color: var(--p-text); }
+.md-list { color: var(--p-text); }
 .send-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--p); color: var(--p-fg); display: inline-flex; align-items: center; justify-content: center; }
 .send-btn:hover:not(:disabled) { filter: brightness(1.1); }
 .send-btn.stop { background: var(--p); color: var(--p-fg); }
@@ -536,6 +560,9 @@ h1, h2, h3, p { margin: 0; }
 /* No mid-word breaks in cells: the .markdown "anywhere" wrap would shrink columns to one letter. Wide tables scroll instead. */
 .markdown th, .markdown td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; min-width: 5em; }
 .markdown th { background: var(--muted); }
+.markdown pre code .diff-add, .markdown pre code .diff-del, .markdown pre code .diff-line { display: block; margin: 0 -14px; padding: 0 14px; }
+.markdown pre code .diff-add { background: color-mix(in srgb, #2ea043 24%, transparent); }
+.markdown pre code .diff-del { background: color-mix(in srgb, var(--danger) 24%, transparent); }
 .markdown hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 
 /* ------------------------------------------------------------------ small screens */

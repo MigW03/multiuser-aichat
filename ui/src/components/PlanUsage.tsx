@@ -1,7 +1,7 @@
 import type { ChatGptUsage, OpenRouterUsage, ProviderId, UsageLimit } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api.ts";
-import { Button } from "./kit.tsx";
+import { Button, Popover } from "./kit.tsx";
 
 // How much of the signed-in ChatGPT plan, or of the OpenRouter key's budget, is used. Fetched through our server and
 // only ever shown to the account's owner: in Settings as bars, and in the chat as a small ring beside the model picker.
@@ -249,9 +249,9 @@ function Ring({ used, reached, label, answering, reload, children }: { used: num
         </svg>
       </button>
       {open && (
-        <div className="popover above end usage-popover" role="dialog" aria-label="Usage">
+        <Popover label="Usage" className="usage-popover">
           {children}
-        </div>
+        </Popover>
       )}
     </div>
   );

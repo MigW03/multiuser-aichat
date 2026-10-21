@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { loadModels } from "../lib/models.ts";
 import { useApp } from "../data.tsx";
 import { fetchFavoriteModels, setFavoriteModel } from "../lib/actions.ts";
-import { ICON_SM, Menu, STROKE, Spinner } from "./kit.tsx";
+import { ICON_SM, Menu, Popover, STROKE, Spinner } from "./kit.tsx";
 
 export const modelButtonLabel = modelName;
 
@@ -154,7 +154,7 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
   };
 
   return (
-    <div className="popover above end model-popover" role="dialog" aria-label="Choose a model">
+    <Popover label="Choose a model" className="model-popover">
       {keys && keys.length === 0 ? (
         <div className="popover-empty">
           <p className="small muted">Add an AI key to choose a model.</p>
@@ -194,7 +194,7 @@ function ModelList({ current, onChoose }: { current: ModelChoice | null; onChoos
           </div>
         </>
       )}
-    </div>
+    </Popover>
   );
 }
 

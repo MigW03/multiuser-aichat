@@ -602,7 +602,7 @@ h1, h2, h3, p { margin: 0; }
 .info-tip { position: fixed; z-index: 60; padding: 10px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); font: var(--text-small); pointer-events: none; }
 .info-tip-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
 .folder-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--muted-fg); }
-.folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 180px; }
+.folder-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: none; min-height: 0; }
 .folder-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font: var(--text-row); }
 .folder-crumbs .row button { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--muted-fg); max-width: 160px; }
 .folder-crumbs .row button:hover { background: var(--hover-row); color: var(--fg); }
@@ -716,7 +716,7 @@ h1, h2, h3, p { margin: 0; }
 .mcp-status.ready { color: var(--p-text); }
 .mcp-status.failed { color: var(--danger); }
 .mcp-error { margin-top: 6px; color: var(--danger); white-space: pre-wrap; word-break: break-word; }
-.mcp-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; margin-left: -8px; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; margin-left: -4px; }
 .mcp-tools { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .mcp-tools li { display: flex; gap: 12px; align-items: flex-start; }
 .mcp-tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
@@ -733,8 +733,8 @@ h1, h2, h3, p { margin: 0; }
 .git-command { display: block; padding: 6px 10px; margin-top: 6px; border-radius: 8px; background: var(--muted); font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; user-select: all; }
 .dock-card .git-command { margin-top: 0; }
 .dock-card .risky svg { vertical-align: -2px; margin-right: 4px; color: var(--warning); }
-.git-changes { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
-.git-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
+.git-changes { display: flex; flex: 1; flex-direction: column; gap: 6px; min-height: 0; padding-top: 8px; border-top: 1px solid var(--border); }
+.git-files { list-style: none; margin: 0; padding: 0; display: flex; flex: 1; flex-direction: column; gap: 2px; min-height: 0; overflow: auto; }
 .git-files button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border: 0; background: transparent; border-radius: 6px; text-align: left; font: var(--text-small); }
 .git-files button:hover { background: var(--hover-row); }
 .git-letter { flex: none; min-width: 26px; padding: 0 4px; border-radius: 4px; background: var(--muted); color: var(--muted-fg); font: 600 10.5px/1.6 var(--mono); text-align: center; }

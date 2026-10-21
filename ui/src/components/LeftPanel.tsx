@@ -21,7 +21,7 @@ import {
 } from "./Dialogs.tsx";
 import { ProjectTile } from "./Join.tsx";
 import { McpAttentionDot, McpFlyout, useMcpStatus } from "./McpStatusMenu.tsx";
-import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
+import { NEW_CHAT_SHORTCUT, PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, Button, IconButton, ICON, ICON_SM, Menu, SectionLabel, STROKE, UnreadBadge } from "./kit.tsx";
 
 type Props = {
@@ -122,7 +122,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
             </button>
           )}
         </label>
-        <Button variant="ghost" className="new-chat" block onClick={newChat}>
+        <Button variant="ghost" className="new-chat" block onClick={newChat} title={`New chat (${NEW_CHAT_SHORTCUT.label})`} aria-keyshortcuts={NEW_CHAT_SHORTCUT.keys}>
           <MessageSquarePlus size={ICON} strokeWidth={STROKE} aria-hidden /> New chat
         </Button>
       </div>

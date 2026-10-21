@@ -1,4 +1,4 @@
-import { classifyCommand, FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse } from "@mc/shared";
+import { classifyCommand, FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse, type ScriptsInfo } from "@mc/shared";
 import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { Approvals, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
 import { stageExec } from "./folder-exec.ts";
+import { listScripts, ScriptRunner, stageScript } from "./folder-scripts.ts";
 import { stageGitChange } from "./folder-git.ts";
 import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
@@ -102,12 +103,18 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     return c ? { edit: c.edit === true, git: c.git === true, exec: c.exec === true } : NO_CAPS;
   };
 
+  /** The scripts that run from the Scripts tab. The page hears that something changed and asks for the state. */
+  const scripts = new ScriptRunner((projectId) => opts.getWindow()?.webContents.send("folder:scripts-changed", projectId));
+  /** The approval id of each Run click that waits for the host (so the row's Cancel can withdraw it), by project, folder and script. */
+  const scriptRequests = new Map<string, string>();
+  const scriptKey = (projectId: string, key: string, name: string) => `${projectId}\n${key}\n${name}`;
+
   // Proposed AI changes wait here for the host's click. The page learns of them through these events.
   const approvals = new Approvals({
     onAdd: (view) => {
       opts.getWindow()?.webContents.send("folder:approval", view);
       const win = opts.getWindow();
-      if (Notification.isSupported() && !(win?.isFocused() ?? false)) {
+      if (Notification.isSupported() && !(win?.isFocused() ?? false) && !view.change.script) {
         const note = new Notification({ title: "The AI wants to change a file", body: `${view.askedBy} · ${view.change.path}` });
         note.on("click", () => {
           win?.show();
@@ -120,19 +127,21 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     stillAllowed: (projectId, kind) => capsOf(projectId)[kind === "files" ? "edit" : kind],
     // A command runs only after the person confirms in a window the app itself shows: the page cannot click it.
     confirm: async (view) => {
-      const flags = classifyCommand(view.change.command ?? "").map((f) => `• ${f.label}`);
+      const flags = classifyCommand([view.change.command ?? "", view.change.script?.body ?? "", ...(view.change.script?.around ?? [])].join("\n")).map((f) => `• ${f.label}`);
+      const script = view.change.script;
       const detail = [
         view.change.command ?? "", // the whole command, never cut: what is confirmed is what runs
+        ...(script ? [`Script "${script.name}" in package.json runs: ${script.body}`, ...(script.around ?? []).map((a) => `Also runs ${a}`)] : []),
         "",
         `Folder: ${view.change.workdir ? view.change.workdir : "the shared folder"}`,
-        `Time limit: ${view.change.timeoutSec ?? 0} seconds`,
-        `Asked for by: ${view.askedBy}`,
+        script ? "Time limit: none. It runs in the background until it ends or you press Stop." : `Time limit: ${view.change.timeoutSec ?? 0} seconds`,
+        script ? "Started by: you, with the Run button" : `Asked for by: ${view.askedBy}`,
         ...(flags.length ? ["", "Looks like it:", ...flags] : []),
         "",
         "It runs with your own user's rights. Nothing limits what it can read, change or send.",
       ].join("\n");
       const win = opts.getWindow();
-      const options = { type: "warning" as const, title: "Run this command?", message: "Run this command on your computer?", detail, buttons: ["Cancel", "Run command"], defaultId: 0, cancelId: 0, noLink: true };
+      const options = { type: "warning" as const, title: script ? "Run this script?" : "Run this command?", message: script ? "Run this script on your computer?" : "Run this command on your computer?", detail, buttons: ["Cancel", script ? "Run script" : "Run command"], defaultId: 0, cancelId: 0, noLink: true };
       const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
       return r.response === 1;
     },
@@ -175,6 +184,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const wsUrl = session ? serverSocketUrl(session.serverUrl, app.isPackaged) : null;
     for (const [projectId, conn] of conns) {
       if (!session || !wsUrl || !session.projects.includes(projectId) || !mine(projectId)) {
+        scripts.stopProject(projectId);
         conn.close();
         conns.delete(projectId);
         changed(projectId);
@@ -214,6 +224,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const link = links[projectId];
     if (link) {
       const gone = new Set([...(before?.keys() ?? [])].filter((k) => !next.has(k)));
+      for (const key of gone) scripts.stopItem(projectId, key);
       if (gone.size > 0) {
         const keep = link.items.filter((i) => !(i.key && gone.has(i.key)));
         if (keep.length !== link.items.length) {
@@ -375,6 +386,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     const gone = viewOf(projectId).find((i) => i.name === name);
     if (!gone) return { name: info(projectId).name };
     const keep = links[projectId]!.items.filter((i) => i.key !== gone.key);
+    scripts.stopItem(projectId, gone.key);
     const before = conns.get(projectId);
     if (keep.length === 0) {
       const { [projectId]: _gone, ...rest } = links;
@@ -424,7 +436,10 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await saveLinks(links);
     if (!next.edit) approvals.closeProject(projectId, "The owner turned off AI changes.", "files"); // what was waiting is withdrawn at once
     if (!next.git) approvals.closeProject(projectId, "The owner turned off git.", "git");
-    if (!next.exec) approvals.closeProject(projectId, "The owner turned off commands.", "exec"); // and a command that is running is stopped
+    if (!next.exec) {
+      approvals.closeProject(projectId, "The owner turned off commands.", "exec"); // and a command that is running is stopped
+      scripts.stopProject(projectId); // and so are the scripts
+    }
     conns.get(projectId)?.capsChanged();
     changed(projectId);
     return info(projectId);
@@ -441,6 +456,73 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await ready;
     if (!mine(projectId)) return false;
     return approvals.decide(projectId, id, approve);
+  });
+
+  // ---- The Scripts tab: package.json scripts of the folders this person shares from this computer.
+  const NO_SCRIPTS: ScriptsInfo = { scripts: [], runs: [] };
+  const isName = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= 64;
+
+  // `list` false: only how the runs are doing (package.json is not read again), for while a script is printing.
+  ipcMain.handle("folder:scripts-get", async (e, projectId: unknown, list: unknown): Promise<ScriptsInfo> => {
+    if (!trusted(e) || !isUuid(projectId)) return NO_SCRIPTS;
+    await ready;
+    if (!mine(projectId)) return NO_SCRIPTS;
+    return { scripts: list === false ? [] : await listScripts(itemsOf(projectId)), runs: scripts.runs(projectId) };
+  });
+
+  // The Run button. It only asks: the request waits in the approval dock, and the script starts when the owner approves it there and confirms in the app's own window.
+  ipcMain.handle("folder:script-run", async (e, projectId: unknown, key: unknown, name: unknown): Promise<{ ok: true } | { ok: false; error: string }> => {
+    if (!trusted(e) || !isUuid(projectId) || !isName(key) || !isName(name)) return { ok: false, error: "That script can't be run." };
+    await ready;
+    if (!mine(projectId)) return { ok: false, error: "Scripts run from the computer that shares the folder." };
+    if (!capsOf(projectId).exec) return { ok: false, error: "Commands are off for this project. Turn them on in Project settings." };
+    if (scripts.isWaiting(projectId, key, name)) return { ok: true };
+    if (approvals.execBusy(projectId)) return { ok: false, error: "A command is already waiting for you. Decide on it first." };
+    if (approvals.count(projectId) >= L.proposals) return { ok: false, error: "Several requests are already waiting for you. Decide on them first." };
+    const id = `script-${randomUUID()}`;
+    try {
+      const staged = await stageScript(itemsOf(projectId), { id, key, name }, (cwd, command) => scripts.start(projectId, key, name, command, cwd));
+      const k = scriptKey(projectId, key, name);
+      scriptRequests.set(k, id);
+      scripts.setWaiting(projectId, key, name, true);
+      void approvals.propose(projectId, staged, { askedBy: "You", readFiles: 0 }).then((res) => {
+        scriptRequests.delete(k);
+        scripts.setWaiting(projectId, key, name, false);
+        // Declining or letting it expire is the person's own doing; anything else is told on the row.
+        if (!res.ok && res.code !== "denied" && res.code !== "expired") scripts.fail(projectId, key, name, res.message);
+      });
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof FolderError) return { ok: false, error: err.message };
+      console.error("[folder] could not prepare a script:", err instanceof Error ? err.message : err);
+      return { ok: false, error: "The script couldn't be prepared." };
+    }
+  });
+
+  // Withdraws a Run click that has not been approved yet.
+  ipcMain.handle("folder:script-cancel", async (e, projectId: unknown, key: unknown, name: unknown): Promise<void> => {
+    if (!trusted(e) || !isUuid(projectId) || !isName(key) || !isName(name) || !mine(projectId)) return;
+    const id = scriptRequests.get(scriptKey(projectId, key, name));
+    if (id) await approvals.decide(projectId, id, false);
+  });
+
+  // Stopping needs no approval: it only ends something this person started.
+  ipcMain.handle("folder:script-stop", async (e, projectId: unknown, key: unknown, name: unknown): Promise<boolean> => {
+    if (!trusted(e) || !isUuid(projectId) || !isName(key) || !isName(name) || !mine(projectId)) return false;
+    return scripts.stop(projectId, key, name);
+  });
+
+  ipcMain.handle("folder:script-log", async (e, projectId: unknown, key: unknown, name: unknown): Promise<string | null> => {
+    if (!trusted(e) || !isUuid(projectId) || !isName(key) || !isName(name) || !mine(projectId)) return null;
+    return scripts.log(projectId, key, name);
+  });
+
+  ipcMain.handle("folder:script-clear", async (e, projectId: unknown, key: unknown, name: unknown): Promise<void> => {
+    if (trusted(e) && isUuid(projectId) && isName(key) && isName(name) && mine(projectId)) scripts.clearLog(projectId, key, name);
+  });
+
+  ipcMain.handle("folder:scripts-seen", async (e, projectId: unknown): Promise<void> => {
+    if (trusted(e) && isUuid(projectId) && mine(projectId)) scripts.markSeen(projectId);
   });
 
   // (Re)connects one project now.
@@ -463,6 +545,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await saveLinks(links);
     assigned.delete(projectId);
     approvals.closeProject(projectId);
+    scripts.stopProject(projectId);
     conns.get(projectId)?.reportItems(); // an empty list, before reconcile closes the connection
     reconcile();
     changed(projectId);
@@ -470,6 +553,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
 
   app.on("before-quit", () => {
     approvals.closeAll();
+    scripts.stopAll();
     for (const c of conns.values()) c.close();
   });
 }

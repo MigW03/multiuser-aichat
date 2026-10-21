@@ -344,6 +344,15 @@ export const FOLDER_LIMITS = {
   execMaxSec: 600,
   execHeadChars: 30_000,
   execTailChars: 20_000,
+  /** Scripts from package.json: biggest package.json read, scripts listed per folder, shown length of a script's body, scripts running at once in a project. */
+  packageJsonBytes: 256 * 1024,
+  scriptsListed: 40,
+  scriptBodyChars: 200,
+  scriptsRunning: 3,
+  /** The log kept for each script (lines and characters), and how long a stopped script has to end on its own before it is killed. */
+  scriptLogLines: 500,
+  scriptLogChars: 50_000,
+  scriptStopMs: 3_000,
 } as const;
 
 export type FolderEntry = { name: string; type: "file" | "dir"; size?: number };
@@ -412,6 +421,8 @@ export type ChangePreview = {
   workdir?: string;
   timeoutSec?: number;
   note?: string;
+  /** exec only: the person clicked Run on a package.json script. `body` is what the script runs, as written in package.json. There is no time limit: it runs until it ends or is stopped. */
+  script?: { name: string; body: string; /** The hooks npm runs around it (`predev: ...`), shown whole too. */ around?: string[] };
   /** true when the file does not exist yet. */
   created: boolean;
   added: number;
@@ -448,6 +459,12 @@ export type GitStatusResult = { branch: string | null; files: GitStatusFile[]; t
 export type GitTextResult = { text: string; truncated: boolean };
 /** What an approved command did. `output` is stdout and stderr together, cut to the start and the end when long. */
 export type ExecResult = { command: string; exitCode: number | null; signal: string | null; timedOut: boolean; output: string; truncated: boolean; ms: number };
+/** A script from the package.json of a folder shared from this computer, for the Scripts tab. `command` is what runs (npm, pnpm, yarn or bun, by the lock file). */
+export type ScriptInfo = { key: string; folder: string; name: string; body: string; command: string };
+export type ScriptState = "wait" | "run" | "stopping" | "stopped" | "ok" | "crash";
+/** What became of one script. `key` is the shared item's key. `ms` counts from the start to the end, or to now while it runs. */
+export type ScriptRun = { key: string; name: string; state: ScriptState; startedAt: number | null; endedAt: number | null; exitCode: number | null; /** A crash the person has not seen yet. */ unseen: boolean; /** Why it could not be started, when that is why it shows as crashed. */ note: string | null };
+export type ScriptsInfo = { scripts: ScriptInfo[]; runs: ScriptRun[] };
 /** What a host-approved git action did. */
 export type GitChangeResult = { command: string; output: string };
 

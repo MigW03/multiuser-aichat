@@ -3,11 +3,13 @@ import { ArrowLeft, Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBr
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
-import { folderBridge, useLocalFolder, useProjectShares, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
+import { folderBridge, useLocalFolder, useProjectShares, useScripts, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
+import { PREF, readPref, writePref } from "../lib/prefs.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
 import { SplitResizer, useSplit } from "./PanelResizer.tsx";
+import { ScriptsBody, scriptsDot } from "./ScriptsUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared files live in the right column of a project's chats, as the approved hi-fi boards draw it
@@ -71,6 +73,22 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const canShare = !!bridge && typeof bridge.pick === "function" && typeof bridge.remove === "function";
   const mine = (shares.data ?? []).filter((s) => s.owner_id === me.id);
   const share = useShare(project, bridge, mine.length > 0);
+
+  // The Scripts tab: only in the desktop app, for a person who shares a folder from this computer (the scripts run there).
+  const local = useLocalFolder(project.id);
+  const scriptsApi = bridge?.scripts ?? null;
+  const hasScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
+  const scripts = useScripts(project.id, hasScripts);
+  const [tabPref, setTabPref] = useState<"files" | "scripts">(() => (readPref<string>(PREF.filesTab(me.id), "files") === "scripts" ? "scripts" : "files"));
+  const tab = hasScripts && tabPref === "scripts" ? "scripts" : "files";
+  const pickTab = (next: "files" | "scripts") => {
+    setTabPref(next);
+    writePref(PREF.filesTab(me.id), next);
+  };
+  const crashUnseen = tab === "scripts" && !!scripts.info?.runs.some((r) => r.unseen);
+  useEffect(() => {
+    if (crashUnseen) void scriptsApi?.seen(project.id).catch(() => undefined);
+  }, [crashUnseen, scriptsApi, project.id]);
 
   // Dragging a folder or file from the file system onto the card starts sharing it (the desktop app only: a browser never gets paths).
   const canDrop = canShare && typeof bridge?.onDrop === "function" && typeof bridge.dropCommit === "function";
@@ -138,20 +156,44 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   return (
     <section className="side-card folder-card" aria-label="Files" {...dragProps}>
       <header className="side-card-head">
-        <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-        <span className="side-card-title grow">
-          <b className="truncate">Files</b>
-          <FolderInfo />
-        </span>
-        {canShare && <ShareMenu share={share} />}
+        {hasScripts ? (
+          <span className="side-card-title grow">
+            <span className="notes-filter files-tabs" role="tablist" aria-label="Files and scripts">
+              <button type="button" role="tab" aria-selected={tab === "files"} className={`notes-tab ${tab === "files" ? "on" : ""}`} onClick={() => pickTab("files")}>
+                Files
+              </button>
+              <button type="button" role="tab" aria-selected={tab === "scripts"} className={`notes-tab ${tab === "scripts" ? "on" : ""}`} onClick={() => pickTab("scripts")}>
+                Scripts
+                <ScriptsDot info={scripts.info} />
+              </button>
+            </span>
+            {tab === "files" && <FolderInfo />}
+          </span>
+        ) : (
+          <>
+            <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+            <span className="side-card-title grow">
+              <b className="truncate">Files</b>
+              <FolderInfo />
+            </span>
+          </>
+        )}
+        {canShare && tab === "files" && <ShareMenu share={share} />}
         <IconButton label="Hide files" onClick={onClose} className="sm">
           <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>
       </header>
-      <FolderBody project={project} rows={shares.data} share={share} />
+      {tab === "scripts" && scriptsApi ? <ScriptsBody project={project} info={scripts.info} version={scripts.version} execOn={local?.caps?.exec === true} bridge={scriptsApi} /> : <FolderBody project={project} rows={shares.data} share={share} />}
       {overlay}
     </section>
   );
+}
+
+/** A small dot on the Scripts tab: green while a script runs, red for a crash that has not been looked at (also when the Files tab is open). */
+function ScriptsDot({ info }: { info: Parameters<typeof scriptsDot>[0] }) {
+  const dot = scriptsDot(info);
+  if (!dot) return null;
+  return <span className={`mdot tab-dot ${dot}`} role="img" aria-label={dot === "ready" ? "A script is running" : "A script crashed"} />;
 }
 
 /** The single Share button: it opens a small menu to share a folder or files. */

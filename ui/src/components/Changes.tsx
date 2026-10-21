@@ -47,14 +47,21 @@ const RISKY = /(^|\/)(\.github\/|\.gitlab-ci|\.vscode\/|\.husky\/|package\.json$
 
 /** An approved-or-not command, shown as text. The warnings are only hints from a pattern list: the host reads the command. */
 function CommandBlock({ change, warn }: { change: ChangePreview; warn: boolean }) {
-  const flags = warn ? classifyCommand(change.command ?? "") : [];
+  // A script's warnings come from what it runs (its body and hooks), not only from `npm run dev`.
+  const flags = warn ? classifyCommand([change.command ?? "", change.script?.body ?? "", ...(change.script?.around ?? [])].join("\n")) : [];
   return (
     <>
       <pre className="git-command exec-command">{change.command}</pre>
       <p className="small muted exec-facts">
-        In {change.workdir ? <b>{change.workdir}</b> : "the shared folder"} · stops after {change.timeoutSec ?? 120} s
+        In {change.workdir ? <b>{change.workdir}</b> : "the shared folder"} · {change.script ? "runs until you stop it" : <>stops after {change.timeoutSec ?? 120} s</>}
+        {change.script ? <> · the script runs: <code>{change.script.body}</code></> : null}
         {change.note ? <> · the AI says: <i>{change.note}</i></> : null}
       </p>
+      {change.script?.around?.map((a) => (
+        <p key={a} className="small muted exec-facts">
+          Also runs <code>{a}</code>
+        </p>
+      ))}
       {flags.map((f) => (
         <p key={f.kind} className="small risky" role="note">
           <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {f.label}.
@@ -177,7 +184,14 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
       <header>
         <ShieldCheck size={ICON_SM} strokeWidth={STROKE} aria-hidden />
         <span className="grow">
-          <b>{item.askedBy}</b>'s AI wants to {c.kind === "exec" ? <b>run a command</b> : <>{c.kind === "git" ? "run" : c.created ? "create" : "change"} <b>{c.path}</b></>} in {projectName}
+          {c.script ? (
+            <>You asked to run the script <b>{c.script.name}</b></>
+          ) : (
+            <>
+              <b>{item.askedBy}</b>'s AI wants to {c.kind === "exec" ? <b>run a command</b> : <>{c.kind === "git" ? "run" : c.created ? "create" : "change"} <b>{c.path}</b></>}
+            </>
+          )}{" "}
+          in {projectName}
         </span>
         <Stats change={c} />
         {expanded ? (
@@ -214,7 +228,9 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
         </>
       )}
       <p className="small muted">
-        {c.kind === "exec"
+        {c.script
+          ? `It runs in the background with your own rights, and nothing limits what it can read or change. Approving opens a second window where you confirm. Nothing runs until you do. You can stop it any time in the Scripts tab. Time left: ${left}.`
+          : c.kind === "exec"
           ? `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. It runs with your own rights, and nothing limits what it can read or change. Approving opens a second window where you confirm. Nothing runs until you do. Time left: ${left}.`
           : `It read ${item.readFiles} ${item.readFiles === 1 ? "file" : "files"} before proposing this. Check that the change is what was asked for. Nothing ${c.kind === "git" ? "runs" : "is written"} until you approve. Time left: ${left}.`}
       </p>

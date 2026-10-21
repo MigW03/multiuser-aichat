@@ -32,6 +32,8 @@ export const PREF = {
   rightWidth: (userId: string) => `mc.rightWidth.${userId}`,
   /** How the right column's height is shared: the part the Files card takes (0 to 1), the rest is Notes. */
   filesShare: (userId: string) => `mc.filesShare.${userId}`,
+  /** Which tab of the Files card is open: "files" or "scripts". */
+  filesTab: (userId: string) => `mc.filesTab.${userId}`,
   /** Hide the privacy notice before inviting / joining ("Never show this again"). */
   hideInviteNotice: (userId: string) => `mc.hideInviteNotice.${userId}`,
   hideJoinNotice: (userId: string) => `mc.hideJoinNotice.${userId}`,

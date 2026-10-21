@@ -5,10 +5,10 @@ import type { GitStaged } from "./folder-git.ts";
 import { FolderError } from "./folder-fs.ts";
 
 // Proposals waiting for the host. A proposal lives only in this app's memory: the chat server can ask for one and can
-// cancel it, but only the host's click in this app (decide) ever writes anything. Nothing is remembered between runs
-// and nothing is approved in advance.
+// cancel it, but only the host's click in this app (decide) ever writes anything. The one thing approved in advance is a
+// command the host ticked "always allow" for in the confirmation window (folder-allow.ts): an exact match runs at once.
 
-export type PendingView = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number };
+export type PendingView = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number; /** The confirmation window will offer "always allow" for it. */ canAlwaysAllow?: boolean };
 
 export type Kind = "files" | "git" | "exec";
 type AnyStaged = Staged | GitStaged | ExecStaged;
@@ -23,6 +23,17 @@ type Entry = {
   settle: (res: FolderResponse) => void;
 };
 
+/** "auto": a rule the host made matches exactly, so it runs without asking. "offer": it asks, with the always-allow box. "no": it asks, with no box. */
+export type AllowVerdict = "auto" | "offer" | "no";
+
+export type AllowHooks = {
+  check: (projectId: string, staged: ExecStaged) => Promise<AllowVerdict>;
+  /** The host ticked the box: make the rule. */
+  remember: (view: PendingView, staged: ExecStaged) => Promise<void>;
+  /** A command ran (or failed to) because a rule matched. */
+  ran: (view: PendingView, res: FolderResponse) => void;
+};
+
 export type ApprovalHooks = {
   /** A proposal is waiting for the host. */
   onAdd: (view: PendingView) => void;
@@ -32,9 +43,11 @@ export type ApprovalHooks = {
   stillAllowed: (projectId: string, kind: Kind) => boolean;
   /**
    * A window the page cannot click, shown by the app itself, that asks once more before a command runs. Resolves true
-   * only when the person confirmed. Required: a command never runs on the page's click alone.
+   * only when the person confirmed ("always": and ticked the always-allow box, which is offered only when the view says
+   * `canAlwaysAllow`). Required: a command never runs on the page's click alone.
    */
-  confirm: (view: PendingView) => Promise<boolean>;
+  confirm: (view: PendingView) => Promise<boolean | "always">;
+  allow?: AllowHooks;
 };
 
 const key = (projectId: string, id: string) => `${projectId}\n${id}`;
@@ -43,6 +56,8 @@ export class Approvals {
   private readonly pending = new Map<string, Entry>();
   /** Commands that are running now, so they can be stopped. */
   private readonly running = new Map<string, { projectId: string; id: string; kill: () => void }>();
+  /** Commands a rule let through that have not started yet. */
+  private readonly starting = new Map<string, string>();
 
   constructor(
     private readonly hooks: ApprovalHooks,
@@ -55,7 +70,7 @@ export class Approvals {
 
   /** Commands waiting or running in a project (one at a time). */
   execBusy(projectId: string): boolean {
-    return [...this.pending.values()].some((e) => e.view.projectId === projectId && "exec" in e.staged) || [...this.running.values()].some((r) => r.projectId === projectId);
+    return [...this.pending.values()].some((e) => e.view.projectId === projectId && "exec" in e.staged) || [...this.running.values()].some((r) => r.projectId === projectId) || [...this.starting.values()].includes(projectId);
   }
 
   list(): PendingView[] {
@@ -63,11 +78,26 @@ export class Approvals {
   }
 
   /** Waits for the host's decision. Resolves with the answer to send back to the server. */
-  propose(projectId: string, staged: AnyStaged, ctx: { askedBy: string; readFiles: number }): Promise<FolderResponse> {
+  async propose(projectId: string, staged: AnyStaged, ctx: { askedBy: string; readFiles: number }): Promise<FolderResponse> {
     const k = key(projectId, staged.id);
-    if (this.pending.has(k)) return Promise.resolve({ id: staged.id, ok: false, code: "bad_request", message: "That request is already open." });
+    if (this.pending.has(k) || this.starting.has(k)) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
+    const verdict = "exec" in staged && this.hooks.allow ? await this.hooks.allow.check(projectId, staged).catch((): AllowVerdict => "no") : "no";
+    if (this.pending.has(k) || this.starting.has(k)) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
+    const view: PendingView = { projectId, id: staged.id, change: staged.change, askedBy: ctx.askedBy, readFiles: ctx.readFiles, expiresAt: Date.now() + this.ms, ...(verdict === "offer" ? { canAlwaysAllow: true } : {}) };
+    if (verdict === "auto") {
+      // A rule the host made matches this exact command: it runs without asking. Nothing waits in the dock.
+      if (this.execBusy(projectId)) return { id: staged.id, ok: false, code: "busy", message: "A command is already waiting for its owner or running. Wait for it to finish." };
+      this.starting.set(k, projectId);
+      let res: FolderResponse;
+      try {
+        res = await this.finish(k, projectId, staged.id, staged, true);
+      } finally {
+        this.starting.delete(k);
+      }
+      this.hooks.allow?.ran(view, res);
+      return res;
+    }
     return new Promise((resolve) => {
-      const view: PendingView = { projectId, id: staged.id, change: staged.change, askedBy: ctx.askedBy, readFiles: ctx.readFiles, expiresAt: Date.now() + this.ms };
       const timer = setTimeout(() => this.end(k, { id: staged.id, ok: false, code: "expired", message: "Nobody approved this change in time, so it was dropped." }), this.ms);
       this.pending.set(k, { view, staged, timer, settle: resolve });
       this.hooks.onAdd(view);
@@ -93,6 +123,7 @@ export class Approvals {
       if (e.deciding) return true;
       e.deciding = true;
       const confirmed = await this.hooks.confirm(e.view).catch(() => false);
+      if (confirmed === "always" && this.pending.get(k) === e && e.view.canAlwaysAllow) await this.hooks.allow?.remember(e.view, e.staged as ExecStaged).catch(() => undefined);
       e.deciding = false;
       if (this.pending.get(k) !== e) return false; // it ended while the window was open (expired, cancelled, switched off)
       if (!confirmed) return true;
@@ -100,7 +131,15 @@ export class Approvals {
     // Taken out first, so a double click cannot run it twice.
     this.pending.delete(k);
     clearTimeout(e.timer);
-    const kind = kindOf(e.staged);
+    const res = await this.finish(k, projectId, id, e.staged, approve);
+    e.settle(res);
+    this.hooks.onGone(projectId, id);
+    return true;
+  }
+
+  /** Declines, or runs, what the host (or a rule) decided on. The entry is already out of `pending`. */
+  private async finish(k: string, projectId: string, id: string, staged: AnyStaged, approve: boolean): Promise<FolderResponse> {
+    const kind = kindOf(staged);
     let res: FolderResponse;
     if (!approve) {
       res = { id, ok: false, code: "denied", message: kind === "exec" ? "The host declined to run this command. It was not run." : "The host declined this change." };
@@ -108,18 +147,18 @@ export class Approvals {
       res = { id, ok: false, code: "disabled", message: "The host turned off AI changes before this was approved." };
     } else {
       try {
-        if ("exec" in e.staged) {
-          const staged = e.staged;
+        if ("exec" in staged) {
+          const run = staged.run.bind(staged);
           try {
-            res = { id, ok: true, result: await staged.run((kill) => this.running.set(k, { projectId, id, kill })) };
+            res = { id, ok: true, result: await run((kill) => this.running.set(k, { projectId, id, kill })) };
           } finally {
             this.running.delete(k);
           }
-        } else if ("git" in e.staged) {
-          res = { id, ok: true, result: await e.staged.apply() };
+        } else if ("git" in staged) {
+          res = { id, ok: true, result: await staged.apply() };
         } else {
-          await commitStaged(e.staged);
-          const { path, created, added, removed } = e.staged.change;
+          await commitStaged(staged);
+          const { path, created, added, removed } = staged.change;
           res = { id, ok: true, result: { path, created, added, removed } };
         }
       } catch (err) {
@@ -130,9 +169,7 @@ export class Approvals {
         }
       }
     }
-    e.settle(res);
-    this.hooks.onGone(projectId, id);
-    return true;
+    return res;
   }
 
   /** The server withdrew it (the chat's Stop button) or the connection ended. */

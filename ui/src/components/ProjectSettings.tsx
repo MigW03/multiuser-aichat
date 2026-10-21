@@ -1,7 +1,7 @@
-import type { ProjectSummary } from "@mc/shared";
+import type { AllowedCommand, ProjectSummary } from "@mc/shared";
 import { ArrowLeft, PanelLeftOpen } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { folderBridge, useLocalFolder } from "../lib/folder.ts";
+import { folderBridge, useAllowedCommands, useLocalFolder } from "../lib/folder.ts";
 import { closeProjectSettings } from "../lib/router.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, STROKE } from "./kit.tsx";
@@ -64,7 +64,7 @@ const SWITCHES: Record<CapSwitch["key"], CapSwitch> = {
     key: "exec",
     native: true,
     title: "Let the AI propose commands",
-    text: "Off by default. When on, the AI can propose shell commands (tests, builds). Every single command appears in the desktop app with the exact text; you approve it and confirm it in a second window before it runs. Nothing runs on its own. There is no sandbox: an approved command can read or change anything you can.",
+    text: "Off by default. When on, the AI can propose shell commands (tests, builds). Every single command appears in the desktop app with the exact text; you approve it and confirm it in a second window before it runs. Nothing runs on its own, unless you tick “always allow” for a plain command in that window: then that exact command, in that folder, runs without asking for 30 days, until you revoke it below. There is no sandbox: an approved command can read or change anything you can.",
     confirmTitle: "",
     confirmText: () => "",
   },
@@ -131,6 +131,52 @@ function CapSetting({ project, which }: { project: ProjectSummary; which: CapSwi
   );
 }
 
+const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+/** The commands this person chose to always allow in this project, each with Revoke. They are added only in the desktop app's own confirmation window. */
+function AlwaysAllowed({ project }: { project: ProjectSummary }) {
+  const { rules, revoke, revokeAll } = useAllowedCommands(project.id);
+  const local = useLocalFolder(project.id);
+  if (rules === null) return null;
+  const off = local?.caps?.exec !== true;
+  return (
+    <div className="setting-row always-allowed">
+      <div className="grow">
+        <div className="strong">Always-allowed commands</div>
+        <p className="small muted">
+          These run without asking, only with exactly this text and only in the folder shown. {off ? "They are paused while commands are switched off. " : ""}You add one by ticking the box in the confirm window; each lasts 30 days.
+        </p>
+        {rules.length === 0 ? (
+          <p className="small muted">Nothing is always allowed.</p>
+        ) : (
+          <>
+            <ul className="allowed-list">
+              {rules.map((r: AllowedCommand) => (
+                <li key={r.id}>
+                  <div className="grow">
+                    <code className="truncate">{r.command}</code>
+                    <div className="small muted">
+                      {r.folder || "shared folder"} · added {day(r.createdAt)} · {r.lastRunAt ? `last run ${day(r.lastRunAt)}` : "never run"} · expires {day(r.expiresAt)}
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={() => void revoke(r.id)}>
+                    Revoke
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            {rules.length > 1 && (
+              <Button size="sm" onClick={() => void revokeAll()}>
+                Revoke all
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { project: ProjectSummary; leftCollapsed: boolean; onShowLeft: () => void }) {
   return (
     <section className="chat-card project-settings" aria-label="Project settings">
@@ -156,6 +202,7 @@ export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { projec
             <CapSetting project={project} which={SWITCHES.edit} />
             <CapSetting project={project} which={SWITCHES.git} />
             <CapSetting project={project} which={SWITCHES.exec} />
+            <AlwaysAllowed project={project} />
           </SettingsSection>
         </div>
       </div>

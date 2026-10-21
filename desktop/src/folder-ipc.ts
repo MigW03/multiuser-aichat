@@ -1,9 +1,10 @@
-import { classifyCommand, FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderResponse, type ScriptsInfo } from "@mc/shared";
+import { classifyCommand, FOLDER_LIMITS as L, type AllowedCommand, type ChangePreview, type FolderCaps, type FolderResponse, type ScriptsInfo } from "@mc/shared";
 import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { Approvals, type PendingView } from "./folder-approvals.ts";
+import { AllowStore, boundTexts, offerable } from "./folder-allow.ts";
+import { Approvals, type AllowVerdict, type PendingView } from "./folder-approvals.ts";
 import { stageChange } from "./folder-changes.ts";
 import { stageExec } from "./folder-exec.ts";
 import { listScripts, ScriptRunner, stageScript } from "./folder-scripts.ts";
@@ -109,6 +110,14 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const scriptRequests = new Map<string, string>();
   const scriptKey = (projectId: string, key: string, name: string) => `${projectId}\n${key}\n${name}`;
 
+  // Commands the host chose to always allow (folder-allow.ts). The page can list and revoke them; only the native confirmation window adds one.
+  const allow = new AllowStore(join(app.getPath("userData"), "always-allowed.json"));
+  const allowChanged = (projectId: string) => opts.getWindow()?.webContents.send("folder:allow-changed", projectId);
+  const approvalKey = (projectId: string, id: string) => `${projectId}\n${id}`;
+  /** The package.json script text a command depends on, as the host is shown it, and the rule that matched a command, by request. */
+  const boundOf = new Map<string, string[]>();
+  const ruleOf = new Map<string, string>();
+
   // Proposed AI changes wait here for the host's click. The page learns of them through these events.
   const approvals = new Approvals({
     onAdd: (view) => {
@@ -123,14 +132,18 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
         note.show();
       }
     },
-    onGone: (projectId, id) => opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id }),
+    onGone: (projectId, id) => {
+      boundOf.delete(approvalKey(projectId, id));
+      opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id });
+    },
     stillAllowed: (projectId, kind) => capsOf(projectId)[kind === "files" ? "edit" : kind],
     // A command runs only after the person confirms in a window the app itself shows: the page cannot click it.
     confirm: async (view) => {
-      const flags = classifyCommand([view.change.command ?? "", view.change.script?.body ?? "", ...(view.change.script?.around ?? [])].join("\n")).map((f) => `• ${f.label}`);
+      const flags = classifyCommand([view.change.command ?? "", view.change.script?.body ?? "", ...(view.change.script?.around ?? []), ...(boundOf.get(approvalKey(view.projectId, view.id)) ?? [])].join("\n")).map((f) => `• ${f.label}`);
       const script = view.change.script;
       const detail = [
         view.change.command ?? "", // the whole command, never cut: what is confirmed is what runs
+        ...(boundOf.get(approvalKey(view.projectId, view.id)) ?? []).map((t) => `Package script, as written in package.json: ${t}`),
         ...(script ? [`Script "${script.name}" in package.json runs: ${script.body}`, ...(script.around ?? []).map((a) => `Also runs ${a}`)] : []),
         "",
         `Folder: ${view.change.workdir ? view.change.workdir : "the shared folder"}`,
@@ -141,9 +154,54 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
         "It runs with your own user's rights. Nothing limits what it can read, change or send.",
       ].join("\n");
       const win = opts.getWindow();
-      const options = { type: "warning" as const, title: script ? "Run this script?" : "Run this command?", message: script ? "Run this script on your computer?" : "Run this command on your computer?", detail, buttons: ["Cancel", script ? "Run script" : "Run command"], defaultId: 0, cancelId: 0, noLink: true };
+      // The always-allow box is offered only when the app judged the command plain enough; it starts unticked and Cancel stays the default.
+      const options = {
+        type: "warning" as const,
+        title: script ? "Run this script?" : "Run this command?",
+        message: script ? "Run this script on your computer?" : "Run this command on your computer?",
+        detail,
+        buttons: ["Cancel", script ? "Run script" : "Run command"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        ...(view.canAlwaysAllow ? { checkboxLabel: `Always allow this exact ${script ? "script" : "command"} in this folder. It will run next time without asking.`, checkboxChecked: false } : {}),
+      };
       const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
-      return r.response === 1;
+      if (r.response !== 1) return false;
+      return view.canAlwaysAllow && r.checkboxChecked ? "always" : true;
+    },
+    allow: {
+      check: async (projectId, staged): Promise<AllowVerdict> => {
+        const command = staged.change.command ?? "";
+        const bound = await boundTexts(staged.cwd, command);
+        const k = approvalKey(projectId, staged.id);
+        if (!offerable(command, bound) || !capsOf(projectId).exec) return "no";
+        const rule = await allow.match(projectId, staged.cwd, command, bound);
+        if (rule) {
+          ruleOf.set(k, rule.id);
+          return "auto";
+        }
+        // A script the Scripts tab runs shows its own text already; for any other command that runs a package script, the window shows it too.
+        if (!staged.change.script && bound.length > 0) boundOf.set(k, bound);
+        return "offer";
+      },
+      remember: async (view, staged) => {
+        const command = staged.change.command ?? "";
+        const bound = await boundTexts(staged.cwd, command);
+        const shown = boundOf.get(approvalKey(view.projectId, view.id)) ?? bound;
+        // package.json changed while the window was open: what was shown is not what would be remembered.
+        if (shown.length !== bound.length || shown.some((t, i) => t !== bound[i])) return;
+        if (await allow.add({ projectId: view.projectId, cwd: staged.cwd, folder: staged.change.workdir ?? "", command, bound, script: !!staged.change.script })) allowChanged(view.projectId);
+      },
+      ran: (view, res) => {
+        const k = approvalKey(view.projectId, view.id);
+        const ruleId = ruleOf.get(k);
+        ruleOf.delete(k);
+        if (ruleId) void allow.used(ruleId).then(() => allowChanged(view.projectId));
+        const win = opts.getWindow();
+        win?.webContents.send("folder:auto-ran", { projectId: view.projectId, id: view.id, ruleId: ruleId ?? null, command: view.change.command ?? "", folder: view.change.workdir ?? "", script: !!view.change.script, ok: res.ok, at: Date.now() });
+        if (Notification.isSupported() && !(win?.isFocused() ?? false)) new Notification({ title: "Ran a command you always allowed", body: `${view.change.command ?? ""} · ${view.change.workdir ?? ""}` }).show();
+      },
     },
   });
 
@@ -234,6 +292,8 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
           } else links = { ...links, [projectId]: { ...link, items: keep } };
           await saveLinks(links);
           approvals.closeProject(projectId); // what a waiting change pointed at may be gone
+          await allow.revokeProject(projectId);
+          allowChanged(projectId);
           reconcile();
         }
       }
@@ -395,6 +455,8 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await saveLinks(links);
     assigned.get(projectId)?.delete(gone.key);
     approvals.closeProject(projectId); // what a waiting change pointed at may be gone
+    await allow.revokeProject(projectId); // a folder that comes back under the same name is a new folder: its commands ask again
+    allowChanged(projectId);
     before?.reportItems(); // before reconcile closes the connection, when nothing is left
     reconcile();
     changed(projectId);
@@ -422,7 +484,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
         title: "Let the AI propose commands?",
         message: "Let the AI propose commands on your computer?",
         detail:
-          "In this project's chats the AI will be able to propose shell commands, asked for by anyone in the project. Each one appears in this app with the exact command, and you confirm every single one in a window like this before it runs. Nothing runs on its own.\n\nThere is no sandbox: an approved command runs with your user's rights and can read or change anything you can, including files outside the shared folder. Its output goes into the chat and to the AI provider. You can switch this off any time.",
+          "In this project's chats the AI will be able to propose shell commands, asked for by anyone in the project. Each one appears in this app with the exact command, and you confirm every single one in a window like this before it runs. Nothing runs on its own, unless you tick “always allow” for a plain command in that window: then that exact command, in that folder, runs without asking for 30 days, until you revoke it in Project settings.\n\nThere is no sandbox: an approved command runs with your user's rights and can read or change anything you can, including files outside the shared folder. Its output goes into the chat and to the AI provider. You can switch this off any time.",
         buttons: ["Cancel", "Allow proposals"],
         defaultId: 0,
         cancelId: 0,
@@ -456,6 +518,28 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     await ready;
     if (!mine(projectId)) return false;
     return approvals.decide(projectId, id, approve);
+  });
+
+  // ---- Always-allowed commands. The page can list and revoke them; it cannot add one (only the native window can).
+  ipcMain.handle("folder:allow-list", async (e, projectId: unknown): Promise<AllowedCommand[]> => {
+    if (!trusted(e) || !isUuid(projectId)) return [];
+    await ready;
+    return mine(projectId) ? allow.list(projectId) : [];
+  });
+  ipcMain.handle("folder:allow-revoke", async (e, projectId: unknown, ruleId: unknown): Promise<boolean> => {
+    if (!trusted(e) || !isUuid(projectId) || typeof ruleId !== "string" || ruleId.length > 64) return false;
+    await ready;
+    if (!mine(projectId)) return false;
+    const done = await allow.revoke(projectId, ruleId);
+    allowChanged(projectId);
+    return done;
+  });
+  ipcMain.handle("folder:allow-revoke-all", async (e, projectId: unknown): Promise<void> => {
+    if (!trusted(e) || !isUuid(projectId)) return;
+    await ready;
+    if (!mine(projectId)) return;
+    await allow.revokeProject(projectId);
+    allowChanged(projectId);
   });
 
   // ---- The Scripts tab: package.json scripts of the folders this person shares from this computer.
@@ -546,6 +630,8 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     assigned.delete(projectId);
     approvals.closeProject(projectId);
     scripts.stopProject(projectId);
+    await allow.revokeProject(projectId);
+    allowChanged(projectId);
     conns.get(projectId)?.reportItems(); // an empty list, before reconcile closes the connection
     reconcile();
     changed(projectId);

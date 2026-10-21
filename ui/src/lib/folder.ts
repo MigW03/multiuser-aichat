@@ -1,4 +1,4 @@
-import type { ChangePreview, FolderCaps, ProjectShare, ProjectShareHost, ScriptsInfo } from "@mc/shared";
+import type { AllowedCommand, ChangePreview, FolderCaps, ProjectShare, ProjectShareHost, ScriptsInfo } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
@@ -19,7 +19,19 @@ export type Dropped = { ok: true; items: SharedItem[]; skipped: string[] } | { o
 export type PickResult = { ok: true; name: string; items: LocalItem[]; skipped: string[] } | { ok: false; error: string | null };
 
 /** An AI change waiting for this computer's owner. The diff comes from the app itself, not from the chat server. */
-export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number };
+export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number; /** The app's confirmation window will offer "always allow" for it. */ canAlwaysAllow?: boolean };
+
+/** A command that ran without asking because the owner always allowed it. */
+export type AutoRan = { projectId: string; id: string; ruleId: string | null; command: string; folder: string; script: boolean; ok: boolean; at: number };
+
+/** Commands this person always allowed. The page can list and revoke them; only the app's own confirmation window adds one. */
+export type AllowBridge = {
+  list: (projectId: string) => Promise<AllowedCommand[]>;
+  revoke: (projectId: string, ruleId: string) => Promise<boolean>;
+  revokeAll: (projectId: string) => Promise<void>;
+  onChange: (callback: (projectId: string) => void) => () => void;
+  onRan: (callback: (ran: AutoRan) => void) => () => void;
+};
 
 /** The package.json scripts of what this person shares from this computer. The page names a folder (by its key) and a script; the app reads package.json and builds the command itself. */
 export type ScriptsBridge = {
@@ -63,6 +75,8 @@ export type FolderBridge = {
   onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
   /** Run and stop the scripts in package.json. Absent in older builds of the app. */
   scripts?: ScriptsBridge;
+  /** The commands always allowed. Absent in older builds of the app. */
+  allow?: AllowBridge;
 };
 
 /** Connected tools (MCP), as the desktop app reports them. They belong to the signed-in person, not to a project. Environment values never reach the page, only their names. */
@@ -214,6 +228,39 @@ export function useHostApprovals(): PendingChange[] {
     };
   }, [bridge]);
   return pending;
+}
+
+/** Commands that just ran without asking (newest first, at most a few), until each is dismissed. Empty in a browser. */
+export function useAutoRan(): { rows: AutoRan[]; dismiss: (id: string) => void } {
+  const [rows, setRows] = useState<AutoRan[]>([]);
+  const allow = folderBridge()?.allow;
+  useEffect(() => {
+    if (!allow) return;
+    return allow.onRan((ran) => setRows((cur) => [ran, ...cur.filter((r) => r.id !== ran.id)].slice(0, 3)));
+  }, [allow]);
+  return { rows, dismiss: (id) => setRows((cur) => cur.filter((r) => r.id !== id)) };
+}
+
+/** The commands always allowed in a project, current as they are added, used and revoked. null: not in the desktop app, an older app, or not loaded yet. */
+export function useAllowedCommands(projectId: string): { rules: AllowedCommand[] | null; revoke: (id: string) => Promise<void>; revokeAll: () => Promise<void> } {
+  const [rules, setRules] = useState<AllowedCommand[] | null>(null);
+  const allow = folderBridge()?.allow ?? null;
+  useEffect(() => {
+    if (!allow) return setRules(null);
+    let live = true;
+    const load = () => void allow.list(projectId).then((v) => live && setRules(v), () => undefined);
+    load();
+    const off = allow.onChange((id) => id === projectId && load());
+    return () => {
+      live = false;
+      off();
+    };
+  }, [allow, projectId]);
+  return {
+    rules,
+    revoke: async (id) => void (await allow?.revoke(projectId, id)),
+    revokeAll: async () => void (await allow?.revokeAll(projectId)),
+  };
 }
 
 /**

@@ -7,8 +7,8 @@ import { FolderError, isHiddenName } from "./folder-fs.ts";
 import { resolve, type Item } from "./folder-items.ts";
 
 // Shell commands the AI proposes. Every one is shown to the host and runs only after the host clicks Approve in this app
-// and then confirms in a native window (folder-ipc.ts) that the page cannot click. Nothing is remembered: the next
-// command asks again, with no "always allow".
+// and then confirms in a native window (folder-ipc.ts) that the page cannot click. Nothing is remembered unless the host
+// ticks "always allow" in the confirmation window (folder-allow.ts): then that exact command in that folder runs without asking.
 //
 // There is no sandbox. An approved command runs with the host's own rights, exactly like one typed in a terminal, and
 // can read or change anything the host can. The approval is the barrier, so what is approved must be what runs: the
@@ -22,6 +22,8 @@ export type ExecStaged = {
   id: string;
   exec: true;
   change: ChangePreview;
+  /** The folder it runs in (a rule for "always allow" is tied to it). */
+  cwd: string;
   /** Runs the approved command. `onStart` hands out a way to stop it. */
   run: (onStart: (kill: () => void) => void) => Promise<ExecResult>;
 };
@@ -138,6 +140,7 @@ export async function stageExec(items: Item[], req: Loose): Promise<ExecStaged> 
     id,
     exec: true,
     change,
+    cwd: dir.cwd,
     run: async (onStart) => {
       // Look again: the folder may have been replaced by a link since the proposal was made.
       const again = await workdirOf(items, req.workdir);

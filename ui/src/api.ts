@@ -22,6 +22,8 @@ import type {
   ProviderId,
   SendMessageRequest,
   SendMessageResponse,
+  SmartSet,
+  SmartSettings,
   SummarizeRequest,
 } from "@mc/shared";
 import { config } from "./config.ts";
@@ -93,6 +95,12 @@ export const api = {
   openrouterUsage: (refresh = false) => call<OpenRouterUsage>("GET", `/api/openrouter/usage${refresh ? "?refresh=1" : ""}`),
   chatgptUsage: (refresh = false) => call<ChatGptUsage>("GET", `/api/chatgpt/usage${refresh ? "?refresh=1" : ""}`),
   chatgptPoll: (flow: string) => call<ChatGptPollResponse>("POST", "/api/chatgpt/poll", { flow }),
+
+  /** Smart model selection: this person's set of models for Auto, and their own switch for a project. */
+  smartSet: () => call<SmartSet>("GET", "/api/smart/set"),
+  saveSmartSet: (models: string[]) => call<SmartSet>("PUT", "/api/smart/set", { models }),
+  smartSettings: (projectId: string, check = false) => call<SmartSettings>("GET", `/api/projects/${projectId}/smart${check ? "?check=1" : ""}`),
+  setSmart: (projectId: string, enabled: boolean) => call<SmartSettings>("PUT", `/api/projects/${projectId}/smart`, { enabled }),
 
   createProject: (name: string) => call<{ id: string }>("POST", "/api/projects", { name }),
   renameProject: (id: string, name: string) => call<{ ok: true }>("PATCH", `/api/projects/${id}`, { name }),

@@ -236,7 +236,8 @@ function AssistantMessage(props: RowProps) {
   const streaming = m.status === "streaming";
   const text = streaming ? (streamingText ?? m.content) : m.content;
   const failed = m.status === "error";
-  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, formatTime(m.created_at)].filter(Boolean);
+  // With Auto, the name above is the model the router chose; "Auto" shows until it is known.
+  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, m.meta.smart ? "picked by Smart" : null, formatTime(m.created_at)].filter(Boolean);
 
   return (
     <div className="msg ai">

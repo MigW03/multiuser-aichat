@@ -70,7 +70,17 @@ export const LIMITS = {
   inviteDays: 7,
   passwordMin: 8,
   modelIdPattern: /^[A-Za-z0-9._:/@-]{1,200}$/,
+  /** Models in one person's Smart set: the router needs a choice, and a long list only slows it down. */
+  smartMin: 2,
+  smartMax: 12,
 } as const;
+
+/**
+ * Smart model selection. The OpenRouter model a message is sent to when the person picked "Auto": OpenRouter's Jev Router
+ * chooses, from the person's Smart set, the model that answers. The answer then stores the model that really answered.
+ */
+export const SMART_MODEL_ID = "typesafe/jev-router";
+export const isSmartModel = (model: string | null | undefined): boolean => model === SMART_MODEL_ID;
 
 /** Pictures attached to a message. The same numbers are enforced by the browser, the server and the storage bucket. */
 export const IMAGE_LIMITS = {
@@ -126,6 +136,8 @@ export type MessageMeta = {
   edits?: { p: string; ok: boolean }[];
   /** answers: connected tools (MCP) the AI used, as "server: tool", distinct, as many as fit. Shares the column's 1 KB. */
   mcp?: string[];
+  /** answers: the model was chosen by Smart model selection (the answer's `model` is the one that really answered). */
+  smart?: boolean;
 };
 
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -215,6 +227,7 @@ export type ModelInfo = {
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */
 export function modelLabel(model: string | null | undefined): string {
   if (!model) return "AI";
+  if (isSmartModel(model)) return "Auto";
   const id = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
   const claude = id.match(/^claude-(?:(opus|sonnet|haiku|fable)-)?(\d+(?:[.-]\d+)?)?(?:-(opus|sonnet|haiku|fable))?/i);
   if (claude && (claude[1] || claude[3])) {
@@ -273,6 +286,13 @@ export type OpenRouterUsage = {
 };
 export type ChatGptPollResponse ={ status: "pending" } | { status: "connected"; hint: string };
 export type ApiError = { error: string };
+
+/** Whether this person's OpenRouter key can run Smart model selection. `no_credits` only when OpenRouter says the key has none left. */
+export type SmartKeyStatus = "ok" | "no_key" | "invalid_key" | "no_credits" | "unreachable";
+/** This person's own Smart model selection setting for one project (`key` only when asked for). */
+export type SmartSettings = { enabled: boolean; key?: SmartKeyStatus };
+/** The OpenRouter models this person lets Auto choose from. */
+export type SmartSet = { models: string[] };
 
 export type InviteScope = "project" | "chat";
 export type PendingInvite = { id: string; email: string; role: AssignableRole; token: string; created_at: string; expires_at: string };

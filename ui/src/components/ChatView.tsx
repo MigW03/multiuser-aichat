@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -97,6 +97,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
 
   async function send(out: OutgoingMessage): Promise<boolean> {
     const id = crypto.randomUUID();
+    // With Auto the router sets the thinking level, so none is sent.
+    const reasoning = choice && isSmartModel(choice.model) ? null : thinking.effective;
     const answered = !!choice && out.mentions.length === 0;
     room.upsert({
       id,
@@ -111,7 +113,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       created_at: new Date().toISOString(),
       provider: choice?.provider ?? null,
       model: choice?.model ?? null,
-      reasoning: thinking.effective,
+      reasoning,
       reply_to: out.replyTo,
       mentions: out.mentions,
       skip_reason: null,
@@ -127,7 +129,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         id,
         content: out.content,
         ...(out.pictures.length ? { images: out.pictures.map((p) => p.id) } : {}),
-        ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
+        ...(choice ? { provider: choice.provider, model: choice.model, ...(reasoning ? { reasoning } : {}) } : {}),
         mentions: out.mentions,
         ...(out.replyTo ? { replyTo: out.replyTo, ...(out.quote ? { quote: out.quote } : {}) } : {}),
       });
@@ -253,6 +255,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         people={others}
         choice={choice}
         onModel={pickModel}
+        projectId={project?.id ?? null}
         onReasoning={pickReasoning}
         replyTo={reply}
         onClearReply={() => setReply(null)}

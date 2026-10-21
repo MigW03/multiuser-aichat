@@ -1,4 +1,4 @@
-import { IMAGE_LIMITS, IMAGE_ONLY_TEXT, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
+import { IMAGE_LIMITS, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
 import { ArrowUp, CornerUpLeft, Plus, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { findSecret, maskSecret } from "../lib/secrets.ts";
@@ -20,6 +20,8 @@ type Props = {
   people: Person[];
   choice: ModelChoice | null;
   onModel: (c: Pick<ModelChoice, "provider" | "model">) => void;
+  /** The project this chat is in, for Smart model selection. */
+  projectId?: string | null;
   onReasoning: (r: Reasoning) => void;
   replyTo: ReplyTarget | null;
   onClearReply: () => void;
@@ -44,7 +46,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
     .map((p) => p.id);
 }
 
-export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status }: Props) {
+export function Composer({ people, choice, onModel, projectId, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status }: Props) {
   const thinking = useModelReasoning(choice);
   const vision = useModelVision(choice);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -233,8 +235,8 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
           {status}
           <span className="grow" />
           <UsageRing provider={choice?.provider ?? null} answering={canStop} />
-          <ModelPicker choice={choice} onChoose={onModel} />
-          <ReasoningPicker levels={thinking.levels} value={thinking.effective} onChange={onReasoning} disabled={!choice} />
+          <ModelPicker choice={choice} onChoose={onModel} projectId={projectId ?? null} />
+          <ReasoningPicker levels={thinking.levels} value={thinking.effective} onChange={onReasoning} disabled={!choice} auto={isSmartModel(choice?.model)} />
         </div>
         <div className="composer">
           {replyTo && (

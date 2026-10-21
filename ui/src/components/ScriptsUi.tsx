@@ -29,6 +29,18 @@ export function scriptsDot(info: ScriptsInfo | null): "ready" | "failed" | null 
   return info.runs.some((r) => r.unseen) ? "failed" : null;
 }
 
+/** Running scripts first, then the ones waiting for approval, then the rest in their own order. A folder with a running script comes first too. */
+export function orderScripts(scripts: ScriptInfo[], runs: ScriptRun[]): ScriptInfo[] {
+  const rank = (s: ScriptInfo) => {
+    const state = runs.find((r) => r.key === s.key && r.name === s.name)?.state;
+    return state === "run" || state === "stopping" ? 0 : state === "wait" ? 1 : 2;
+  };
+  const folderRank = new Map<string, number>();
+  for (const s of scripts) folderRank.set(s.folder, Math.min(folderRank.get(s.folder) ?? 2, rank(s)));
+  // Array.prototype.sort is stable, so everything else stays in package.json's order (dev, build, test first).
+  return [...scripts].sort((a, b) => folderRank.get(a.folder)! - folderRank.get(b.folder)! || rank(a) - rank(b));
+}
+
 /** Re-renders every second while `active`, for the running time. */
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -72,7 +84,8 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
 
   if (!info) return <div className="side-card-body"><p className="small muted">Reading package.json…</p></div>;
   const runOf = (s: ScriptInfo) => info.runs.find((r) => r.key === s.key && r.name === s.name);
-  const folders = [...new Set(info.scripts.map((s) => s.folder))];
+  const ordered = orderScripts(info.scripts, info.runs);
+  const folders = [...new Set(ordered.map((s) => s.folder))];
 
   const act = async (s: ScriptInfo, what: "run" | "stop" | "cancel") => {
     setError(null);
@@ -109,7 +122,7 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
             <li key={folder} className="script-group">
               {folders.length > 1 && <div className="script-group-name">{folder}</div>}
               <ul>
-                {info.scripts
+                {ordered
                   .filter((s) => s.folder === folder)
                   .map((s) => {
                     const run = runOf(s);

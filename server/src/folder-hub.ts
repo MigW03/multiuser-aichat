@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type AiEditState, type ChangePreview, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
 import { RelayError, type CallOptions, type Relay, type RelayRequest, type ShareItemOut } from "./folder-relay.ts";
 
 // The hub sits between the project's members (and the AI answering them) and the owners' apps. A project's files are
@@ -153,6 +153,15 @@ export function createHub(relay: Relay, deps: HubDeps) {
       const online = new Set(relay.onlineOwners(projectId));
       const mine = owners(shares).filter((o) => online.has(o)).map((o) => relay.capsOf(projectId, o));
       return mine.length ? { edit: mine.some((c) => c.edit), git: mine.some((c) => c.git), exec: mine.some((c) => c.exec) } : none;
+    },
+
+    /** Why the AI can or cannot propose edits: no owner's app is connected ("offline"), none that is connected allows it ("off"), or one does ("edit"). */
+    async editState(projectId: string): Promise<AiEditState> {
+      const c = await this.caps(projectId);
+      if (c.edit) return "edit";
+      const shares = await active(projectId).catch(() => [] as Share[]);
+      const online = new Set(relay.onlineOwners(projectId));
+      return owners(shares).some((o) => online.has(o)) ? "off" : "offline";
     },
 
     /** Forget what was cached about a project, after an item was approved, declined, removed or reported. */

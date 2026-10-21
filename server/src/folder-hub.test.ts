@@ -209,6 +209,15 @@ describe("caps and the cache", () => {
     online = ["ana"];
     assert.deepEqual(await hub.caps(P), { edit: false, git: false, exec: false });
   });
+  test("editState tells why the AI cannot edit: off, offline, or allowed", async () => {
+    assert.equal(await hub.editState(P), "off"); // apps connected, switch off
+    caps.ben = { edit: true, git: false, exec: false };
+    assert.equal(await hub.editState(P), "edit");
+    online = [];
+    assert.equal(await hub.editState(P), "offline");
+    online = ["cat"]; // cat only has a pending request: not an owner of an approved item
+    assert.equal(await hub.editState(P), "offline");
+  });
   test("the list is cached for a moment and read again after invalidate()", async () => {
     await call({ op: "read", path: "my-app/a" });
     await call({ op: "read", path: "my-app/b" });

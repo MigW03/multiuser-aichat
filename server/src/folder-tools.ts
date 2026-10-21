@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type ChangePreview, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, type AiEditState, type ChangePreview, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
 import { tool } from "ai";
 import { z } from "zod";
 import { RelayError, type CallOptions, type ChangeResult, type RelayRequest } from "./folder-relay.ts";
@@ -374,8 +374,14 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
 /** Collapses control characters and brackets in a name that came from a person, so it can't pose as part of the prompt. */
 const promptSafe = (name: string, max: number = L.nameChars) => name.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff"<>`]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
-export function folderInstructions(folderName: string, canRead: boolean, canChange = false, canGit = false, canExec = false): string {
-  const base = `This project shares folders and files from its members' computers: ${promptSafe(folderName, 600)}. The top level lists them by name, and every path starts with the name of the folder or file it is in. ${canChange ? "You can read them, and propose changes to their files that the person who shares them has to approve." : "They are read only: you cannot change, create or delete files."}`;
+/** Why a run cannot change files, in words the AI can pass on, so it names the real reason and who can fix it. */
+const READ_ONLY_WHY: Record<Exclude<AiEditState, "edit">, string> = {
+  off: "They are read only because the person who shares them has not switched on \"Let the AI propose file changes\" (Project settings, in their desktop app; it is off by default). If someone asks you to change a file, say that and that they can turn it on. You cannot change, create or delete files.",
+  offline: "They are read only right now because the desktop app of the person who shares them is closed, and edits need that app running (a web browser cannot write to their computer). If someone asks you to change a file, say that and that it works once they open their app and have switched on \"Let the AI propose file changes\". You cannot change, create or delete files.",
+};
+
+export function folderInstructions(folderName: string, canRead: boolean, canChange = false, canGit = false, canExec = false, editState: AiEditState = canChange ? "edit" : "off"): string {
+  const base = `This project shares folders and files from its members' computers: ${promptSafe(folderName, 600)}. The top level lists them by name, and every path starts with the name of the folder or file it is in. ${canChange ? "You can read them, and propose changes to their files that the person who shares them has to approve." : `They are read only: you cannot change, create or delete files.${editState === "edit" ? "" : ` ${READ_ONLY_WHY[editState]}`}`}`;
   if (!canRead) {
     return `${base}
 You cannot open its files in this answer: this model or connection did not accept the file tools. If someone asks about the files, say so plainly and suggest trying another model; don't guess what the files contain.`;

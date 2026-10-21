@@ -219,6 +219,7 @@ h1, h2, h3, p { margin: 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--p); }
 .plan-warn { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 10px; background: var(--warning-tint); }
+.ai-edit-status { padding: 4px 2px; }
 .plan-warn svg { flex: none; margin-top: 2px; color: var(--warning); }
 .usage-ring-btn { width: 26px; height: 26px; flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; cursor: default; }
 .usage-ring-track { stroke: color-mix(in srgb, var(--muted-fg) 38%, var(--card)); }

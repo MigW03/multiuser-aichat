@@ -394,6 +394,9 @@ export type FolderCaps = {
   exec: boolean;
 };
 
+/** Why the AI can or cannot propose file changes in a project right now: some owner's app allows it, no connected app does, or every owner's app is closed. */
+export type AiEditState = "edit" | "off" | "offline";
+
 /** One proposed change as everybody sees it: a unified diff and who asked. The host decides in the desktop app. */
 export type ChangePreview = {
   id: string;

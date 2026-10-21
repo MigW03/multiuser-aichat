@@ -75,6 +75,9 @@ folder.use("/:id/folder/*", rateLimit("folder-read", 150, 60_000), async (c, nex
   await next();
 });
 
+// Whether the AI can propose edits right now, so every member sees why it is read only. Reveals only that state, no names or paths.
+folder.get("/:id/folder/ai", async (c) => c.json({ edit: await hub.editState(c.req.param("id")) }));
+
 folder.get("/:id/folder/list", async (c) => {
   const q = listQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);

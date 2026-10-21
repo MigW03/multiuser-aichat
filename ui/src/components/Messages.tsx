@@ -1,9 +1,10 @@
-import { isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
+import { IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
 import { Copy, CornerUpLeft, FileText, Folder, Pencil, Plug, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { PictureGrid } from "./Pictures.tsx";
 import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
 import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
 import type { Proposal } from "./useChatRoom.ts";
@@ -155,7 +156,7 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
     <div className="quoted">
       <CornerUpLeft size={12} strokeWidth={STROKE} aria-hidden />
       <span className="truncate">
-        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? target.content.replace(/\s+/g, " ").slice(0, 90) : ""}
+        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? (target.content === IMAGE_ONLY_TEXT && target.images.length ? "a picture" : target.content.replace(/\s+/g, " ").slice(0, 90)) : ""}
       </span>
     </div>
   );
@@ -166,7 +167,8 @@ function UserMessage(props: RowProps) {
   const own = m.author_id === meId;
   const name = names.get(m.author_id ?? "") ?? "Someone";
   const waiting = queued && answerRunning;
-  const body = withMentions(m.content, m.mentions, names);
+  const pictureOnly = m.images.length > 0 && m.content === IMAGE_ONLY_TEXT;
+  const body = pictureOnly ? null : withMentions(m.content, m.mentions, names);
   return (
     <div className={`msg ${own ? "own" : "other"}`}>
       {!own && <Avatar id={m.author_id ?? name} name={name} size={28} />}
@@ -177,7 +179,10 @@ function UserMessage(props: RowProps) {
           </div>
         )}
         <QuotedReply m={m} byId={props.byId} names={names} />
-        <div className={`bubble ${own ? "own" : "other"} ${waiting ? "queued" : ""} ${m.seq === OPTIMISTIC_SEQ ? "sending" : ""}`}>{body}</div>
+        <div className={`bubble ${own ? "own" : "other"} ${waiting ? "queued" : ""} ${m.seq === OPTIMISTIC_SEQ ? "sending" : ""} ${m.images.length ? "has-pics" : ""}`}>
+          {m.images.length > 0 && <PictureGrid chatId={m.chat_id} ids={m.images} />}
+          {m.images.length > 0 ? body && <div className="pics-text">{body}</div> : body}
+        </div>
         {waiting && <div className="msg-note muted">In line · next after this reply</div>}
         {!waiting && m.status === "processing" && own && <div className="msg-note muted">The AI is on it</div>}
         {m.skip_reason === "mention" && <div className="msg-note muted">AI skipped</div>}

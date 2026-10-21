@@ -3,8 +3,10 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
+import { IMAGE_LIMITS } from "@mc/shared";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
+import { sweepUnsentImages } from "./images.ts";
 import { relay, resetFolderStatus } from "./folders.ts";
 import { MCP_PATH } from "./mcp-relay.ts";
 import { mcpRelay } from "./mcp.ts";
@@ -22,7 +24,10 @@ const app = new Hono<AuthVars>();
 app.use(secureHeaders());
 // Auth is a bearer token, not a cookie, so CORS isn't what protects the API; it only keeps other sites from using it in a browser.
 app.use("/api/*", cors({ origin: env.allowedOrigins, allowHeaders: ["authorization", "content-type"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
-app.use("/api/*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request too large" }, 413) }));
+const smallBody = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request too large" }, 413) });
+// Picture uploads send the file itself as the body; this is the only route allowed a big one.
+const pictureBody = bodyLimit({ maxSize: IMAGE_LIMITS.bytes + 1024, onError: (c) => c.json({ error: "That picture is over 5 MB." }, 413) });
+app.use("/api/*", (c, next) => (c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path) ? pictureBody(c, next) : smallBody(c, next)));
 
 app.get("/health", (c) => c.json({ ok: true }));
 
@@ -51,6 +56,10 @@ app.onError((err, c) => {
 const server = serve({ fetch: app.fetch, port: env.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
   console.log(`server listening on http://${info.address}:${info.port}`);
   void recoverRuns();
+  // Pictures uploaded and never sent are removed after an hour.
+  const sweep = () => void sweepUnsentImages().catch((e) => console.error("[images] sweep failed:", e));
+  sweep();
+  setInterval(sweep, 15 * 60_000).unref();
   void resetFolderStatus();
 });
 // Desktop apps connect over WebSockets: /api/folder-host (a project host's shared folder) and /api/mcp-host (a person's

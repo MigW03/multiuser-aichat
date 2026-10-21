@@ -1,9 +1,10 @@
-import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
+import { uploadPictures } from "../lib/images.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
 import { shareBaseUrl } from "../config.ts";
@@ -91,7 +92,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       author_id: me.id,
       role: "user",
       kind: "message",
-      content: out.content,
+      content: out.content || IMAGE_ONLY_TEXT,
+      images: out.pictures.map((p) => p.id),
       status: answered ? "pending" : "done",
       seq: OPTIMISTIC_SEQ,
       created_at: new Date().toISOString(),
@@ -108,9 +110,11 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     });
     setReply(null);
     try {
+      await uploadPictures(chat.id, out.pictures);
       await api.sendMessage(chat.id, {
         id,
         content: out.content,
+        ...(out.pictures.length ? { images: out.pictures.map((p) => p.id) } : {}),
         ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
         mentions: out.mentions,
         ...(out.replyTo ? { replyTo: out.replyTo, ...(out.quote ? { quote: out.quote } : {}) } : {}),
@@ -132,6 +136,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   }
 
   async function copy(m: ChatMessage) {
+    if (m.content === IMAGE_ONLY_TEXT && m.images.length) return toast.push("This message has no text to copy", "info");
     toast.push((await copyText(m.content)) ? "Copied" : "Could not copy", "info");
   }
 

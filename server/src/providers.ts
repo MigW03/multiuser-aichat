@@ -48,7 +48,7 @@ type OpenRouterModel = {
   id: string;
   name?: string;
   pricing?: { prompt?: string; completion?: string };
-  architecture?: { output_modalities?: string[] };
+  architecture?: { output_modalities?: string[]; input_modalities?: string[] };
   supported_parameters?: string[];
   reasoning?: { supported_efforts?: string[]; mandatory?: boolean };
 };
@@ -72,7 +72,11 @@ type AnthropicCapability = { supported?: boolean };
 type AnthropicModel = {
   id: string;
   display_name?: string;
-  capabilities?: { thinking?: { supported?: boolean; types?: { disabled?: AnthropicCapability } }; effort?: { supported?: boolean } & Record<string, unknown> } | null;
+  capabilities?: {
+    thinking?: { supported?: boolean; types?: { disabled?: AnthropicCapability } };
+    effort?: { supported?: boolean } & Record<string, unknown>;
+    image_input?: AnthropicCapability;
+  } | null;
 };
 
 /** Anthropic reports thinking and effort support per model. Models that think on a token budget get low/medium/high. */
@@ -106,6 +110,17 @@ export function openaiLevels(id: string): Reasoning[] {
   return ["off", "low", "medium", "high"];
 }
 
+/** Anthropic says per model whether it takes pictures; no answer means unknown. */
+export function anthropicVision(caps: AnthropicModel["capabilities"]): boolean | undefined {
+  const supported = caps?.image_input?.supported;
+  return typeof supported === "boolean" ? supported : undefined;
+}
+
+/** OpenAI's /models does not say, so this follows the model families that take pictures (GPT-4o and newer, o-series from o1). */
+export function openaiVision(id: string): boolean {
+  return /^(gpt-4o|chatgpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-[5-9]|o1($|-20|-pro)|o3($|-20|-pro)|o4)/.test(id);
+}
+
 // OpenAI's /models also lists embedding, audio, image and moderation models; keep the chat ones.
 const OPENAI_CHAT = /^(gpt-|chatgpt-|o\d)/;
 const OPENAI_NOT_CHAT = /(audio|realtime|transcribe|tts|image|embedding|moderation|search|instruct|codex|computer-use)/;
@@ -115,14 +130,14 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
   if (provider === "chatgpt") return listChatGptModels(apiKey);
   if (provider === "anthropic") {
     const json = await getJson("https://api.anthropic.com/v1/models?limit=1000", { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, provider);
-    return ((json.data ?? []) as AnthropicModel[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id, reasoning: anthropicLevels(m.capabilities) }));
+    return ((json.data ?? []) as AnthropicModel[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id, reasoning: anthropicLevels(m.capabilities), vision: anthropicVision(m.capabilities) }));
   }
   if (provider === "openai") {
     const json = await getJson("https://api.openai.com/v1/models", { authorization: `Bearer ${apiKey}` }, provider);
     return ((json.data ?? []) as { id: string; created?: number }[])
       .filter((m) => OPENAI_CHAT.test(m.id) && !OPENAI_NOT_CHAT.test(m.id))
       .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
-      .map((m) => ({ id: m.id, name: m.id, reasoning: openaiLevels(m.id) }));
+      .map((m) => ({ id: m.id, name: m.id, reasoning: openaiLevels(m.id), vision: openaiVision(m.id) }));
   }
   const json = await getJson("https://openrouter.ai/api/v1/models", { authorization: `Bearer ${apiKey}` }, provider);
   return ((json.data ?? []) as OpenRouterModel[])
@@ -131,7 +146,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
       // OpenRouter prices are USD per token as strings; negative means dynamic pricing.
       const input = Number(m.pricing?.prompt) * 1e6;
       const output = Number(m.pricing?.completion) * 1e6;
-      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined, reasoning: openRouterLevels(m) };
+      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined, reasoning: openRouterLevels(m), vision: m.architecture?.input_modalities ? m.architecture.input_modalities.includes("image") : undefined };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -1,14 +1,15 @@
-import { LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
-import { ArrowUp, CornerUpLeft, Square, X } from "lucide-react";
+import { IMAGE_LIMITS, IMAGE_ONLY_TEXT, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
+import { ArrowUp, CornerUpLeft, Plus, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
-import { useModelReasoning } from "../lib/models.ts";
+import { IMAGE_ACCEPT, preparePicture, type Picture } from "../lib/images.ts";
+import { useModelReasoning, useModelVision } from "../lib/models.ts";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
 import { Avatar, ICON, ICON_SM, STROKE } from "./kit.tsx";
 
-export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null; quote: string | null };
+export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null; quote: string | null; pictures: Picture[] };
 
 /** What the next message replies to: a whole message, or just the highlighted part of an answer. */
 export type ReplyTarget = { message: ChatMessage; who: string; quote?: string };
@@ -25,7 +26,7 @@ type Props = {
   canStop: boolean;
   onStop: () => void;
   onTyping: () => void;
-  /** Resolves false when sending failed, so the text can be put back. */
+  /** Resolves false when sending failed, so the text and pictures can be put back. */
   onSend: (m: OutgoingMessage) => Promise<boolean>;
   placeholder: string;
   focusKey: string;
@@ -44,6 +45,11 @@ export function mentionedIn(text: string, people: Person[]): string[] {
 
 export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status }: Props) {
   const thinking = useModelReasoning(choice);
+  const vision = useModelVision(choice);
+  const [pictures, setPictures] = useState<Picture[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [highlight, setHighlight] = useState(0);
@@ -95,17 +101,89 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
     pendingCaret.current = before.length + p.display_name.length + 2;
   }
 
+  const noVision = vision === false;
+
+  /** Adds picked, pasted or dropped files. Says why in one line when some are left out. */
+  async function addFiles(files: File[]) {
+    if (files.length === 0) return;
+    if (noVision) return setNotice("This model doesn't support images.");
+    const room = IMAGE_LIMITS.perMessage - pictures.length;
+    if (room <= 0) return setNotice(`You can attach up to ${IMAGE_LIMITS.perMessage} pictures.`);
+    const results = await Promise.allSettled(files.slice(0, room).map(preparePicture));
+    const added = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    setPictures((cur) => {
+      const fit = added.slice(0, Math.max(0, IMAGE_LIMITS.perMessage - cur.length));
+      for (const p of added.slice(fit.length)) URL.revokeObjectURL(p.url);
+      return [...cur, ...fit];
+    });
+    setNotice(failed ? (failed.reason instanceof Error ? failed.reason.message : "That file could not be added.") : files.length > room ? `You can attach up to ${IMAGE_LIMITS.perMessage} pictures.` : null);
+    ref.current?.focus();
+  }
+
+  function removePicture(id: string) {
+    setPictures((cur) => {
+      const gone = cur.find((p) => p.id === id);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return cur.filter((p) => p.id !== id);
+    });
+    setNotice(null);
+  }
+
+  // Dropping files anywhere on the window attaches them; the whole window shows the drop zone while they are dragged over it.
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+  useEffect(() => {
+    let depth = 0;
+    const withFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!withFiles(e)) return;
+      depth++;
+      setDragging(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!withFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const over = (e: DragEvent) => withFiles(e) && e.preventDefault(); // without this the browser would open the file instead
+    const drop = (e: DragEvent) => {
+      if (!withFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      void addFilesRef.current([...(e.dataTransfer?.files ?? [])]);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
+
   async function dispatch(content: string) {
-    const outgoing: OutgoingMessage = { content, mentions: mentionedIn(content, people), replyTo: replyTo?.message.id ?? null, quote: replyTo?.quote ?? null };
+    const sending = pictures;
+    const outgoing: OutgoingMessage = { content, mentions: mentionedIn(content, people), replyTo: replyTo?.message.id ?? null, quote: replyTo?.quote ?? null, pictures: sending };
     setText("");
+    setPictures([]);
+    setNotice(null);
     setWarning(null);
     const ok = await onSend(outgoing);
-    if (!ok) setText((cur) => (cur ? cur : content));
+    if (!ok) {
+      setText((cur) => (cur ? cur : content));
+      setPictures((cur) => (cur.length ? cur : sending));
+    }
   }
 
   function submit() {
     const content = text.trim();
-    if (!content) return;
+    if (!content && pictures.length === 0) return;
+    if (noVision && pictures.length > 0) return;
     const secret = findSecret(content);
     if (secret) return setWarning({ kind: secret.kind, snippet: maskSecret(secret.match) });
     void dispatch(content);
@@ -135,7 +213,8 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
     }
   }
 
-  const empty = text.trim().length === 0;
+  const empty = text.trim().length === 0 && pictures.length === 0;
+  const blocked = noVision && pictures.length > 0;
   // While an answer is written the button is Stop; once the person types it is Send again and the message queues.
   const showStop = canStop && empty;
 
@@ -154,7 +233,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
             <div className="reply-strip">
               <CornerUpLeft size={ICON_SM} strokeWidth={STROKE} aria-hidden />
               <span className="truncate">
-                Replying to <b>{replyTo.who}</b> · {replyTo.quote ? `“${replyTo.quote}”` : replyTo.message.content.replace(/\s+/g, " ").slice(0, 100)}
+                Replying to <b>{replyTo.who}</b> · {replyTo.quote ? `“${replyTo.quote}”` : replyTo.message.content === IMAGE_ONLY_TEXT ? "a picture" : replyTo.message.content.replace(/\s+/g, " ").slice(0, 100)}
               </span>
               <button type="button" className="icon-btn" aria-label="Cancel reply" onClick={onClearReply}>
                 <X size={ICON_SM} strokeWidth={STROKE} />
@@ -181,7 +260,52 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
               ))}
             </div>
           )}
+          {pictures.length > 0 && (
+            <div className="composer-pics">
+              {pictures.map((p) => (
+                <div key={p.id} className="composer-pic">
+                  <img src={p.url} alt={p.name} draggable={false} />
+                  <button type="button" className="pic-remove" aria-label={`Remove ${p.name}`} onClick={() => removePicture(p.id)}>
+                    <X size={12} strokeWidth={2.2} />
+                  </button>
+                </div>
+              ))}
+              {pictures.length < IMAGE_LIMITS.perMessage && !noVision && (
+                <button type="button" className="composer-pic add" aria-label="Add another picture" onClick={() => fileInput.current?.click()}>
+                  <Plus size={ICON} strokeWidth={STROKE} />
+                </button>
+              )}
+            </div>
+          )}
+          {(blocked || notice) && (
+            <div className="composer-notice" role="status">
+              {blocked ? "This model doesn't support images. Remove them or pick another model." : notice}
+            </div>
+          )}
           <div className="composer-row">
+            <button
+              type="button"
+              className="icon-btn attach-btn"
+              aria-label="Attach pictures"
+              title={noVision ? "This model doesn't support images" : "Attach pictures"}
+              disabled={noVision || pictures.length >= IMAGE_LIMITS.perMessage}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Plus size={ICON} strokeWidth={STROKE} />
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              hidden
+              multiple
+              accept={IMAGE_ACCEPT}
+              aria-hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                void addFiles([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
+            />
             <textarea
               ref={ref}
               rows={1}
@@ -196,19 +320,32 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
               }}
               onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
               onKeyDown={onKeyDown}
+              onPaste={(e) => {
+                // A copied picture (a screenshot) attaches; copied text, even with a picture beside it, pastes as text.
+                const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+                if (files.length > 0 && !e.clipboardData.getData("text/plain")) {
+                  e.preventDefault();
+                  void addFiles(files);
+                }
+              }}
             />
             {showStop ? (
               <button type="button" className="send-btn stop" aria-label="Stop answering" title="Stop" onClick={onStop}>
                 <Square size={13} strokeWidth={0} fill="currentColor" aria-hidden />
               </button>
             ) : (
-              <button type="button" className="send-btn" aria-label="Send" title="Send" disabled={empty} onClick={submit}>
+              <button type="button" className="send-btn" aria-label="Send" title="Send" disabled={empty || blocked} onClick={submit}>
                 <ArrowUp size={ICON} strokeWidth={2.2} />
               </button>
             )}
           </div>
         </div>
       </div>
+      {dragging && (
+        <div className="drop-zone" aria-hidden>
+          <span>Drop pictures to attach</span>
+        </div>
+      )}
       {warning && <SecretWarning kind={warning.kind} snippet={warning.snippet} onEdit={() => setWarning(null)} onSendAnyway={() => void dispatch(text.trim())} />}
     </div>
   );

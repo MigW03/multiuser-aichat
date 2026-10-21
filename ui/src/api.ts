@@ -5,6 +5,7 @@ import type {
   ChatGptPollResponse,
   ChatGptStartResponse,
   ChatGptUsage,
+  ImageUrlsResponse,
   FolderListResult,
   GitStatusResult,
   GitTextResult,
@@ -51,6 +52,22 @@ async function call<T>(method: string, path: string, body?: unknown, opts: { aut
   }
   const json = (await res.json().catch(() => ({}))) as T & Partial<ApiError> & { code?: string };
   if (!res.ok) throw new ApiRequestError(json.error ?? `Request failed (${res.status})`, res.status, json.code);
+  return json;
+}
+
+/** POSTs a file as the request body. Same errors as `call`. */
+async function sendFile<T>(path: string, file: Blob): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new ApiRequestError("You are signed out.", 401);
+  let res: Response;
+  try {
+    res = await fetch(`${config.serverUrl}${path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": file.type || "application/octet-stream" }, body: file });
+  } catch {
+    throw new ApiRequestError("Could not reach the chat server. Is it running?", 0);
+  }
+  const json = (await res.json().catch(() => ({}))) as T & Partial<ApiError>;
+  if (!res.ok) throw new ApiRequestError(json.error ?? `Request failed (${res.status})`, res.status);
   return json;
 }
 
@@ -108,6 +125,9 @@ export const api = {
   inviteToChat: (chatId: string, email: string) => call<InviteCreated>("POST", `/api/chats/${chatId}/invites`, { email }),
   chatInvites: (chatId: string) => call<{ invites: InviteRow[] }>("GET", `/api/chats/${chatId}/invites`),
   sendMessage: (chatId: string, body: SendMessageRequest) => call<SendMessageResponse>("POST", `/api/chats/${chatId}/messages`, body),
+  /** Uploads one picture (the file itself). The id is the client's, so the message that carries it can show it at once. */
+  uploadImage: (chatId: string, id: string, file: Blob) => sendFile<{ id: string }>(`/api/chats/${chatId}/images?${new URLSearchParams({ id })}`, file),
+  imageUrls: (chatId: string, ids: string[]) => call<ImageUrlsResponse>("POST", `/api/chats/${chatId}/images/urls`, { ids }),
   summarize: (chatId: string, body: SummarizeRequest & { fromSeq?: number }) => call<{ id: string }>("POST", `/api/chats/${chatId}/summarize`, body),
   stop: (chatId: string) => call<{ stopped: boolean }>("POST", `/api/chats/${chatId}/stop`, {}),
   retry: (messageId: string) => call<{ ok: true }>("POST", `/api/messages/${messageId}/retry`, {}),

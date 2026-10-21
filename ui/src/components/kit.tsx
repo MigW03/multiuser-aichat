@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -300,6 +301,52 @@ export function Dialog({
 }
 
 // ------------------------------------------------------------------ menus
+
+const POPOVER_MARGIN = 8;
+
+/** The box a popover must stay inside: the window, cut down to the nearest ancestor that clips (the chat card hides overflow). */
+function clipBox(el: HTMLElement) {
+  const box = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (/hidden|clip|auto|scroll/.test(getComputedStyle(p).overflow)) {
+      const r = p.getBoundingClientRect();
+      box.left = Math.max(box.left, r.left);
+      box.top = Math.max(box.top, r.top);
+      box.right = Math.min(box.right, r.right);
+      box.bottom = Math.min(box.bottom, r.bottom);
+      break;
+    }
+  }
+  return box;
+}
+
+/** A panel that opens above its button, right edges aligned. It narrows, shifts sideways and shortens so none of it is cut off. */
+export function Popover({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.transform = el.style.maxWidth = el.style.maxHeight = "";
+      const box = clipBox(el);
+      const room = box.right - box.left - 2 * POPOVER_MARGIN;
+      if (el.offsetWidth > room) el.style.maxWidth = `${room}px`;
+      const r = el.getBoundingClientRect();
+      const dx = Math.max(0, box.left + POPOVER_MARGIN - r.left) || Math.min(0, box.right - POPOVER_MARGIN - r.right);
+      if (dx) el.style.transform = `translateX(${dx}px)`;
+      const above = r.bottom - box.top - POPOVER_MARGIN; // it sits above the button, so the room is what lies over its bottom edge
+      if (!(parseFloat(getComputedStyle(el).maxHeight) <= above)) el.style.maxHeight = `${Math.max(above, 120)}px`; // the stylesheet cap, when there is room for it
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+  return (
+    <div ref={ref} className={`popover above end ${className}`} role="dialog" aria-label={label}>
+      {children}
+    </div>
+  );
+}
 
 export type MenuItem =
   | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean; hint?: string }

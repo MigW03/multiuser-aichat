@@ -184,7 +184,7 @@ h1, h2, h3, p { margin: 0; }
 /* yellow and red dots grow into the action on hover or keyboard focus */
 .mcp-flag { display: inline-flex; align-items: center; padding: 3px; border: 1px solid transparent; border-radius: var(--r-full); }
 .mcp-flag-text { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font: var(--text-small); font-weight: 600; transition: max-width 0.15s ease, opacity 0.15s ease, margin 0.15s ease; }
-.mcp-row:hover .mcp-flag.has-action, .mcp-row:focus-visible .mcp-flag.has-action { padding-right: 9px; }
+.mcp-row:hover .mcp-flag.has-action, .mcp-row:focus-visible .mcp-flag.has-action { padding: 3px 12px 3px 8px; }
 .mcp-row:hover .mcp-flag.signin, .mcp-row:focus-visible .mcp-flag.signin { border-color: var(--warning); }
 .mcp-row:hover .mcp-flag.failed, .mcp-row:focus-visible .mcp-flag.failed { border-color: var(--danger); }
 .mcp-row:hover .mcp-flag-text, .mcp-row:focus-visible .mcp-flag-text { max-width: 110px; opacity: 1; margin-left: 6px; }

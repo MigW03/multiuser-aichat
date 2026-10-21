@@ -1,4 +1,4 @@
-import type { ChangePreview, FolderCaps, ProjectShare, ProjectShareHost } from "@mc/shared";
+import type { ChangePreview, FolderCaps, ProjectShare, ProjectShareHost, ScriptsInfo } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
@@ -20,6 +20,22 @@ export type PickResult = { ok: true; name: string; items: LocalItem[]; skipped: 
 
 /** An AI change waiting for this computer's owner. The diff comes from the app itself, not from the chat server. */
 export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number };
+
+/** The package.json scripts of what this person shares from this computer. The page names a folder (by its key) and a script; the app reads package.json and builds the command itself. */
+export type ScriptsBridge = {
+  /** `list: false` asks for the runs only (the scripts come back empty): cheaper while a script is printing. */
+  get: (projectId: string, list?: boolean) => Promise<ScriptsInfo>;
+  /** Only asks: the request waits in the approval dock and the script starts when the owner approves it there and confirms in the app's own window. */
+  run: (projectId: string, key: string, name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Withdraws a Run that has not been approved yet. */
+  cancel: (projectId: string, key: string, name: string) => Promise<void>;
+  stop: (projectId: string, key: string, name: string) => Promise<boolean>;
+  log: (projectId: string, key: string, name: string) => Promise<string | null>;
+  clear: (projectId: string, key: string, name: string) => Promise<void>;
+  /** The Scripts tab was looked at: a crash is not news any more. */
+  seen: (projectId: string) => Promise<void>;
+  onChange: (callback: (projectId: string) => void) => () => void;
+};
 
 /** What the desktop app's preload script offers. The page never gets a path or a file, only these calls. */
 export type FolderBridge = {
@@ -45,6 +61,8 @@ export type FolderBridge = {
   decide?: (projectId: string, id: string, approve: boolean) => Promise<boolean>;
   onApproval?: (callback: (view: PendingChange) => void) => () => void;
   onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
+  /** Run and stop the scripts in package.json. Absent in older builds of the app. */
+  scripts?: ScriptsBridge;
 };
 
 /** Connected tools (MCP), as the desktop app reports them. They belong to the signed-in person, not to a project. Environment values never reach the page, only their names. */
@@ -196,4 +214,43 @@ export function useHostApprovals(): PendingChange[] {
     };
   }, [bridge]);
   return pending;
+}
+
+/**
+ * The package.json scripts of the folders this person shares here, and how each one is doing, current as they start and
+ * end. `version` changes whenever something did (an open log reads again then). null info: not in the desktop app, an older
+ * app, or `enabled` is false.
+ */
+export function useScripts(projectId: string | null, enabled: boolean): { info: ScriptsInfo | null; version: number; reload: () => void } {
+  const [info, setInfo] = useState<ScriptsInfo | null>(null);
+  const [version, setVersion] = useState(0);
+  const [tick, setTick] = useState(0);
+  const folder = folderBridge();
+  const bridge = folder?.scripts ?? null;
+  useEffect(() => {
+    if (!bridge || !folder || !projectId || !enabled) return setInfo(null);
+    let live = true;
+    // `list`: read package.json again. Output only changes the runs, which is cheaper to ask for.
+    const load = (list: boolean) =>
+      void bridge.get(projectId, list).then(
+        (v) => {
+          if (!live) return;
+          setInfo((cur) => ({ scripts: list || !cur ? v.scripts : cur.scripts, runs: v.runs }));
+          setVersion((n) => n + 1);
+        },
+        () => undefined,
+      );
+    load(true);
+    const offRuns = bridge.onChange((id) => id === projectId && load(false));
+    const offFolder = folder.onChange((id) => id === projectId && load(true));
+    const onFocus = () => load(true); // package.json may have been edited meanwhile
+    window.addEventListener("focus", onFocus);
+    return () => {
+      live = false;
+      offRuns();
+      offFolder();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [bridge, folder, projectId, enabled, tick]);
+  return { info, version, reload: () => setTick((n) => n + 1) };
 }

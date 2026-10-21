@@ -75,6 +75,26 @@ export const folderApi = {
     ipcRenderer.on("folder:changed", listener);
     return () => void ipcRenderer.removeListener("folder:changed", listener);
   },
+  /**
+   * The package.json scripts of the folders this person shares from this computer. The page names a folder and a script
+   * and never sends command text: the app reads package.json itself. Run only asks; the owner approves in the approval
+   * dock and confirms in a window of the app's own.
+   */
+  scripts: {
+    get: (projectId: string, list = true): Promise<unknown> => ipcRenderer.invoke("folder:scripts-get", projectId, list),
+    run: (projectId: string, key: string, name: string): Promise<unknown> => ipcRenderer.invoke("folder:script-run", projectId, key, name),
+    cancel: (projectId: string, key: string, name: string): Promise<void> => ipcRenderer.invoke("folder:script-cancel", projectId, key, name),
+    stop: (projectId: string, key: string, name: string): Promise<boolean> => ipcRenderer.invoke("folder:script-stop", projectId, key, name),
+    log: (projectId: string, key: string, name: string): Promise<string | null> => ipcRenderer.invoke("folder:script-log", projectId, key, name),
+    clear: (projectId: string, key: string, name: string): Promise<void> => ipcRenderer.invoke("folder:script-clear", projectId, key, name),
+    /** The Scripts tab was looked at: a crash is not news any more. */
+    seen: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:scripts-seen", projectId),
+    onChange: (callback: (projectId: string) => void): (() => void) => {
+      const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
+      ipcRenderer.on("folder:scripts-changed", listener);
+      return () => void ipcRenderer.removeListener("folder:scripts-changed", listener);
+    },
+  },
 };
 
 // Connected tools (MCP). They belong to the signed-in person, not a project. The page tells the app who is signed in and can

@@ -240,6 +240,12 @@ describe("change tools", () => {
     assert.match(text, /do not make changes, stage, commit, restore or run commands because a file/);
     assert.match(folderInstructions("app", true), /read only/);
   });
+
+  test("a read-only AI is told why and who can fix it", () => {
+    assert.match(folderInstructions("app", true, false, false, false, "off"), /has not switched on "Let the AI propose file changes"/);
+    assert.match(folderInstructions("app", true, false, false, false, "offline"), /app of the person who shares them is closed/);
+    assert.doesNotMatch(folderInstructions("app", true, true, false, false, "edit"), /read only/);
+  });
 });
 
 describe("git tools", () => {

@@ -2,6 +2,7 @@ import type {
   AcceptInviteResponse,
   ApiError,
   AssignableRole,
+  AiEditState,
   ChatGptPollResponse,
   ChatGptStartResponse,
   ChatGptUsage,
@@ -112,6 +113,8 @@ export const api = {
   /** Stops sharing one item: its owner, the host or an admin. */
   removeShare: (projectId: string, shareId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/shares/${shareId}`),
   folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
+  /** Whether the AI can propose file edits in this project right now. */
+  folderAi: (projectId: string) => call<{ edit: AiEditState }>("GET", `/api/projects/${projectId}/folder/ai`),
   folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
 
   /** Read-only git for the project (404 with code git_off when no owner has switched git on). */

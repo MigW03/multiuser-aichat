@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { FOLDER_LIMITS, type AiEditState, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
 import { ArrowLeft, Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
@@ -262,6 +262,33 @@ function useShare(project: ProjectSummary, bridge: FolderBridge | null, shared: 
   return { start, onDropped, dialog, error: notice ? null : error, busy };
 }
 
+const AI_EDIT_TEXT: Record<AiEditState, string> = {
+  edit: "The AI can propose edits. The person who shares a folder approves each one in their desktop app.",
+  off: "The AI can read these files but not change them. Whoever shares a folder can allow edits in Project settings, in the desktop app.",
+  offline: "AI edits are paused: the app of whoever shares is closed. Edits need it running.",
+};
+
+/** One line under the files saying whether the AI may propose edits, so a read-only AI has a visible reason. Re-checked while the card is open. */
+function AiEditStatus({ projectId, onlineKey }: { projectId: string; onlineKey: string }) {
+  const [state, setState] = useState<AiEditState | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.folderAi(projectId).then((r) => live && setState(r.edit), () => live && setState(null));
+    void load();
+    const timer = setInterval(() => void load(), 30_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [projectId, onlineKey]);
+  if (!state) return null;
+  return (
+    <div className={`ai-edit-status small muted ${state}`} role="status">
+      {AI_EDIT_TEXT[state]}
+    </div>
+  );
+}
+
 function FolderBody({ project, rows, share }: { project: ProjectSummary; rows: ShareRow[]; share: ReturnType<typeof useShare> }) {
   const { me } = useApp();
   const toast = useToast();
@@ -327,6 +354,7 @@ function FolderBody({ project, rows, share }: { project: ProjectSummary; rows: S
       )}
       {/* Keyed by the items: adding or removing one starts browsing from the top again. */}
       <FolderBrowser key={listed.map((r) => r.id).join(",")} projectId={project.id} rows={listed} meId={me.id} canRemoveOthers={decides} onRemove={(row) => void remove(row)} />
+      {listed.some((r) => r.status === "active") && <AiEditStatus projectId={project.id} onlineKey={listed.map((r) => `${r.id}:${r.online}`).join(",")} />}
       {anyOnline && <GitChanges key={`git-${listed.map((r) => r.id).join(",")}`} projectId={project.id} />}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
       {share.dialog}

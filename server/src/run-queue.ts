@@ -3,6 +3,7 @@ import {
   isProvider,
   isReasoning,
   PROVIDER_LABELS,
+  type AiEditState,
   type AiErrorCode,
   type ApprovalDoneEvent,
   type ApprovalEvent,
@@ -225,7 +226,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
-    let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean } } | null = null;
+    let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean }; editState: AiEditState } | null = null;
     /** The asker's own connected tools (MCP), if their desktop app is online and has any switched on. */
     let connected: { tools: ToolSet; state: McpState } | null = null;
     /** "server: tool" for each connected tool this answer used, for the note under it. */
@@ -277,6 +278,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
         // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
         const caps = await hub.caps(projectId);
+        const editState: AiEditState = caps.edit ? "edit" : await hub.editState(projectId);
         const canChange = caps.edit || caps.git || caps.exec;
         const changes = canChange
           ? {
@@ -287,7 +289,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
             }
           : undefined;
         const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
-        folder = { tools: folderTools(call, use, changes, caps), use, caps };
+        folder = { tools: folderTools(call, use, changes, caps), use, caps, editState };
         if (canChange) {
           runSeconds = LOCK_SECONDS_EDIT;
           await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
@@ -328,7 +330,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),

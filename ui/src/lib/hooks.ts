@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase.ts";
 
 /** True while the window is narrower than `max` px. */
@@ -13,6 +13,15 @@ export function useNarrow(max = 820): boolean {
     return () => mq.removeEventListener("change", on);
   }, [query]);
   return narrow;
+}
+
+/** A ref for an element that scrolls into view, centred, when `on` turns true (e.g. the settings row the person asked for). */
+export function useScrollTo<T extends HTMLElement>(on: boolean) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (on) ref.current?.scrollIntoView({ block: "center" });
+  }, [on]);
+  return ref;
 }
 
 /**

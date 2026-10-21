@@ -25,11 +25,30 @@ export async function fetchFavoriteModels(userId: string, provider: ProviderId):
   return data.map((r) => r.model);
 }
 
+/** Copies text to the clipboard. Falls back to a hidden textarea where the clipboard API is missing or refused. */
 export async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
+    return legacyCopy(text);
+  }
+}
+
+function legacyCopy(text: string): boolean {
+  const el = document.createElement("textarea");
+  el.value = text;
+  el.setAttribute("readonly", "");
+  el.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  document.body.appendChild(el);
+  try {
+    el.select();
+    return document.execCommand("copy");
+  } catch {
     return false;
+  } finally {
+    el.remove();
+    active?.focus();
   }
 }

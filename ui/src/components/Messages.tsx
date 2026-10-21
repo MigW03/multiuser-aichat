@@ -1,5 +1,5 @@
 import { IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, FileText, Folder, Pencil, Plug, RotateCcw, Sparkles } from "lucide-react";
+import { Copy, CornerUpLeft, FileText, RotateCcw, Sparkles } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
@@ -257,34 +257,6 @@ function AssistantMessage(props: RowProps) {
           </div>
         )}
         {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
-        {!streaming && !failed && m.meta.edits?.length ? (
-          <div className="folder-note small muted">
-            <Pencil size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-            <span className="truncate" title={m.meta.edits.map((e) => `${e.ok ? "Done" : "Not done"}: ${e.p}`).join("\n")}>
-              {m.meta.edits.filter((e) => e.ok).length > 0 ? `Done: ${m.meta.edits.filter((e) => e.ok).map((e) => e.p).join(", ")}` : "Nothing was changed"}
-              {m.meta.edits.some((e) => !e.ok) ? ` · ${m.meta.edits.filter((e) => !e.ok).length} declined or not approved` : ""}
-            </span>
-          </div>
-        ) : null}
-        {!streaming && !failed && m.meta.mcp?.length ? (
-          <div className="folder-note small muted">
-            <Plug size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-            <span className="truncate" title={m.meta.mcp.join("\n")}>
-              Used connected {m.meta.mcp.length === 1 ? "tool" : "tools"}: {m.meta.mcp.join(", ")}
-            </span>
-          </div>
-        ) : null}
-        {!streaming && !failed && (m.meta.files?.length || m.meta.folder_offline) ? (
-          <div className="folder-note small muted">
-            <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-            {m.meta.files?.length ? (
-              <span className="truncate" title={m.meta.files.join("\n")}>
-                Read {m.meta.files.length} {m.meta.files.length === 1 ? "file" : "files"} from the shared folder: {m.meta.files.join(", ")}
-              </span>
-            ) : null}
-            {m.meta.folder_offline ? <span>{m.meta.files?.length ? " · " : ""}The shared folder was offline.</span> : null}
-          </div>
-        ) : null}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>
             <button type="button" className="act reply" onClick={() => props.onReply(m)}>

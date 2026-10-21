@@ -3,6 +3,7 @@ import { useState } from "react";
 import { mcpBridge, useMcp, type McpInfo, type McpServer } from "../lib/folder.ts";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput } from "./kit.tsx";
 import { RemoteSection } from "./RemoteMcp.tsx";
+import { useScrollTo } from "../lib/hooks.ts";
 
 // MCP servers in the app's Settings (account menu, bottom left). They belong to the signed-in person. Local ones run on
 // their computer, started by the desktop app (this file); remote ones are called by the chat server (RemoteMcp.tsx). Adding one shows its exact command in a window the app opens itself; once a
@@ -28,9 +29,10 @@ export function ToolList({ tools, busy, onToggle }: { tools: { name: string; des
   );
 }
 
-function ServerRow({ server, onInfo }: { server: McpServer; onInfo: (i: McpInfo) => void }) {
+function ServerRow({ server, onInfo, focused }: { server: McpServer; onInfo: (i: McpInfo) => void; focused: boolean }) {
   const bridge = mcpBridge()!;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
+  const ref = useScrollTo<HTMLDivElement>(focused);
   const [busy, setBusy] = useState(false);
   const run = async (f: () => Promise<McpInfo>) => {
     setBusy(true);
@@ -44,7 +46,7 @@ function ServerRow({ server, onInfo }: { server: McpServer; onInfo: (i: McpInfo)
   };
   const usable = server.tools.filter((t) => t.usable);
   return (
-    <div className="setting-row mcp-server">
+    <div className="setting-row mcp-server" ref={ref}>
       <div className="grow">
         <div className="strong">
           {server.name} <span className={`mcp-status ${server.status}`}>{STATUS[server.status]}</span>
@@ -143,7 +145,7 @@ function AddServer({ onClose, onInfo }: { onClose: () => void; onInfo: (i: McpIn
 }
 
 /** The local servers: programs the desktop app starts on this computer. Desktop only. */
-function LocalSection() {
+function LocalSection({ focus }: { focus?: string }) {
   const bridge = mcpBridge();
   const { info, set } = useMcp();
   const [adding, setAdding] = useState(false);
@@ -170,7 +172,7 @@ function LocalSection() {
                 </div>
               )}
               {info.servers.map((s) => (
-                <ServerRow key={s.name} server={s} onInfo={set} />
+                <ServerRow key={s.name} server={s} onInfo={set} focused={focus === `local:${s.name}`} />
               ))}
               <div className="setting-row" style={{ alignItems: "center" }}>
                 <p className="small muted grow">{info.servers.length === 0 ? "" : `${info.servers.length} of 10 local servers`}</p>
@@ -188,15 +190,15 @@ function LocalSection() {
 }
 
 /** The "MCP servers" tab of Settings: remote servers (everywhere) and servers on this computer (desktop). */
-export function McpTab() {
+export function McpTab({ focus }: { focus?: string }) {
   return (
     <div className="col" style={{ gap: 20 }}>
       <h3 className="dialog-title flush">MCP servers</h3>
       <p className="small muted">
         MCP servers give the AI extra tools (look things up, call a service). The AI uses them only when <strong>you</strong> ask it something, in any chat, and picks the fitting tool on its own. Nobody else can use your servers, but what a tool returns shows up in the chat, so everyone in that chat can read it.
       </p>
-      <RemoteSection />
-      <LocalSection />
+      <RemoteSection focus={focus} />
+      <LocalSection focus={focus} />
     </div>
   );
 }

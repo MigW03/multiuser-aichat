@@ -1,4 +1,4 @@
-import { Info, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, Sparkles } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useNarrow } from "../lib/hooks.ts";
 
 export const ICON = 16;
 export const ICON_SM = 14;
@@ -350,7 +351,86 @@ export function Popover({ label, className = "", children }: { label: string; cl
 
 export type MenuItem =
   | { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean; checked?: boolean; hint?: string }
+  /** An item that opens a flyout to its right (inline, under the item, in a narrow window). `badge` shows on the item itself. */
+  | { label: string; submenu: (closeMenu: () => void) => ReactNode; icon?: ReactNode; badge?: ReactNode }
   | "divider";
+
+/** A menu item with a flyout: opens on hover (after a short delay), click, tap or →; closes on Esc, ←, or when the pointer leaves. */
+function SubmenuItem({ label, icon, badge, closeMenu, children }: { label: string; icon?: ReactNode; badge?: ReactNode; closeMenu: () => void; children: (closeMenu: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const narrow = useNarrow();
+  const id = useId();
+  const timer = useRef<number | undefined>(undefined);
+  const wrap = useRef<HTMLDivElement>(null);
+  const viaKey = useRef(false);
+  const clear = () => window.clearTimeout(timer.current);
+  const later = (value: boolean, ms: number) => {
+    clear();
+    timer.current = window.setTimeout(() => setOpen(value), ms);
+  };
+  useEffect(() => clear, []);
+  const rows = () => Array.from(wrap.current?.querySelectorAll<HTMLElement>(".menu-sub [role=menuitem]:not([aria-disabled=true])") ?? []);
+  useEffect(() => {
+    if (open && viaKey.current) rows()[0]?.focus();
+    viaKey.current = false;
+  }, [open]);
+  const back = () => {
+    setOpen(false);
+    wrap.current?.querySelector<HTMLElement>(":scope > .menu-item")?.focus();
+  };
+  return (
+    <div
+      ref={wrap}
+      className="menu-sub-wrap"
+      onMouseEnter={narrow ? undefined : () => later(true, 150)}
+      onMouseLeave={narrow ? undefined : () => later(false, 200)}
+      onKeyDown={(e) => {
+        if (!open) return;
+        if (e.key === "Escape") {
+          e.stopPropagation(); // the first Esc closes the flyout, the next one the menu
+          back();
+        } else if (e.key === "ArrowLeft") back();
+        else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const all = rows();
+          if (!all.length) return;
+          e.preventDefault();
+          const at = all.indexOf(document.activeElement as HTMLElement);
+          all[(at + (e.key === "ArrowDown" ? 1 : -1) + all.length) % all.length]?.focus();
+        }
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="menu-item"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => {
+          clear();
+          setOpen((o) => !o);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            viaKey.current = true;
+            setOpen(true);
+          }
+        }}
+      >
+        {icon}
+        <span className="grow">{label}</span>
+        {badge}
+        {narrow ? <ChevronDown size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden /> : <ChevronRight size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden />}
+      </button>
+      {open && (
+        <div id={id} className={`menu-sub ${narrow ? "inline" : ""}`} role="menu" aria-label={label}>
+          {children(closeMenu)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** A button that opens a small menu. Closes on outside click, Escape and selection. */
 export function Menu({
@@ -398,6 +478,10 @@ export function Menu({
           {items.map((item, i) =>
             item === "divider" ? (
               <div key={i} className="menu-divider" role="separator" />
+            ) : "submenu" in item ? (
+              <SubmenuItem key={i} label={item.label} icon={item.icon} badge={item.badge} closeMenu={() => setOpen(false)}>
+                {item.submenu}
+              </SubmenuItem>
             ) : (
               <button
                 key={i}

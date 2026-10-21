@@ -22,7 +22,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "mcp", label: "MCP servers", icon: Plug },
 ];
 
-export function SettingsDialog({ initialTab = "account", onClose }: { initialTab?: SettingsTab; onClose: () => void }) {
+export function SettingsDialog({ initialTab = "account", focus, onClose }: { initialTab?: SettingsTab; focus?: string; onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   return (
     <Dialog onClose={onClose} width={680} label="Settings">
@@ -39,7 +39,7 @@ export function SettingsDialog({ initialTab = "account", onClose }: { initialTab
           {tab === "account" && <AccountTab />}
           {tab === "key" && <KeyTab />}
           {tab === "appearance" && <AppearanceTab />}
-          {tab === "mcp" && <McpTab />}
+          {tab === "mcp" && <McpTab focus={focus} />}
           <div className="dialog-actions">
             <Button onClick={onClose}>Close</Button>
           </div>

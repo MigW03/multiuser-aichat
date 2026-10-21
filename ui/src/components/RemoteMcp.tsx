@@ -2,6 +2,7 @@ import type { McpRemoteList, McpRemoteServer } from "@mc/shared";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
+import { useScrollTo } from "../lib/hooks.ts";
 import { ToolList } from "./McpSettings.tsx";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput } from "./kit.tsx";
 
@@ -61,8 +62,9 @@ function useRemote() {
   return { list, error, load, put, watchSignIn: () => setPollUntil(Date.now() + 10 * 60_000), add: (s: McpRemoteServer) => setList((l) => (l ? { ...l, servers: [...l.servers, s] } : l)), remove: (id: string) => setList((l) => (l ? { ...l, servers: l.servers.filter((x) => x.id !== id) } : l)) };
 }
 
-function RemoteRow({ server, oauthAvailable, onChange, onRemove, onWatch, onToken }: { server: McpRemoteServer; oauthAvailable: boolean; onChange: (s: McpRemoteServer) => void; onRemove: () => void; onWatch: () => void; onToken: () => void }) {
-  const [open, setOpen] = useState(false);
+function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatch, onToken }: { server: McpRemoteServer; focused: boolean; oauthAvailable: boolean; onChange: (s: McpRemoteServer) => void; onRemove: () => void; onWatch: () => void; onToken: () => void }) {
+  const [open, setOpen] = useState(focused);
+  const ref = useScrollTo<HTMLDivElement>(focused);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async (f: () => Promise<void>) => {
@@ -86,7 +88,7 @@ function RemoteRow({ server, oauthAvailable, onChange, onRemove, onWatch, onToke
     });
 
   return (
-    <div className="setting-row mcp-server">
+    <div className="setting-row mcp-server" ref={ref}>
       <div className="grow">
         <div className="strong">
           {server.name} <span className={`mcp-status ${server.status === "ready" ? "ready" : server.status === "failed" ? "failed" : ""}`}>{STATUS[server.status]}</span>
@@ -281,7 +283,7 @@ function ReplaceToken({ server, onClose, onDone }: { server: McpRemoteServer; on
 }
 
 /** The "Remote servers" part of the MCP servers tab. */
-export function RemoteSection() {
+export function RemoteSection({ focus }: { focus?: string }) {
   const { list, error, load, put, add, remove, watchSignIn } = useRemote();
   const [adding, setAdding] = useState(false);
   const [tokenFor, setTokenFor] = useState<McpRemoteServer | null>(null);
@@ -299,7 +301,7 @@ export function RemoteSection() {
             </div>
           )}
           {list.servers.map((s) => (
-            <RemoteRow key={s.id} server={s} oauthAvailable={list.oauthAvailable} onChange={put} onRemove={() => remove(s.id)} onWatch={watchSignIn} onToken={() => setTokenFor(s)} />
+            <RemoteRow key={s.id} server={s} focused={focus === s.id} oauthAvailable={list.oauthAvailable} onChange={put} onRemove={() => remove(s.id)} onWatch={watchSignIn} onToken={() => setTokenFor(s)} />
           ))}
           <div className="setting-row" style={{ alignItems: "center" }}>
             <p className="small muted grow">{list.servers.length === 0 ? "" : `${list.servers.length} of 10 remote servers`}</p>

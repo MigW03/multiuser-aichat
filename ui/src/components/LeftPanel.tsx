@@ -20,6 +20,7 @@ import {
   RenameDialog,
 } from "./Dialogs.tsx";
 import { ProjectTile } from "./Join.tsx";
+import { McpAttentionDot, McpFlyout, useMcpStatus } from "./McpStatusMenu.tsx";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, Button, IconButton, ICON, ICON_SM, Menu, SectionLabel, STROKE, UnreadBadge } from "./kit.tsx";
 
@@ -397,6 +398,7 @@ function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: 
 
 function AccountCard() {
   const { me, openSettings } = useApp();
+  const mcp = useMcpStatus();
   return (
     <div className="account-card">
       <Menu
@@ -408,7 +410,7 @@ function AccountCard() {
         items={[
           { label: "Settings", icon: <Settings size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("account") },
           { label: "AI key", icon: <KeyRound size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("key") },
-          { label: "MCP servers", icon: <Plug size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("mcp") },
+          { label: "MCP servers", icon: <Plug size={ICON_SM} strokeWidth={STROKE} />, badge: mcp.attention ? <McpAttentionDot /> : undefined, submenu: (close) => <McpFlyout s={mcp} close={close} /> },
           "divider",
           { label: "Log out", icon: <LogOut size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => void supabase.auth.signOut() },
         ]}

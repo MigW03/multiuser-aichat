@@ -43,7 +43,7 @@ export function Shell({ userId }: { userId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [keys, setKeys] = useState<AppContextValue["keys"]>(null);
   const [stored, setStored] = useState<ModelChoice | null>(null);
-  const [settings, setSettings] = useState<{ tab: SettingsTab } | null>(null);
+  const [settings, setSettings] = useState<{ tab: SettingsTab; focus?: string } | null>(null);
   const [addKey, setAddKey] = useState(false);
   const [inviteReq, setInviteReq] = useState<InviteRequest | null>(null);
 
@@ -188,7 +188,7 @@ export function Shell({ userId }: { userId: string }) {
         reloadKeys,
         choice,
         setChoice,
-        openSettings: (tab = "account") => setSettings({ tab }),
+        openSettings: (tab = "account", focus) => setSettings({ tab, focus }),
         openAddKey: () => setAddKey(true),
         openInvite: (target) => setInviteReq(target),
         folderPanel: { open: folderOpen, drawer: narrow, toggle: toggleFolder },
@@ -295,7 +295,7 @@ export function Shell({ userId }: { userId: string }) {
         )}
       </div>
 
-      {settings && <SettingsDialog initialTab={settings.tab} onClose={() => setSettings(null)} />}
+      {settings && <SettingsDialog initialTab={settings.tab} focus={settings.focus} onClose={() => setSettings(null)} />}
       {addKey && <AddKeyDialog onClose={() => setAddKey(false)} />}
       {inviteReq && <InviteHost req={inviteReq} projects={projects.data} chats={chats.data} meId={userId} onClose={() => setInviteReq(null)} />}
       <ApprovalDock projectName={(id) => projects.data?.find((p) => p.id === id)?.name ?? "a project"} />

@@ -164,6 +164,31 @@ h1, h2, h3, p { margin: 0; }
 .menu-item:disabled { opacity: 0.5; cursor: default; }
 .menu-divider { height: 1px; margin: 4px 2px; background: var(--border); }
 .menu-check { color: var(--p-text); }
+.menu-sub-wrap { display: flex; flex-direction: column; }
+.menu-sub { position: absolute; z-index: 31; left: calc(100% + 6px); bottom: 0; min-width: 240px; padding: 4px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
+.menu-sub.inline { position: static; min-width: 0; padding: 0 0 0 16px; border: 0; box-shadow: none; background: none; }
+.menu-sub-wrap > .menu-item[aria-expanded="true"] { background: var(--hover-row); }
+.mcp-empty { padding: 6px 10px; }
+.mcp-skeleton { display: flex; flex-direction: column; gap: 14px; padding: 10px; }
+.mcp-skeleton span { height: 12px; width: 60%; border-radius: 6px; background: var(--muted); }
+.mcp-skeleton span + span { width: 40%; }
+.mcp-row[aria-disabled="true"] { cursor: default; }
+.mcp-row[aria-disabled="true"]:hover { background: none; }
+/* status dots: green connected, yellow needs sign in, red failed, grey connecting, ring off */
+.mdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted-fg); }
+.mdot.ready { background: var(--online); }
+.mdot.signin { background: var(--warning); }
+.mdot.failed { background: var(--danger); }
+.mdot.connecting { opacity: 0.55; }
+.mdot.off { background: none; box-shadow: inset 0 0 0 1.5px var(--muted-fg); }
+/* yellow and red dots grow into the action on hover or keyboard focus */
+.mcp-flag { display: inline-flex; align-items: center; padding: 3px; border: 1px solid transparent; border-radius: var(--r-full); }
+.mcp-flag-text { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font: var(--text-small); font-weight: 600; transition: max-width 0.15s ease, opacity 0.15s ease, margin 0.15s ease; }
+.mcp-row:hover .mcp-flag.has-action, .mcp-row:focus-visible .mcp-flag.has-action { padding-right: 9px; }
+.mcp-row:hover .mcp-flag.signin, .mcp-row:focus-visible .mcp-flag.signin { border-color: var(--warning); }
+.mcp-row:hover .mcp-flag.failed, .mcp-row:focus-visible .mcp-flag.failed { border-color: var(--danger); }
+.mcp-row:hover .mcp-flag-text, .mcp-row:focus-visible .mcp-flag-text { max-width: 110px; opacity: 1; margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .mcp-flag-text { transition: none; } }
 
 .toasts { position: fixed; z-index: 80; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .toast {

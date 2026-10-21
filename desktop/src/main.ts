@@ -93,9 +93,12 @@ if (!app.requestSingleInstanceLock()) {
   pendingLink = linkFrom(process.argv) ?? null;
 
   app.whenReady().then(() => {
-    // The app asks for no camera, microphone, location and so on; say no to all of it.
-    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    // The app asks for no camera, microphone, location and so on; say no to all of it. The one exception is writing text to
+    // the clipboard (the Copy buttons), and only for the app's own page.
+    const appOrigin = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
+    const allowed = (permission: string, url: string | undefined) => permission === "clipboard-sanitized-write" && originOf(url) === appOrigin;
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => callback(allowed(permission, details.requestingUrl)));
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => allowed(permission, requestingOrigin));
     if (!DEV_URL) serveWebBuild();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });

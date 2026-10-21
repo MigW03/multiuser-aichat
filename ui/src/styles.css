@@ -70,6 +70,9 @@ h1, h2, h3, p { margin: 0; }
 .btn.ghost:hover:not(:disabled) { background: var(--hover-btn); }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.danger:hover:not(:disabled) { background: var(--danger); filter: brightness(1.08); }
+/* Left-panel New chat: no fill, accent text, content on the left, icon in line with the search icon above. */
+.btn.ghost.new-chat { justify-content: flex-start; padding: 0 10px; color: var(--p-text); }
+.btn.ghost.new-chat:hover:not(:disabled) { background: var(--hover-row); }
 .link-btn { background: none; border: 0; padding: 0; color: var(--p-text); font: inherit; font-weight: 500; }
 .link-btn:hover { text-decoration: underline; }
 

@@ -949,6 +949,8 @@ h1, h2, h3, p { margin: 0; }
 .vcl-dep { align-items: center; }
 .vcl-dep-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .vcl-msg { margin: 0; word-break: break-word; }
+.vcl-url { overflow-wrap: anywhere; }
+.vcl-url a { color: var(--p-text); text-decoration: underline; }
 .vcl-build { max-height: 260px; }
 .vcl-build > li { padding: 1px 4px; }
 .vcl-err { color: var(--danger); }

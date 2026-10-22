@@ -3,6 +3,7 @@ import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useScrollTo } from "../lib/hooks.ts";
+import { ConfirmDialog } from "./Dialogs.tsx";
 import { ToolList } from "./McpSettings.tsx";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput } from "./kit.tsx";
 
@@ -67,6 +68,7 @@ function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatc
   const ref = useScrollTo<HTMLDivElement>(focused);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAll, setConfirmAll] = useState(false);
   const run = async (f: () => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -79,6 +81,7 @@ function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatc
     }
   };
   const usable = server.tools.filter((t) => t.usable);
+  const preset = server.preset;
 
   const signIn = () =>
     run(async () => {
@@ -102,6 +105,14 @@ function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatc
         <p className="small muted mcp-command" title={server.url}>
           {server.url}
         </p>
+        {preset && server.status === "ready" && (
+          <p className="small muted mcp-preset">
+            {preset.all ? `All ${preset.total} tools are offered to the AI.` : `Nido picks ${preset.offered} of ${preset.total} ${preset.name} tools for the AI: the ones for looking at a project. Tools that change things stay off.`}{" "}
+            <button type="button" className="link-button" disabled={busy} onClick={() => (preset.all ? void run(async () => onChange(await api.mcpSet(server.id, { allTools: false }))) : setConfirmAll(true))}>
+              {preset.all ? "Back to Nido's pick" : "Offer all tools…"}
+            </button>
+          </p>
+        )}
         <p className="small muted">{server.authKind === "oauth" ? "Signed in with OAuth" : server.authKind === "header" ? `Header ${server.headerName} ••••${server.secretHint ?? ""}` : "No sign-in"}</p>
         {server.error && server.status !== "ready" && <p className="small mcp-error">{server.error}</p>}
         {server.status === "needs_sign_in" && !oauthAvailable && <p className="small mcp-error">OAuth sign-in is not set up on this chat server.</p>}
@@ -136,6 +147,19 @@ function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatc
             <Trash2 size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Remove
           </Button>
         </div>
+        {confirmAll && (
+          <ConfirmDialog
+            title={`Offer all ${preset?.total ?? ""} tools?`}
+            confirmLabel="Offer all tools"
+            danger
+            onClose={() => setConfirmAll(false)}
+            onConfirm={async () => {
+              onChange(await api.mcpSet(server.id, { allTools: true }));
+            }}
+          >
+            <p>Every message to the AI then carries all {preset?.total ?? "the"} tool descriptions: slower and costlier. It can also reach tools that change things or spend money (deploy, promote, DNS, firewall, environment variables). Nido does not ask before a tool runs: you decided when you switched it on.</p>
+          </ConfirmDialog>
+        )}
         {open && <ToolList tools={server.tools} busy={busy} onToggle={(tool, on) => void run(async () => onChange(await api.mcpSet(server.id, { tool: { name: tool, enabled: on } })))} />}
       </div>
       <input

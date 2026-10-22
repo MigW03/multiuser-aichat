@@ -29,6 +29,11 @@ import type {
   SupabaseSection,
   SupabaseSectionData,
   SupabaseState,
+  VercelLink,
+  VercelProjectOption,
+  VercelSection,
+  VercelSectionData,
+  VercelState,
 } from "@mc/shared";
 import { config } from "./config.ts";
 import { supabase } from "./supabase.ts";
@@ -85,7 +90,7 @@ export const api = {
   // Remote MCP servers (connected tools the chat server calls for you; secrets are write-only)
   mcpServers: () => call<McpRemoteList>("GET", "/api/mcp/servers"),
   mcpAdd: (body: { name: string; url: string; auth: McpRemoteAuthInput }) => call<McpRemoteServer>("POST", "/api/mcp/servers", body),
-  mcpSet: (id: string, body: { enabled?: boolean; tool?: { name: string; enabled: boolean } }) => call<McpRemoteServer>("PATCH", `/api/mcp/servers/${id}`, body),
+  mcpSet: (id: string, body: { enabled?: boolean; allTools?: boolean; tool?: { name: string; enabled: boolean } }) => call<McpRemoteServer>("PATCH", `/api/mcp/servers/${id}`, body),
   mcpToken: (id: string, value: string) => call<McpRemoteServer>("PUT", `/api/mcp/servers/${id}/token`, { value }),
   mcpDelete: (id: string) => call<{ ok: true }>("DELETE", `/api/mcp/servers/${id}`),
   mcpRetry: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/retry`),
@@ -145,6 +150,20 @@ export const api = {
     if (q.minutes) params.set("minutes", String(q.minutes));
     if (q.errors) params.set("errors", "1");
     return call<{ data: SupabaseSectionData[S] }>("GET", `/api/projects/${projectId}/supabase/data/${section}${params.size ? `?${params}` : ""}`);
+  },
+
+  /** The Vercel tab: the project's link, this person's own Vercel connection, and one section read through it. */
+  vercelState: (projectId: string) => call<VercelState>("GET", `/api/projects/${projectId}/vercel`),
+  vercelProjects: (projectId: string) => call<{ projects: VercelProjectOption[] }>("GET", `/api/projects/${projectId}/vercel/projects`),
+  vercelLink: (projectId: string, pick: { teamId: string; projectId: string }) => call<{ link: VercelLink | null }>("PUT", `/api/projects/${projectId}/vercel`, pick),
+  vercelUnlink: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/vercel`),
+  vercelData: <S extends VercelSection>(projectId: string, section: S, q: { since?: string; minutes?: number; errors?: boolean; deployment?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (q.since) params.set("since", q.since);
+    if (q.minutes) params.set("minutes", String(q.minutes));
+    if (q.errors) params.set("errors", "1");
+    if (q.deployment) params.set("deployment", q.deployment);
+    return call<{ data: VercelSectionData[S] }>("GET", `/api/projects/${projectId}/vercel/data/${section}${params.size ? `?${params}` : ""}`);
   },
 
   createChat: (projectId: string | null) => call<{ id: string }>("POST", "/api/chats", { projectId }),

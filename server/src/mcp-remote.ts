@@ -1,4 +1,4 @@
-import { MCP_LIMITS as M, redactSecrets, resultText, toolEntries, type McpCallResult, type McpRemoteServer, type McpRemoteStatus, type McpState, type ToolEntry } from "@mc/shared";
+import { MCP_LIMITS as M, mcpPresetFor, redactSecrets, resultText, toolEntries, type McpCallResult, type McpRemoteServer, type McpRemoteStatus, type McpState, type ToolEntry } from "@mc/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -33,7 +33,7 @@ const CONNECT_MS = 15_000;
 const LIST_MS = 15_000;
 const IDLE_MS = 5 * 60_000;
 const WINDOW_MS = 10 * 60_000;
-const MAX_TOOLS_LISTED = 200;
+const MAX_TOOLS_LISTED = 400;
 
 const ERR = {
   unreachable: "Could not reach the server.",
@@ -59,6 +59,13 @@ export function reasonOf(e: unknown, authKind: RemoteRow["auth_kind"]): { status
   if (code !== undefined && code >= 400 && code < 500) return { status: "failed", error: ERR.notMcp };
   if (/Invalid|schema|JSON|protocol|not supported/i.test(msg)) return { status: "failed", error: ERR.notMcp };
   return { status: "failed", error: ERR.unreachable };
+}
+
+/** Whether a tool of this server may be offered to the AI: not switched off, and (for a server with a preset) in the preset unless "All tools" is on. */
+export function toolOffered(row: Pick<RemoteRow, "url" | "disabled_tools" | "all_tools">, tool: string): boolean {
+  if (row.disabled_tools.includes(tool)) return false;
+  const preset = mcpPresetFor(row.url);
+  return !preset || row.all_tools === true || preset.tools.has(tool);
 }
 
 export class RemoteMcp {
@@ -186,12 +193,14 @@ export class RemoteMcp {
   // ---------------------------------------------------------------- what the page sees
 
   private toolViews(row: RemoteRow, e: Entry | undefined) {
-    return (e?.tools ?? []).map((t) => ({ name: t.name, description: t.description, enabled: !row.disabled_tools.includes(t.name), usable: t.usable, ...(t.note ? { note: t.note } : {}) }));
+    return (e?.tools ?? []).filter((t) => toolOffered({ ...row, disabled_tools: [] }, t.name)).map((t) => ({ name: t.name, description: t.description, enabled: !row.disabled_tools.includes(t.name), usable: t.usable, ...(t.note ? { note: t.note } : {}) }));
   }
 
   view(row: RemoteRow): McpRemoteServer {
     const e = row.enabled ? this.ensure(row) : undefined;
     const status: McpRemoteStatus = !row.enabled ? "off" : e!.status;
+    const preset = mcpPresetFor(row.url);
+    const known = e?.tools.filter((t) => t.usable) ?? [];
     return {
       id: row.id,
       name: row.name,
@@ -203,6 +212,7 @@ export class RemoteMcp {
       status,
       ...(e?.error && (status === "failed" || status === "needs_sign_in") ? { error: e.error } : {}),
       tools: this.toolViews(row, e),
+      ...(preset ? { preset: { name: preset.label, offered: known.filter((t) => preset.tools.has(t.name)).length, total: known.length, all: row.all_tools === true } } : {}),
     };
   }
 
@@ -218,7 +228,7 @@ export class RemoteMcp {
     let total = 0;
     for (const { row, entry } of entries) {
       if (entry.status !== "ready" || !entry.client) continue;
-      const tools = entry.tools.filter((t) => t.usable && !row.disabled_tools.includes(t.name)).slice(0, Math.max(0, M.tools - total));
+      const tools = entry.tools.filter((t) => t.usable && toolOffered(row, t.name)).slice(0, Math.max(0, M.tools - total));
       total += tools.length;
       if (tools.length) servers.push({ name: row.name, tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
     }
@@ -228,7 +238,7 @@ export class RemoteMcp {
   /** Calls one of `userId`'s remote tools. Callers pass the asker's own id and nobody else's. */
   async call(userId: string, req: McpRequest, o: McpCallOptions = {}): Promise<McpCallResult> {
     const row = (await this.d.store.list(userId)).find((r) => r.name === req.server && r.enabled);
-    if (!row || row.disabled_tools.includes(req.tool)) throw new RelayError("host", "That tool is not available (the server is off or does not have it).", "mcp_unavailable");
+    if (!row || !toolOffered(row, req.tool)) throw new RelayError("host", "That tool is not available (the server is off or does not have it).", "mcp_unavailable");
     const entry = this.ensure(row);
     if (entry.connecting) await entry.connecting;
     const known = entry.tools.find((t) => t.name === req.tool && t.usable);

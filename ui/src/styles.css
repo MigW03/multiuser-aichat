@@ -841,6 +841,8 @@ h1, h2, h3, p { margin: 0; }
 
 /* Scripts tab (the Files card): tabs in the card head, one row per package.json script with Run / Stop, and its log. */
 .files-tabs { padding: 0; gap: 2px; }
+.files-tabs .notes-tab { display: inline-flex; align-items: center; gap: 5px; }
+.files-tabs .notes-tab .tab-dot { margin-left: 0; }
 .notes-tab .tab-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: 1px; }
 .scripts-body { gap: 6px; padding: 8px; }
 .scripts-off { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 0; padding: 6px 8px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-tint); }
@@ -942,3 +944,16 @@ h1, h2, h3, p { margin: 0; }
 .supa-fields > li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--border); }
 .supa-tags { display: inline-flex; gap: 4px; justify-content: flex-end; }
 .supa-tag { padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--muted); font: 10px/16px var(--font, inherit); font-weight: 600; }
+
+/* The Vercel tab (it reuses the supa-* rows). */
+.vcl-dep { align-items: center; }
+.vcl-dep-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vcl-msg { margin: 0; word-break: break-word; }
+.vcl-build { max-height: 260px; }
+.vcl-build > li { padding: 1px 4px; }
+.vcl-err { color: var(--danger); }
+.vcl-wrap { white-space: pre-wrap; word-break: break-word; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.vcl-key { font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.vcl-team { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vcl-team .input { width: auto; }
+.link-button { padding: 0; border: 0; background: none; color: var(--p-text); font: inherit; text-decoration: underline; cursor: pointer; }

@@ -528,6 +528,8 @@ export type McpRemoteServer = {
   /** One plain sentence when status is failed or needs_sign_in. */
   error?: string;
   tools: McpToolView[];
+  /** Set for servers Nido knows (Vercel): the AI gets `offered` of the server's `total` tools unless `all` is on. */
+  preset?: { name: string; offered: number; total: number; all: boolean };
 };
 export type McpRemoteList = {
   servers: McpRemoteServer[];
@@ -623,3 +625,5 @@ export * from "./mcp-text.ts";
 export * from "./preview-url.ts";
 export * from "./genui.ts";
 export * from "./supabase.ts";
+export * from "./vercel.ts";
+export * from "./mcp-presets.ts";

@@ -48,6 +48,8 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
   // Counts every close: a view that is still being made (the run session is built first) when the panel closes, or when another
   // open replaces it, must not be added afterwards, or it stays on screen with nothing left that can close it.
   let epoch = 0;
+  // Every view this module has put in a window and not yet taken out: a close removes all of them, so none can be left behind.
+  const made = new Set<{ view: WebContentsView; win: BrowserWindow }>();
 
   const trusted = (e: IpcMainEvent | IpcMainInvokeEvent) => {
     const win = opts.getWindow();
@@ -130,21 +132,22 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
 
   function close() {
     epoch++;
-    const v = view;
-    const win = host;
-    if (v && mode === "run") stopRunLater();
+    if (view && mode === "run") stopRunLater();
     view = null;
     host = null;
     lastError = null;
     lastUrl = "";
-    if (!v) return;
-    try {
-      if (win && !win.isDestroyed()) win.contentView.removeChildView(v);
-      if (!v.webContents.isDestroyed()) v.webContents.close();
-    } catch {
-      /* the window is already gone */
+    for (const m of made) {
+      try {
+        if (!m.win.isDestroyed()) m.win.contentView.removeChildView(m.view);
+        if (!m.view.webContents.isDestroyed()) m.view.webContents.close();
+      } catch {
+        /* the window is already gone */
+      }
     }
-    push();
+    const any = made.size > 0;
+    made.clear();
+    if (any) push();
   }
 
   async function create(win: BrowserWindow, want: PreviewMode) {
@@ -215,6 +218,7 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
     });
 
     win.contentView.addChildView(v);
+    made.add({ view: v, win });
     view = v;
     host = win;
     mode = want;

@@ -145,7 +145,7 @@ h1, h2, h3, p { margin: 0; }
 .dialog-footer .left { margin-right: auto; }
 .lead { color: var(--muted-fg); font-size: 14px; line-height: 1.5; }
 
-.menu-wrap { position: relative; display: inline-flex; }
+.menu-wrap { position: relative; display: inline-flex; gap: 6px; }
 .menu {
   position: absolute; z-index: 30; min-width: 180px; padding: 4px; display: flex; flex-direction: column;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu);

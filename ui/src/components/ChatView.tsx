@@ -159,7 +159,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   async function saveNote(m: ChatMessage) {
     if (!project) return;
     try {
-      await api.addNote(project.id, { title: noteTitleFrom(m.content), body: m.content.slice(0, NOTE_LIMITS.bodyChars) });
+      // Saved with a quick title; the server has the AI title it from the question and the answer, with this person's model.
+      await api.addNote(project.id, { title: noteTitleFrom(m.content), body: m.content.slice(0, NOTE_LIMITS.bodyChars), fromMessage: m.id, ...(choice ? { provider: choice.provider, model: choice.model } : {}) });
       notifyChanged();
       toast.push("Saved to Notes");
     } catch (e) {

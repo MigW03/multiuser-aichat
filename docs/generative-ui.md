@@ -63,6 +63,9 @@ An AI answer can now include small interfaces next to its Markdown: key numbers,
 18. **Visuals in notes render for notes written by anyone in the project**, not only AI-made ones ("Save as note" stores the note as the person's). Same safe components and click rules as in chat.
     Alternative: only render when the note came from an AI answer (needs a "source message" field on notes, a migration).
 
+19. **AI titles for notes saved from a message** (added 2026-10-22 at Miguel's request). The note is saved at once with a quick title (first words), then the AI titles it from the question that was asked and the saved answer (3 to 8 words, 60 characters at most). It uses the saver's own key and current model. The AI title replaces the quick one only if nobody edited the title meanwhile. With no key, with Auto, or when the AI fails, the quick title stays.
+    Alternatives: wait for the AI title before saving (slower, up to 20 s); show the AI title in an editable field first; use a fixed cheap model instead of the saver's choice; title with Auto too (needs the Smart set in this call).
+
 ## How the pieces fit
 
 - `ui/src/genui/library.tsx`: the components (Zod props + React), and `CopyText`.

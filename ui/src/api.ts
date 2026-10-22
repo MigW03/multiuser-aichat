@@ -112,7 +112,8 @@ export const api = {
   inviteToProject: (projectId: string, email: string, role: AssignableRole) => call<InviteCreated>("POST", `/api/projects/${projectId}/invites`, { email, role }),
   projectInvites: (projectId: string) => call<{ invites: InviteRow[] }>("GET", `/api/projects/${projectId}/invites`),
 
-  addNote: (projectId: string, body: { title: string; body: string }) => call<{ id: string }>("POST", `/api/projects/${projectId}/notes`, body),
+  /** With `fromMessage`, the server has the AI retitle the note from that message's question and answer, using `provider`/`model`. */
+  addNote: (projectId: string, body: { title: string; body: string; fromMessage?: string; provider?: string; model?: string }) => call<{ id: string }>("POST", `/api/projects/${projectId}/notes`, body),
   updateNote: (projectId: string, noteId: string, body: { title: string; body: string }) => call<{ ok: true }>("PATCH", `/api/projects/${projectId}/notes/${noteId}`, body),
   deleteNote: (projectId: string, noteId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/notes/${noteId}`),
 

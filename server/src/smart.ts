@@ -1,7 +1,8 @@
-import type { SmartKeyStatus } from "@mc/shared";
+import type { ModelInfo, SmartKeyStatus } from "@mc/shared";
 import { getUserKey } from "./keys.ts";
 import { getOpenRouterUsage } from "./openrouter-usage.ts";
 import { ProviderError } from "./provider-error.ts";
+import { listModels } from "./providers.ts";
 import { cleanSmartSet, creditStatus } from "./smart-rules.ts";
 import { admin } from "./supabase.ts";
 
@@ -36,5 +37,22 @@ export async function checkSmartKey(userId: string): Promise<SmartKeyStatus> {
   } catch (e) {
     if (e instanceof ProviderError && /rejected this key/i.test(e.message)) return "invalid_key";
     return "unreachable";
+  }
+}
+
+const INFO_MS = 5 * 60_000;
+const infoCache = new Map<string, { at: number; models: ModelInfo[] }>();
+
+/** The person's OpenRouter model list (names, prices, picture support), for describing their set to Jev. Empty when it can't be read. */
+export async function smartModelInfo(userId: string, apiKey: string): Promise<ModelInfo[]> {
+  const hit = infoCache.get(userId);
+  if (hit && Date.now() - hit.at < INFO_MS) return hit.models;
+  try {
+    const models = await listModels("openrouter", apiKey);
+    if (infoCache.size >= 256) infoCache.delete(infoCache.keys().next().value!);
+    infoCache.set(userId, { at: Date.now(), models });
+    return models;
+  } catch {
+    return hit?.models ?? [];
   }
 }

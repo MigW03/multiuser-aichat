@@ -73,7 +73,7 @@ export function SmartSetting() {
           <div className="grow">
             <div className="strong">Let Auto choose the model</div>
             <p className="small muted">
-              Off by default. When on, the model picker gets a Smart selector tab: you pick a set of models, and before each of your messages OpenRouter's Jev Router chooses one of them. Each answer shows the model that wrote it. It uses your OpenRouter key and credits, in every chat.
+              Off by default. When on, the model picker gets a Smart selector tab: you pick a set of models, and before each of your messages Jev, a small classifier model on OpenRouter, chooses one of them. It can only choose from your set, and each answer shows the model that wrote it. It uses your OpenRouter key and credits, in every chat.
             </p>
             {!hasKey && <p className="small setting-note">Add your OpenRouter API key above to use this.</p>}
             {smart.enabled && (

@@ -76,8 +76,9 @@ export const LIMITS = {
 } as const;
 
 /**
- * Smart model selection. The OpenRouter model a message is sent to when the person picked "Auto": OpenRouter's Jev Router
- * chooses, from the person's Smart set, the model that answers. The answer then stores the model that really answered.
+ * Smart model selection. The model the app stores on a message when the person picked "Auto". It is only the app's own
+ * marker, never sent to OpenRouter: Jev chooses, from the person's Smart set, the model that answers, and the answer stores
+ * the model that really answered.
  */
 export const SMART_MODEL_ID = "typesafe/jev-router";
 export const isSmartModel = (model: string | null | undefined): boolean => model === SMART_MODEL_ID;
@@ -138,6 +139,8 @@ export type MessageMeta = {
   mcp?: string[];
   /** answers: the model was chosen by Smart model selection (the answer's `model` is the one that really answered). */
   smart?: boolean;
+  /** With `smart`: the choice could not be made (this is the short reason), so the cheapest model of the person's set answered. */
+  smart_fallback?: string;
 };
 
 const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];

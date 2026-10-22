@@ -99,7 +99,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
 
   async function send(out: OutgoingMessage): Promise<boolean> {
     const id = crypto.randomUUID();
-    // With Auto the router sets the thinking level, so none is sent.
+    // With Auto the chosen model uses its own default thinking, so no level is sent.
     const reasoning = choice && isSmartModel(choice.model) ? null : thinking.effective;
     const answered = !!choice && out.mentions.length === 0;
     room.upsert({

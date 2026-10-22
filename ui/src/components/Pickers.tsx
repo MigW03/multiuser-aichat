@@ -303,7 +303,7 @@ export function ReasoningPicker({ levels, value, onChange, disabled, auto }: { l
       width={150}
       items={offered.map((level) => ({ label: REASONING_LABELS[level], checked: level === value, onSelect: () => onChange(level) }))}
       trigger={({ toggle, open }) => (
-        <button type="button" className="picker-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} disabled={disabled || none || auto} title={auto ? "Auto sets the thinking level for each message" : none ? "This model does not offer thinking levels" : undefined}>
+        <button type="button" className="picker-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} disabled={disabled || none || auto} title={auto ? "Auto uses each model's own default thinking level" : none ? "This model does not offer thinking levels" : undefined}>
           <span className="picker-icon" aria-hidden>
             <Brain size={ICON_SM} strokeWidth={STROKE} />
           </span>

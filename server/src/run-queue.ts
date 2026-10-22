@@ -33,8 +33,9 @@ import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
 import { newestPictureIds, promptName, toModelMessages, transcriptText, withinBudget, type Row } from "./model-messages.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
-import { getSmart } from "./smart.ts";
-import { answeredBy, smartProviderOptions } from "./smart-rules.ts";
+import { getSmart, smartModelInfo } from "./smart.ts";
+import { pickSmartModel } from "./smart-pick.ts";
+import type { PickInput } from "./smart-rules.ts";
 import { admin, type Admin } from "./supabase.ts";
 
 const HISTORY_LIMIT = 60;
@@ -187,7 +188,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   const provider: ProviderId | null = isProvider(choice.provider) ? choice.provider : null;
   const modelId = choice.model;
   const reasoning: Reasoning | null = isReasoning(choice.reasoning) ? choice.reasoning : null;
-  /** The asker picked "Auto": OpenRouter's router chooses the model that answers, from their Smart set. */
+  /** The asker picked "Auto": Jev chooses the model that answers, from their Smart set (see smart-pick.ts). */
   const smart = provider === "openrouter" && isSmartModel(modelId);
   const runId = randomUUID();
 
@@ -222,8 +223,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
 
   let apiKey: string | null = null;
   let text = "";
-  /** With Auto: the model that really answered, as OpenRouter reports it. */
-  let answeredModel: string | null = null;
+  /** With Auto: what was chosen. `model` is the one that answers (the message shows it as soon as it is known). */
+  const auto: { chosen: boolean; fallback: string | null } = { chosen: false, fallback: null };
   try {
     const { data: members } = await db.rpc("app_chat_people", { p_chat_id: chatId });
     const names = new Map<string, string>(((members ?? []) as { id: string; display_name: string }[]).map((m) => [m.id, promptName(m.display_name)]));
@@ -232,6 +233,16 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     apiKey = await getUserKey(authorId, provider);
     if (!apiKey) throw new UserFacing("no_key", isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
     const smartModels = smart ? await smartPool(authorId) : null;
+    let runModel: string = modelId;
+    /** With Auto: asks Jev which model of the asker's set should answer, and puts that model on the answer being written. */
+    const choose = async (input: PickInput) => {
+      if (!smartModels) return;
+      const picked = await pickSmartModel({ apiKey: apiKey!, models: smartModels, info: await smartModelInfo(authorId, apiKey!), signal: controller.signal, ...input });
+      runModel = picked.model;
+      auto.chosen = true;
+      auto.fallback = picked.fallback ? (picked.why ?? "unknown") : null;
+      await db.from("messages").update({ model: runModel }).eq("id", assistant.id);
+    };
 
     let instructions: string;
     let messages: ModelMessage[];
@@ -261,6 +272,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       meta = { scope: first.meta.scope, from_seq: fromSeq, count: transcript.length, since: transcript[0]!.created_at };
       instructions = SUMMARY_INSTRUCTIONS;
       messages = [{ role: "user", content: `Chat transcript:\n\n${transcriptText(transcript, names)}` }];
+      await choose({ latest: `Write a recap of a team chat of ${transcript.length} messages: what it was about, decisions, open questions and next steps.`, context: [], pictures: false });
     } else {
       const { data: history } = await db
         .from("messages")
@@ -270,9 +282,16 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         .in("status", ["done", "processing"])
         .order("seq", { ascending: false })
         .limit(HISTORY_LIMIT);
-      // Chat answers may add visuals the app draws (generated UI); summaries stay plain Markdown.
-      instructions = `${chatInstructions(asker, smart ? "" : modelId)}\n\n${genUiInstructions}`; // with Auto the model is not known yet
       const rows = ((history ?? []) as Row[]).reverse();
+      // With Auto the model is chosen from the asker's newest message(s), with a few earlier messages as context.
+      const mine = rows.filter((r) => batchIds.includes(r.id));
+      await choose({
+        latest: mine.map((r) => r.content).join("\n\n"),
+        context: rows.filter((r) => !batchIds.includes(r.id) && r.kind === "message").map((r) => ({ from: r.role === "assistant" ? "ai" : "person", text: r.content })),
+        pictures: mine.some((r) => r.images.length > 0),
+      });
+      // Chat answers may add visuals the app draws (generated UI); summaries stay plain Markdown.
+      instructions = `${chatInstructions(asker, runModel)}\n\n${genUiInstructions}`;
       // The AI gets the files of the newest pictures only; older ones are named as not shown.
       const pictures = await loadImages(chatId, newestPictureIds(withinBudget(rows)));
       messages = toModelMessages(rows, names, pictures);
@@ -326,11 +345,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       }
     }
 
-    const model = languageModel(provider, apiKey, modelId);
+    const model = languageModel(provider, apiKey, runModel);
     // A ChatGPT plan call keeps nothing on OpenAI's side between calls; see chatgptProviderOptions.
     const planOptions = provider === "chatgpt" ? chatgptProviderOptions : null;
-    const thinking = reasoningOptions(provider, smart ? null : reasoning); // with Auto the router sets the thinking level too
-    const providerOptions = { ...("providerOptions" in thinking ? thinking.providerOptions : {}), ...(planOptions ?? {}), ...(smartModels ? smartProviderOptions(smartModels) : {}) };
+    const thinking = reasoningOptions(provider, smart ? null : reasoning); // with Auto the model's own default thinking is used
+    const providerOptions = { ...("providerOptions" in thinking ? thinking.providerOptions : {}), ...(planOptions ?? {}) };
 
     /** One attempt at the answer. Returns the provider error, if any, instead of throwing it. */
     const attempt = async (withTools: boolean): Promise<unknown> => {
@@ -362,7 +381,6 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           void send(text); // full snapshots, not deltas: a dropped packet fixes itself with the next one
         }
       }
-      if (smart && !streamError) answeredModel = answeredBy(await result.response.then((r) => r.modelId, () => null));
       return streamError;
     };
 
@@ -381,20 +399,19 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
     if (folder || mcpUsed.size) meta = { ...meta, ...fitFiles(folder?.use ?? { files: new Set(), offline: false, edits: [], mcp: mcpUsed }) };
-    if (smart) meta = { ...meta, smart: true };
-    // The answer is labeled with the model that really wrote it; the router's own name only stays if OpenRouter didn't say.
-    await db.from("messages").update({ content: text, status: "done", meta, ...(answeredModel ? { model: answeredModel } : {}) }).eq("id", assistant.id);
+    if (auto.chosen) meta = { ...meta, smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) };
+    await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);
   } catch (err) {
     if (err instanceof UserFacing && err.code === "stopped" && text.trim()) {
       // Stopping keeps what was written so far.
-      await db.from("messages").update({ content: text, status: "done", ...(smart && !summary ? { meta: { smart: true } } : {}), ...(answeredModel ? { model: answeredModel } : {}) }).eq("id", assistant.id);
+      await db.from("messages").update({ content: text, status: "done", ...(auto.chosen && !summary ? { meta: { smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) } } : {}) }).eq("id", assistant.id);
       await db.from("messages").update({ status: "done" }).in("id", batchIds);
     } else {
       // Everyone in the chat sees this message, so provider details stay in the server log.
       const detail = err instanceof Error ? err.message : String(err);
       console.error(`[run] chat ${chatId}: ${apiKey ? detail.split(apiKey).join("***") : detail}`);
-      const failure = describeFailure(err, provider, controller.signal.aborted, smart);
+      const failure = describeFailure(err, provider, controller.signal.aborted);
       await db.from("messages").update({ content: failure.text, status: "error", meta: { error: failure.code } }).eq("id", assistant.id);
       await db.from("messages").update({ status: "error" }).in("id", batchIds);
     }
@@ -426,7 +443,7 @@ class UserFacing extends Error {
 }
 
 /** What to tell the chat, and which button it should offer. Never includes provider response bodies. */
-function describeFailure(err: unknown, provider: ProviderId | null, aborted: boolean, smart = false): { code: AiErrorCode; text: string } {
+function describeFailure(err: unknown, provider: ProviderId | null, aborted: boolean): { code: AiErrorCode; text: string } {
   const name = provider ? PROVIDER_LABELS[provider] : "The AI provider";
   if (err instanceof UserFacing) return { code: err.code, text: err.code === "no_key" ? `${err.message} They can ${provider && isPlanProvider(provider) ? "connect it" : "add one"} under Settings.` : err.message };
   if (err instanceof ProviderError) return { code: "other", text: err.message }; // written to be shown
@@ -441,7 +458,6 @@ function describeFailure(err: unknown, provider: ProviderId | null, aborted: boo
     if (err.statusCode === 401 || err.statusCode === 403) return { code: "invalid_key", text: `${name} rejected the key. It may have been deleted or changed.` };
     if (err.statusCode === 402 || /credit|billing|quota|insufficient/.test(body)) return { code: "no_credit", text: `The ${name} account is out of credit. Add credit, then retry. Nothing that was sent is lost.` };
     if (err.statusCode === 429) return { code: "rate_limit", text: `${name} is rate limiting this key. Wait a moment, then retry.` };
-    if (smart && [400, 404, 422].includes(err.statusCode ?? 0)) return { code: "model", text: `${name} didn't accept the Auto request. Check your Smart set in the model picker, then retry, or pick a model yourself.` };
     if (err.statusCode === 404 || err.statusCode === 400) return { code: "model", text: `${name} didn't accept this model or request. Pick another model, then retry.` };
   }
   if (aborted || (err instanceof Error && /abort|timeout|timed out/i.test(`${err.name} ${err.message}`))) {

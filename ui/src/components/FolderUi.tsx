@@ -1,5 +1,5 @@
-import { FOLDER_LIMITS, type AiEditState, type FolderListResult, type FolderReadResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
-import { ArrowLeft, Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, Upload, X } from "lucide-react";
+import { FOLDER_LIMITS, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
@@ -25,6 +25,8 @@ const sizeLabel = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Mat
 
 /** Hovering must rest this long before a tooltip shows, so one that is only passed over stays quiet. */
 const TIP_DELAY_MS = 600;
+/** The list of git changes under the Files card is switched off until its design is settled (the AI's git tools are unaffected). */
+const SHOW_GIT_PANEL = false;
 
 const REFUSED: Record<string, string> = {
   too_many: `A project can share up to ${FOLDER_LIMITS.items} folders and files in all. Remove one first.`,
@@ -397,7 +399,7 @@ function FolderBody({ project, rows, share }: { project: ProjectSummary; rows: S
       {/* Keyed by the items: adding or removing one starts browsing from the top again. */}
       <FolderBrowser key={listed.map((r) => r.id).join(",")} projectId={project.id} rows={listed} meId={me.id} canRemoveOthers={decides} onRemove={(row) => void remove(row)} />
       {listed.some((r) => r.status === "active") && <AiEditStatus projectId={project.id} onlineKey={listed.map((r) => `${r.id}:${r.online}`).join(",")} />}
-      {anyOnline && <GitChanges key={`git-${listed.map((r) => r.id).join(",")}`} projectId={project.id} />}
+      {SHOW_GIT_PANEL && anyOnline && <GitChanges key={`git-${listed.map((r) => r.id).join(",")}`} projectId={project.id} />}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
       {share.dialog}
     </div>
@@ -422,10 +424,9 @@ function ItemIcon({ row, mine }: { row: ShareRow; mine: boolean }) {
 
 /** Browse the shared files, one level at a time, and read a file. The top level is the list of items; below it all of it goes through the server to the owner's app. */
 function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { projectId: string; rows: ShareRow[]; meId: string; canRemoveOthers: boolean; onRemove: (row: ShareRow) => void }) {
+  const { files } = useApp();
   const [path, setPath] = useState("");
-  const [file, setFile] = useState<string | null>(null);
   const [dir, setDir] = useState<FolderListResult | null>(null);
-  const [text, setText] = useState<FolderReadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -442,20 +443,6 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
     };
   }, [projectId, path]);
 
-  useEffect(() => {
-    setText(null);
-    if (file === null) return;
-    let live = true;
-    setError(null);
-    api.folderRead(projectId, file).then(
-      (r) => live && setText(r),
-      (e: unknown) => live && setError(messageOf(e)),
-    );
-    return () => {
-      live = false;
-    };
-  }, [projectId, file]);
-
   const parts = path ? path.split("/") : [];
   const join = (name: string) => (path ? `${path}/${name}` : name);
   const top = [...rows].sort((a, b) => Number(b.kind === "dir") - Number(a.kind === "dir") || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
@@ -464,13 +451,13 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
     <div className="folder-browser">
       {parts.length > 0 && (
         <nav className="folder-crumbs" aria-label="Folder path">
-          <IconButton label="Back to the top" className="sm" onClick={() => { setPath(""); setFile(null); }}>
+          <IconButton label="Back to the top" className="sm" onClick={() => setPath("")}>
             <Home size={ICON_SM} strokeWidth={STROKE} />
           </IconButton>
           {parts.map((p, i) => (
             <span key={`${i}-${p}`} className="row">
               {i > 0 && <span className="muted" aria-hidden>/</span>}
-              <button type="button" onClick={() => { setPath(parts.slice(0, i + 1).join("/")); setFile(null); }} className="truncate">
+              <button type="button" onClick={() => setPath(parts.slice(0, i + 1).join("/"))} className="truncate">
                 {p}
               </button>
             </span>
@@ -478,24 +465,7 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
         </nav>
       )}
       {error && <ErrorLine>{error}</ErrorLine>}
-      {file !== null ? (
-        <div className="file-view">
-          <div className="row">
-            <Button size="sm" variant="ghost" onClick={() => setFile(null)}>
-              <ArrowLeft size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Back
-            </Button>
-            <span className="small muted truncate">{file}</span>
-          </div>
-          {text ? (
-            <>
-              <pre className="file-text" tabIndex={0}>{text.text}</pre>
-              {text.truncated && <div className="small muted">Showing lines {text.startLine}–{text.endLine} of {text.totalLines}.</div>}
-            </>
-          ) : !error ? (
-            <div className="folder-loading small"><Spinner /> Opening {file.split("/").at(-1)}…</div>
-          ) : null}
-        </div>
-      ) : path === "" ? (
+      {path === "" ? (
         <ul className="folder-list">
           {top.map((row) => {
             const mine = row.owner_id === meId;
@@ -503,7 +473,7 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
             const removable = mine || canRemoveOthers;
             return (
               <li key={row.id} className={removable ? "has-menu" : undefined}>
-                <button type="button" disabled={waiting} onClick={() => (row.kind === "dir" ? setPath(row.name) : setFile(row.name))}>
+                <button type="button" disabled={waiting} aria-current={row.kind === "file" && files.path === row.name ? "true" : undefined} onClick={() => (row.kind === "dir" ? setPath(row.name) : files.open(row.name))}>
                   <ItemIcon row={row} mine={mine} />
                   <span className="grow truncate">{row.name}</span>
                   {waiting ? <span className="small muted">Waiting for approval</span> : !mine && <span className="small muted truncate owner">{row.owner_name}</span>}
@@ -518,7 +488,7 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
           {dir.entries.length === 0 && <li className="small muted pad">This folder is empty.</li>}
           {dir.entries.map((e) => (
             <li key={e.name}>
-              <button type="button" onClick={() => (e.type === "dir" ? setPath(join(e.name)) : setFile(join(e.name)))}>
+              <button type="button" aria-current={e.type === "file" && files.path === join(e.name) ? "true" : undefined} onClick={() => (e.type === "dir" ? setPath(join(e.name)) : files.open(join(e.name)))}>
                 {e.type === "dir" ? <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
                 <span className="grow truncate">{e.name}</span>
                 {e.type === "file" && e.size !== undefined && <span className="small muted">{sizeLabel(e.size)}</span>}

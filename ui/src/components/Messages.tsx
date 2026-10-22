@@ -1,9 +1,11 @@
-import { findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
-import { Fragment, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { answerPreview, findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
+import { Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
+import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
+import { findFilePaths } from "../lib/fileKind.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
+import { AnswerBody } from "../genui/AnswerBody.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PictureGrid } from "./Pictures.tsx";
 import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
@@ -33,6 +35,8 @@ export type MessageListProps = {
   onSaveNote?: (m: ChatMessage) => void;
   onAddKey: () => void;
   onUpdateKey: () => void;
+  /** A click in an answer's generated UI drafts a reply to that answer. */
+  onDraft?: (m: ChatMessage, text: string) => void;
   emptyState: ReactNode;
 };
 
@@ -150,7 +154,7 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
     <div className="quoted">
       <CornerUpLeft size={12} strokeWidth={STROKE} aria-hidden />
       <span className="truncate">
-        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? (target.content === IMAGE_ONLY_TEXT && target.images.length ? "a picture" : target.content.replace(/\s+/g, " ").slice(0, 90)) : ""}
+        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? (target.content === IMAGE_ONLY_TEXT && target.images.length ? "a picture" : answerPreview(target.content).replace(/\s+/g, " ").slice(0, 90)) : ""}
       </span>
     </div>
   );
@@ -227,6 +231,31 @@ function PreviewChips({ text }: { text: string }) {
   );
 }
 
+const FILE_CHIPS = 3;
+
+/** A button under an answer for each file it names, when the project shares files: opens it in the file panel. The first few show; the rest follow "+N more". */
+function FileChips({ text }: { text: string }) {
+  const files = useContext(AppContext)?.files;
+  const [all, setAll] = useState(false);
+  const paths = useMemo(() => (files?.hasAny ? findFilePaths(text) : []), [files?.hasAny, text]);
+  if (paths.length === 0 || !files) return null;
+  const shown = all ? paths : paths.slice(0, FILE_CHIPS);
+  return (
+    <div className="preview-offers">
+      {shown.map((p) => (
+        <button key={p} type="button" className="btn secondary sm" title={p} onClick={() => files.open(p, true)}>
+          <File size={ICON_SM} strokeWidth={STROKE} aria-hidden /> <span className="truncate file-chip-name">{p.split("/").at(-1)}</span>
+        </button>
+      ))}
+      {!all && paths.length > FILE_CHIPS && (
+        <button type="button" className="btn ghost sm" onClick={() => setAll(true)}>
+          +{paths.length - FILE_CHIPS} more
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AssistantMessage(props: RowProps) {
   const { m, meId, names, streamingText, isLatestAnswer } = props;
   const asker = names.get(m.for_user_id ?? "") ?? null;
@@ -236,7 +265,8 @@ function AssistantMessage(props: RowProps) {
   const streaming = m.status === "streaming";
   const text = streaming ? (streamingText ?? m.content) : m.content;
   const failed = m.status === "error";
-  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, formatTime(m.created_at)].filter(Boolean);
+  // With Auto, the name above is the model Jev chose from the person's set; "Auto" shows until it is known.
+  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, m.meta.smart_fallback ? `Smart unavailable (${m.meta.smart_fallback}), cheapest model used` : m.meta.smart ? "picked by Smart" : null, formatTime(m.created_at)].filter(Boolean);
 
   return (
     <div className="msg ai">
@@ -263,11 +293,12 @@ function AssistantMessage(props: RowProps) {
                 <span className="muted small">Answering {forMe ? "you" : (asker ?? "")}</span>
               </div>
             ) : (
-              <Markdown text={text} />
+              <AnswerBody text={text} streaming={streaming} {...(props.onDraft ? { onDraft: (draft: string) => props.onDraft?.(m, draft) } : {})} />
             )}
           </div>
         )}
         {!streaming && !failed && <PreviewChips text={text} />}
+        {!streaming && !failed && <FileChips text={text} />}
         {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>

@@ -1,8 +1,9 @@
-import { NOTE_LIMITS } from "@mc/shared";
+import { LIMITS, NOTE_LIMITS, PROVIDER_IDS } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
+import { titleNote } from "../note-title.ts";
 import { admin } from "../supabase.ts";
 
 // Project notes. Everyone in the project can read them (directly, through RLS); every write comes here and the database
@@ -16,11 +17,17 @@ const noteBody = z.object({
   title: z.string().trim().min(1).max(NOTE_LIMITS.titleChars),
   body: z.string().max(NOTE_LIMITS.bodyChars),
 });
+/** Saving a chat message as a note: the message, and the saver's model to title the note with. */
+const fromMessage = z
+  .object({ fromMessage: uuid, provider: z.enum(PROVIDER_IDS), model: z.string().regex(LIMITS.modelIdPattern) })
+  .partial();
 const BAD = { error: "Give the note a title (120 characters at most). The text can be up to 8,000 characters." };
 
 notes.post("/:id/notes", rateLimit("note-write", 60, 60 * 60_000), async (c) => {
-  const parsed = noteBody.safeParse(await c.req.json().catch(() => null));
-  if (!uuid.safeParse(c.req.param("id")).success || !parsed.success) return c.json(BAD, 400);
+  const json = await c.req.json().catch(() => null);
+  const parsed = noteBody.safeParse(json);
+  const source = fromMessage.safeParse(json ?? {});
+  if (!uuid.safeParse(c.req.param("id")).success || !parsed.success || !source.success) return c.json(BAD, 400);
   const { data, error } = await admin.rpc("app_note_create", {
     p_user: c.get("userId"),
     p_project: c.req.param("id"),
@@ -29,6 +36,11 @@ notes.post("/:id/notes", rateLimit("note-write", 60, 60 * 60_000), async (c) => 
     p_ai: false,
   });
   if (error) return dbError(c, error);
+  // Saved from a chat message: the AI titles it from the question and the answer, after the note is already there.
+  const { fromMessage: messageId, provider, model } = source.data;
+  if (messageId && provider && model) {
+    void titleNote(data as string, c.req.param("id"), c.get("userId"), messageId, parsed.data.title, { provider, model }).catch((e) => console.error("[note-title]", e));
+  }
   return c.json({ id: data as string });
 });
 

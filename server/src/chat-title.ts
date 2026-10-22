@@ -17,8 +17,8 @@ export function firstWords(content: string): string {
   return content.replace(/\s+/g, " ").slice(0, MAX_TITLE_CHARS).trim();
 }
 
-/** Turns what the model wrote into a chat name, or null when nothing usable is left. */
-export function cleanTitle(raw: string): string | null {
+/** Turns what the model wrote into a chat name (or a note title, with a larger `max`), or null when nothing usable is left. */
+export function cleanTitle(raw: string, max: number = MAX_TITLE_CHARS): string | null {
   const line = raw.split("\n").find((l) => l.trim()) ?? "";
   const title = line
     .replace(/^\s*(title|name)\s*[:\-–—]\s*/i, "")
@@ -27,8 +27,8 @@ export function cleanTitle(raw: string): string | null {
     .replace(/^[\s\p{P}\p{S}]+|[\s.,:;!?…\-–—]+$/gu, "")
     .replace(/\s+/g, " ");
   if (!title) return null;
-  if (title.length <= MAX_TITLE_CHARS) return title;
-  const cut = title.slice(0, MAX_TITLE_CHARS);
+  if (title.length <= max) return title;
+  const cut = title.slice(0, max);
   return (cut.slice(0, cut.lastIndexOf(" ")) || cut).trim();
 }
 
@@ -36,21 +36,26 @@ export type TitleModel = { provider: ProviderId; model: string };
 
 /** Asks the model for a name. Throws on provider errors; the caller falls back to the first words. */
 export async function generateTitle(provider: ProviderId, apiKey: string, modelId: string, content: string): Promise<string | null> {
+  return cleanTitle(await askModel(provider, apiKey, modelId, INSTRUCTIONS, content.slice(0, MAX_INPUT_CHARS)));
+}
+
+/** One short request with no history and no tools: the model's whole reply. Throws on provider errors. */
+export async function askModel(provider: ProviderId, apiKey: string, modelId: string, instructions: string, content: string): Promise<string> {
   let streamError: unknown = null;
   const result = streamText({
     onError: ({ error }) => {
       streamError = error;
     },
     model: languageModel(provider, apiKey, modelId),
-    instructions: INSTRUCTIONS,
-    messages: [{ role: "user", content: content.slice(0, MAX_INPUT_CHARS) }],
+    instructions,
+    messages: [{ role: "user", content }],
     ...(isPlanProvider(provider) ? { providerOptions: chatgptProviderOptions } : {}),
     timeout: { totalMs: NAMING_TIMEOUT_MS },
   });
   let text = "";
   for await (const part of result.textStream) text += part;
   if (streamError) throw streamError;
-  return cleanTitle(text);
+  return text;
 }
 
 /** Chats being named right now, so a quick second message doesn't start a second call. */

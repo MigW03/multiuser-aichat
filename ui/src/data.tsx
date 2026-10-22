@@ -144,6 +144,20 @@ export type AppContextValue = {
   folderPanel: { open: boolean; drawer: boolean; toggle: () => void };
   /** The preview of a localhost page in the main panel. `available`: only the desktop app has it. `show` without an address opens it empty. */
   preview: { available: boolean; open: boolean; show: (url?: string) => void; close: () => void };
+  /**
+   * A shared file shown in the middle of the main panel, in place of the chat. `hasAny`: the project shares something, so a file
+   * name in an answer can be tried. `open` with `guess`: the path is as an answer wrote it, so it is looked for under each shared folder.
+   */
+  files: {
+    hasAny: boolean;
+    path: string | null;
+    open: (path: string, guess?: boolean) => void;
+    close: () => void;
+    /** Whether an HTML file can be run with its scripts: only in the desktop app, for a file this computer shares. */
+    canRun: (path: string) => boolean;
+    /** Runs it: the app asks first, then the page opens in the preview beside the chat. */
+    run: (path: string) => void;
+  };
 };
 
 export const AppContext = createContext<AppContextValue | null>(null);

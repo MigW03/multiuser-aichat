@@ -1,9 +1,10 @@
-import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
+import { setDraftTarget } from "../lib/drafts.ts";
 import { uploadPictures } from "../lib/images.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
@@ -45,6 +46,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
   const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url }]);
   const [reply, setReply] = useState<ReplyTarget | null>(null);
+  const [draft, setDraft] = useState<{ text: string; key: number } | null>(null);
   const [dialog, setDialog] = useState<"rename" | "delete" | "summarize" | null>(null);
   const [extraNames, setExtraNames] = useState<Map<string, string>>(new Map());
   const [extraAvatars, setExtraAvatars] = useState<Map<string, string | null>>(new Map());
@@ -97,6 +99,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
 
   async function send(out: OutgoingMessage): Promise<boolean> {
     const id = crypto.randomUUID();
+    // With Auto the chosen model uses its own default thinking, so no level is sent.
+    const reasoning = choice && isSmartModel(choice.model) ? null : thinking.effective;
     const answered = !!choice && out.mentions.length === 0;
     room.upsert({
       id,
@@ -111,7 +115,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
       created_at: new Date().toISOString(),
       provider: choice?.provider ?? null,
       model: choice?.model ?? null,
-      reasoning: thinking.effective,
+      reasoning,
       reply_to: out.replyTo,
       mentions: out.mentions,
       skip_reason: null,
@@ -127,7 +131,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         id,
         content: out.content,
         ...(out.pictures.length ? { images: out.pictures.map((p) => p.id) } : {}),
-        ...(choice ? { provider: choice.provider, model: choice.model, ...(thinking.effective ? { reasoning: thinking.effective } : {}) } : {}),
+        ...(choice ? { provider: choice.provider, model: choice.model, ...(reasoning ? { reasoning } : {}) } : {}),
         mentions: out.mentions,
         ...(out.replyTo ? { replyTo: out.replyTo, ...(out.quote ? { quote: out.quote } : {}) } : {}),
       });
@@ -155,7 +159,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   async function saveNote(m: ChatMessage) {
     if (!project) return;
     try {
-      await api.addNote(project.id, { title: noteTitleFrom(m.content), body: m.content.slice(0, NOTE_LIMITS.bodyChars) });
+      // Saved with a quick title; the server has the AI title it from the question and the answer, with this person's model.
+      await api.addNote(project.id, { title: noteTitleFrom(m.content), body: m.content.slice(0, NOTE_LIMITS.bodyChars), fromMessage: m.id, ...(choice ? { provider: choice.provider, model: choice.model } : {}) });
       notifyChanged();
       toast.push("Saved to Notes");
     } catch (e) {
@@ -165,6 +170,15 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
 
   function replyTo(m: ChatMessage, quote?: string) {
     setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
+  }
+
+  // A click in a note's generated UI drafts a message here, in the chat that is open.
+  useEffect(() => setDraftTarget((text) => setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }))), []);
+
+  /** A click in an answer's generated UI: a reply to that answer, drafted in the composer for the person to send or change. */
+  function draftReply(m: ChatMessage, text: string) {
+    replyTo(m);
+    setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }));
   }
 
   const pickModel = (c: Pick<ModelChoice, "provider" | "model">) => setChoice({ ...c, reasoning: choice?.reasoning ?? DEFAULT_REASONING });
@@ -246,6 +260,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         {...(project ? { onSaveNote: (m: ChatMessage) => void saveNote(m) } : {})}
         onAddKey={openAddKey}
         onUpdateKey={() => openSettings("key")}
+        onDraft={draftReply}
         emptyState={room.loaded ? <EmptyChat shared={shared} hasKey={hasKey} onAddKey={openAddKey} /> : null}
       />
 
@@ -263,6 +278,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         placeholder={shared ? "Message the chat. Tag someone with @ to talk to them, not the AI." : choice ? `Message ${modelName(choice.model)}` : "Message the AI"}
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}
+        draft={draft}
       />
 
       {dialog === "rename" && (

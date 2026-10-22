@@ -50,6 +50,9 @@ export type ScriptsBridge = {
 };
 
 /** What the desktop app's preload script offers. The page never gets a path or a file, only these calls. */
+/** The answer to "Run page": the address for the preview to open, or why not (`cancelled`: the person chose Cancel in the app's window). */
+export type RunPageResult = { ok: true; url: string } | { ok: false; code: "cancelled" | "unavailable"; error: string };
+
 export type FolderBridge = {
   setSession: (session: { serverUrl: string; token: string; userId: string; projects: string[] } | null) => Promise<void>;
   get: (projectId: string) => Promise<LocalFolder>;
@@ -73,6 +76,8 @@ export type FolderBridge = {
   decide?: (projectId: string, id: string, approve: boolean) => Promise<boolean>;
   onApproval?: (callback: (view: PendingChange) => void) => () => void;
   onApprovalGone?: (callback: (gone: { projectId: string; id: string }) => void) => () => void;
+  /** Runs a shared HTML file with its scripts in the preview's strict mode (no network). The app asks first. Absent in older builds of the app. */
+  runPage?: (projectId: string, path: string) => Promise<RunPageResult>;
   /** Run and stop the scripts in package.json. Absent in older builds of the app. */
   scripts?: ScriptsBridge;
   /** The commands always allowed. Absent in older builds of the app. */

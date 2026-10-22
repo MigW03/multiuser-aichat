@@ -260,6 +260,25 @@ A person developing a web project on their own computer can show it in the main 
 - **Web:** none. The server cannot reach a person's localhost, and a page on https may or may not frame it depending on the browser, with no way to see whether it is running. In a browser the button and chips do not show.
 - Nothing about a preview is shared: other members never see it, nothing is uploaded or stored on the server. The last address per project and the panel width stay in the device's local storage.
 
+## Shared files in the main panel (dev branch, 2026-10-22)
+
+A shared file opens in the middle of the main panel, **in place of the chat** (the chat stays mounted behind it, so typed text and scroll are kept). Three columns as always: left panel, file, Files column. Desktop and web: it only needs the existing relay read (`GET /api/projects/:id/folder/read`), nothing new on the server.
+
+- **Entry points:** a file in the Files card (`FolderBrowser`), a file path written as `code` in an answer or in a Markdown file (`FileCode` in `Markdown.tsx`), and a button under an answer for the files it names (`FileChips` in `Messages.tsx`, three, then "+N more"). A path from an answer is only a guess (shared paths start with the shared folder's name), so `candidatePaths` tries it as written and then under each shared folder; if none has it the panel says so. Text counts as a path only with a readable extension and not for names like `Next.js` (`ui/src/lib/fileKind.ts`).
+- **Panel:** `ui/src/components/FilePanel.tsx`, state in `Shell` (`fileReq`, `AppContext.files`). Back to chat, close, Esc, reload, copy. The localhost preview and a file never show together: opening one closes the other. Switching chats in the same project keeps the file; leaving the project or opening project settings closes it.
+- **Markdown:** Preview (default) / Source. Preview uses the chat's renderer: raw HTML is shown as text, only http(s)/mailto links, no images. A relative link to another file (`resolveRelative`, cannot climb above the shared folder) opens that file; it is a button, never an `href`.
+- **HTML:** Preview (default) / Source. The Preview is **static and never runs the file's code**. Three walls (`ui/src/lib/htmlFrame.ts`): (1) DOMPurify cleans the text (scripts, forms, frames, `<meta>`, `<link>`, `<base>`, event attributes, link targets, non-`data:` picture sources go); (2) a Content-Security-Policy `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:` is the first thing in the page; (3) the iframe has an empty `sandbox` (no scripts, no same origin, no forms, no popups, no top navigation) and `referrerPolicy="no-referrer"`. The file's own `<style>` and inline `data:` pictures work; files next to it (style.css, logo.png) are not loaded. Never add `allow-scripts` or `allow-same-origin` to the frame. Needs a change of this document and a security review first.
+- **Limits:** one read returns at most 2000 lines / 50 KB (`FOLDER_LIMITS`), so a longer file is cut and the panel says which lines it shows (the HTML Preview then shows only that part). Binary, over 2 MB, blocked paths: the host's refusal is shown as written.
+- Own view only: other members never see what a person has open; nothing is stored.
+
+## Run page: an HTML file running with scripts (dev branch, 2026-10-22, desktop app, host only)
+
+A shared `.html` file can run with its scripts, styles and pictures in the preview's browser view. A **Run page** button shows in the file panel (and a link in the yellow "Static view" bar) only for an HTML file this computer shares; everyone else, and the web, keep the static Preview. One confirmation in a native window (default Cancel, once per file until the app quits), then the page opens in the preview beside the chat with a read-only address (`Run · path`), a "Show the file" button and a note "Scripts run. The network is off."
+
+- **How:** `desktop/src/run-server.ts` serves the shared items from disk on `127.0.0.1` (random port, random token in every address, `Host` check, same path walk as every read, CSP that allows this server only). `preview.ts` opens addresses the run server handed out in a stricter "run" mode: session of its own, no network at all (request filter + dead proxy + no WebRTC UDP), no hand-off to the person's browser. The mode is decided in the main process from the address; the page cannot choose it. `folder:run-page` (`folder-ipc.ts`) checks the file, asks, starts the server and returns the address.
+- **Why not CDN libraries:** a file from a teammate could otherwise send the host's shared files to the internet. Allowing it is a separate decision for the owner.
+- **Security notes for audits (walls, what is left over, what was verified):** [security-notes.md](security-notes.md), section 3.
+
 ## Decisions
 
 - TypeScript everywhere: one language and one CRDT library (Yjs) across server, web and desktop.

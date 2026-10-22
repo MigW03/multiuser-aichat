@@ -1,0 +1,746 @@
+{
+  "root": "Stack",
+  "components": {
+    "Stack": {
+      "signature": "Stack(children: (Card | Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form | Input | Select)[], direction?: \"column\" | \"row\")",
+      "description": "The top-level container. Blocks go one under the other, or side by side with direction \"row\" (they wrap on narrow screens)."
+    },
+    "Card": {
+      "signature": "Card(title: string, children: (Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form | Input | Select)[], subtitle?: string)",
+      "description": "A titled box that groups related blocks, such as one option of several or one person's part."
+    },
+    "Text": {
+      "signature": "Text(text: string, tone?: \"default\" | \"muted\")",
+      "description": "A paragraph of text. Markdown inline formatting (bold, italics, code, links) works."
+    },
+    "Stat": {
+      "signature": "Stat(label: string, value: string | number, note?: string)",
+      "description": "One key number with its label, and an optional short note such as a change or a date."
+    },
+    "Table": {
+      "signature": "Table(columns: string[], rows: (string | number)[][])",
+      "description": "A table: column headers, then rows of cells in the same order."
+    },
+    "BarChart": {
+      "signature": "BarChart(labels: string[], series: Series[], unit?: string)",
+      "description": "Bars to compare numbers across labels. Several Series show side by side."
+    },
+    "Checklist": {
+      "signature": "Checklist(items: Task[], title?: string)",
+      "description": "A plan or list of next steps, each a Task."
+    },
+    "Callout": {
+      "signature": "Callout(tone: \"info\" | \"success\" | \"warning\" | \"danger\", title: string, text?: string)",
+      "description": "A highlighted note: a warning, a tip, a success or a risk."
+    },
+    "Choice": {
+      "signature": "Choice(question: string, options: Option[])",
+      "description": "A question with options to pick from, when the answer needs a decision from the people in the chat."
+    },
+    "Buttons": {
+      "signature": "Buttons(buttons: Button[])",
+      "description": "A row of buttons, such as follow-up suggestions."
+    },
+    "Form": {
+      "signature": "Form(name: string, fields: (Input | Select)[], submitLabel?: string)",
+      "description": "Questions for the reader to fill in. The submit button drafts a reply with the answers."
+    },
+    "Input": {
+      "signature": "Input(name: string, label: string, value?: $binding<string | number>, placeholder?: string, type?: \"text\" | \"number\", multiline?: boolean)",
+      "description": "A text or number field: in a Form (`name` is the field's key in the reply), or on its own bound to a $variable as `value` so other blocks can compute from it. A \"number\" field stores a number."
+    },
+    "Select": {
+      "signature": "Select(name: string, label: string, options: string[], value?: $binding<string>)",
+      "description": "A dropdown with the choices as plain text: in a Form, or on its own bound to a $variable as `value`."
+    },
+    "Series": {
+      "signature": "Series(name: string, values: number[])",
+      "description": "One named set of numbers for a BarChart, one number per label."
+    },
+    "Task": {
+      "signature": "Task(text: string, owner?: string, done?: boolean)",
+      "description": "One step or to-do, with who owns it (a person's name) and whether it is done."
+    },
+    "Option": {
+      "signature": "Option(label: string, detail?: string, action?: ActionExpression)",
+      "description": "One choice the reader can pick, with a short explanation. Picking it drafts a reply with its label, or with the action's message."
+    },
+    "Button": {
+      "signature": "Button(label: string, action?: ActionExpression, variant?: \"primary\" | \"secondary\")",
+      "description": "A button. Without an action, clicking drafts a reply with its label."
+    }
+  },
+  "componentGroups": [
+    {
+      "name": "Layout",
+      "components": [
+        "Stack",
+        "Card"
+      ]
+    },
+    {
+      "name": "Showing information",
+      "components": [
+        "Text",
+        "Stat",
+        "Table",
+        "BarChart",
+        "Series",
+        "Checklist",
+        "Task",
+        "Callout"
+      ],
+      "notes": [
+        "- Use Table for comparisons with several attributes, BarChart for comparing amounts, Stat for 1-4 key numbers (in a row Stack)."
+      ]
+    },
+    {
+      "name": "Asking the people in the chat",
+      "components": [
+        "Choice",
+        "Option",
+        "Buttons",
+        "Button",
+        "Form",
+        "Input",
+        "Select"
+      ],
+      "notes": [
+        "- A click only drafts a reply in the clicker's message box; they still send it. Write option labels and @ToAssistant messages as the reply the person would send, in their voice.",
+        "- Calculators and converters work on their own, with no message sent: declare $variables, bind them to Input/Select as `value` (outside a Form), and show results with Text or Stat using arithmetic and @Round, e.g. $c = 20, Input(\"c\", \"Celsius\", $c, \"\", \"number\"), Stat(\"Fahrenheit\", @Round($c * 9 / 5 + 32, 1)). Results update as the person types."
+      ]
+    }
+  ],
+  "actions": {
+    "CopyText": {
+      "signature": "CopyText(text: string)",
+      "description": "Copies the text to the reader's clipboard"
+    }
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "Stack": {
+        "$ref": "#/$defs/Stack"
+      },
+      "Card": {
+        "$ref": "#/$defs/Card"
+      },
+      "Text": {
+        "$ref": "#/$defs/Text"
+      },
+      "Stat": {
+        "$ref": "#/$defs/Stat"
+      },
+      "Table": {
+        "$ref": "#/$defs/Table"
+      },
+      "BarChart": {
+        "$ref": "#/$defs/BarChart"
+      },
+      "Checklist": {
+        "$ref": "#/$defs/Checklist"
+      },
+      "Callout": {
+        "$ref": "#/$defs/Callout"
+      },
+      "Choice": {
+        "$ref": "#/$defs/Choice"
+      },
+      "Buttons": {
+        "$ref": "#/$defs/Buttons"
+      },
+      "Form": {
+        "$ref": "#/$defs/Form"
+      },
+      "Input": {
+        "$ref": "#/$defs/Input"
+      },
+      "Select": {
+        "$ref": "#/$defs/Select"
+      },
+      "Series": {
+        "$ref": "#/$defs/Series"
+      },
+      "Task": {
+        "$ref": "#/$defs/Task"
+      },
+      "Option": {
+        "$ref": "#/$defs/Option"
+      },
+      "Button": {
+        "$ref": "#/$defs/Button"
+      }
+    },
+    "required": [
+      "Stack",
+      "Card",
+      "Text",
+      "Stat",
+      "Table",
+      "BarChart",
+      "Checklist",
+      "Callout",
+      "Choice",
+      "Buttons",
+      "Form",
+      "Input",
+      "Select",
+      "Series",
+      "Task",
+      "Option",
+      "Button"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+      "Stack": {
+        "type": "object",
+        "properties": {
+          "children": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Card"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Text"
+                    },
+                    {
+                      "$ref": "#/$defs/Stat"
+                    },
+                    {
+                      "$ref": "#/$defs/Table"
+                    },
+                    {
+                      "$ref": "#/$defs/BarChart"
+                    },
+                    {
+                      "$ref": "#/$defs/Checklist"
+                    },
+                    {
+                      "$ref": "#/$defs/Callout"
+                    },
+                    {
+                      "$ref": "#/$defs/Choice"
+                    },
+                    {
+                      "$ref": "#/$defs/Buttons"
+                    },
+                    {
+                      "$ref": "#/$defs/Form"
+                    },
+                    {
+                      "$ref": "#/$defs/Input"
+                    },
+                    {
+                      "$ref": "#/$defs/Select"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "column",
+              "row"
+            ]
+          }
+        },
+        "required": [
+          "children"
+        ],
+        "additionalProperties": false,
+        "description": "The top-level container. Blocks go one under the other, or side by side with direction \"row\" (they wrap on narrow screens)."
+      },
+      "Card": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Text"
+                },
+                {
+                  "$ref": "#/$defs/Stat"
+                },
+                {
+                  "$ref": "#/$defs/Table"
+                },
+                {
+                  "$ref": "#/$defs/BarChart"
+                },
+                {
+                  "$ref": "#/$defs/Checklist"
+                },
+                {
+                  "$ref": "#/$defs/Callout"
+                },
+                {
+                  "$ref": "#/$defs/Choice"
+                },
+                {
+                  "$ref": "#/$defs/Buttons"
+                },
+                {
+                  "$ref": "#/$defs/Form"
+                },
+                {
+                  "$ref": "#/$defs/Input"
+                },
+                {
+                  "$ref": "#/$defs/Select"
+                }
+              ]
+            }
+          },
+          "subtitle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "children"
+        ],
+        "additionalProperties": false,
+        "description": "A titled box that groups related blocks, such as one option of several or one person's part."
+      },
+      "Text": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "default",
+              "muted"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "description": "A paragraph of text. Markdown inline formatting (bold, italics, code, links) works."
+      },
+      "Stat": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "additionalProperties": false,
+        "description": "One key number with its label, and an optional short note such as a change or a date."
+      },
+      "Table": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "additionalProperties": false,
+        "description": "A table: column headers, then rows of cells in the same order."
+      },
+      "BarChart": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Series"
+            }
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "labels",
+          "series"
+        ],
+        "additionalProperties": false,
+        "description": "Bars to compare numbers across labels. Several Series show side by side."
+      },
+      "Series": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "values"
+        ],
+        "additionalProperties": false,
+        "description": "One named set of numbers for a BarChart, one number per label."
+      },
+      "Checklist": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Task"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "A plan or list of next steps, each a Task."
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "description": "One step or to-do, with who owns it (a person's name) and whether it is done."
+      },
+      "Callout": {
+        "type": "object",
+        "properties": {
+          "tone": {
+            "type": "string",
+            "enum": [
+              "info",
+              "success",
+              "warning",
+              "danger"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tone",
+          "title"
+        ],
+        "additionalProperties": false,
+        "description": "A highlighted note: a warning, a tip, a success or a risk."
+      },
+      "Choice": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Option"
+            }
+          }
+        },
+        "required": [
+          "question",
+          "options"
+        ],
+        "additionalProperties": false,
+        "description": "A question with options to pick from, when the answer needs a decision from the people in the chat."
+      },
+      "Option": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/$defs/ActionExpression"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "description": "One choice the reader can pick, with a short explanation. Picking it drafts a reply with its label, or with the action's message."
+      },
+      "ActionExpression": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "open_url"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "continue_conversation"
+              },
+              "context": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Buttons": {
+        "type": "object",
+        "properties": {
+          "buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Button"
+            }
+          }
+        },
+        "required": [
+          "buttons"
+        ],
+        "additionalProperties": false,
+        "description": "A row of buttons, such as follow-up suggestions."
+      },
+      "Button": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/$defs/ActionExpression"
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary"
+            ]
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "description": "A button. Without an action, clicking drafts a reply with its label."
+      },
+      "Form": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Input"
+                },
+                {
+                  "$ref": "#/$defs/Select"
+                }
+              ]
+            }
+          },
+          "submitLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "additionalProperties": false,
+        "description": "Questions for the reader to fill in. The submit button drafts a reply with the answers."
+      },
+      "Input": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number"
+            ]
+          },
+          "multiline": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "additionalProperties": false,
+        "description": "A text or number field: in a Form (`name` is the field's key in the reply), or on its own bound to a $variable as `value` so other blocks can compute from it. A \"number\" field stores a number."
+      },
+      "Select": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "options"
+        ],
+        "additionalProperties": false,
+        "description": "A dropdown with the choices as plain text: in a Form, or on its own bound to a $variable as `value`."
+      }
+    },
+    "actions": {
+      "CopyText": {
+        "description": "Copies the text to the reader's clipboard",
+        "params": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

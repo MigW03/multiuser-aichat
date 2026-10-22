@@ -2,6 +2,8 @@ import {
   isPlanProvider,
   isProvider,
   isReasoning,
+  isSmartModel,
+  LIMITS,
   PROVIDER_LABELS,
   type AiEditState,
   type AiErrorCode,
@@ -18,6 +20,7 @@ import {
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
 import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
@@ -30,6 +33,9 @@ import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
 import { newestPictureIds, promptName, toModelMessages, transcriptText, withinBudget, type Row } from "./model-messages.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
+import { getSmart, smartModelInfo } from "./smart.ts";
+import { pickSmartModel } from "./smart-pick.ts";
+import type { PickInput } from "./smart-rules.ts";
 import { admin, type Admin } from "./supabase.ts";
 
 const HISTORY_LIMIT = 60;
@@ -182,6 +188,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   const provider: ProviderId | null = isProvider(choice.provider) ? choice.provider : null;
   const modelId = choice.model;
   const reasoning: Reasoning | null = isReasoning(choice.reasoning) ? choice.reasoning : null;
+  /** The asker picked "Auto": Jev chooses the model that answers, from their Smart set (see smart-pick.ts). */
+  const smart = provider === "openrouter" && isSmartModel(modelId);
   const runId = randomUUID();
 
   await db.from("messages").update({ status: "processing", run_id: runId }).in("id", batchIds);
@@ -215,6 +223,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
 
   let apiKey: string | null = null;
   let text = "";
+  /** With Auto: what was chosen. `model` is the one that answers (the message shows it as soon as it is known). */
+  const auto: { chosen: boolean; fallback: string | null } = { chosen: false, fallback: null };
   try {
     const { data: members } = await db.rpc("app_chat_people", { p_chat_id: chatId });
     const names = new Map<string, string>(((members ?? []) as { id: string; display_name: string }[]).map((m) => [m.id, promptName(m.display_name)]));
@@ -222,8 +232,33 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (!authorId || !provider || !modelId) throw new UserFacing("no_key", "This message was sent without a model selected.");
     apiKey = await getUserKey(authorId, provider);
     if (!apiKey) throw new UserFacing("no_key", isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
+    // With Auto the model list (cached, but slow when cold) is fetched beside the rest; the choice then waits for it only briefly.
+    const startedAt = Date.now();
+    const infoLoad = smart ? smartModelInfo(authorId, apiKey) : null;
+    const smartModels = smart ? await smartPool(authorId) : null;
+    let runModel: string = modelId;
+    /** With Auto: asks Jev which model of the asker's set should answer, and puts that model on the answer being written.
+     *  The caller starts it, keeps setting up the answer, and awaits it before the model is needed. */
+    const choose = async (input: PickInput) => {
+      if (!smartModels) return;
+      const waited = Date.now();
+      const info = await withinMs(infoLoad!, INFO_WAIT_MS, []);
+      const infoMs = Date.now() - waited;
+      const picked = await pickSmartModel({ apiKey: apiKey!, models: smartModels, info, signal: controller.signal, ...input });
+      runModel = picked.model;
+      auto.chosen = true;
+      auto.fallback = picked.fallback ? (picked.why ?? "unknown") : null;
+      console.log(`[smart] chat ${chatId}: model list ${infoMs}ms${info.length ? "" : " (not ready)"}, choice ${picked.ms ?? 0}ms${picked.fallback ? ` (fallback: ${picked.why})` : ""}`);
+      // Saved beside the stream, not before it: the answer starts without waiting for the database.
+      void db
+        .from("messages")
+        .update({ model: runModel })
+        .eq("id", assistant.id)
+        .then(({ error }) => error && console.error("[smart] could not save the chosen model:", error.message));
+    };
+    let picking: Promise<void> = Promise.resolve();
 
-    let instructions: string;
+    let instructions!: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
     let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean }; editState: AiEditState } | null = null;
@@ -251,6 +286,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       meta = { scope: first.meta.scope, from_seq: fromSeq, count: transcript.length, since: transcript[0]!.created_at };
       instructions = SUMMARY_INSTRUCTIONS;
       messages = [{ role: "user", content: `Chat transcript:\n\n${transcriptText(transcript, names)}` }];
+      picking = choose({ latest: `Write a recap of a team chat of ${transcript.length} messages: what it was about, decisions, open questions and next steps.`, context: [], pictures: false });
     } else {
       const { data: history } = await db
         .from("messages")
@@ -260,8 +296,15 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         .in("status", ["done", "processing"])
         .order("seq", { ascending: false })
         .limit(HISTORY_LIMIT);
-      instructions = chatInstructions(asker, modelId);
       const rows = ((history ?? []) as Row[]).reverse();
+      // With Auto the model is chosen from the asker's newest message(s), with a few earlier messages as context.
+      const mine = rows.filter((r) => batchIds.includes(r.id));
+      picking = choose({
+        latest: mine.map((r) => r.content).join("\n\n"),
+        context: rows.filter((r) => !batchIds.includes(r.id) && r.kind === "message").map((r) => ({ from: r.role === "assistant" ? "ai" : "person", text: r.content })),
+        pictures: mine.some((r) => r.images.length > 0),
+      });
+      picking.catch(() => undefined); // awaited below; this only stops it counting as unhandled while the setup runs
       // The AI gets the files of the newest pictures only; older ones are named as not shown.
       const pictures = await loadImages(chatId, newestPictureIds(withinBudget(rows)));
       messages = toModelMessages(rows, names, pictures);
@@ -315,12 +358,16 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       }
     }
 
-    const model = languageModel(provider, apiKey, modelId);
+    await picking;
+    // Chat answers may add visuals the app draws (generated UI); summaries stay plain Markdown. The model's name is known only now.
+    if (!summary) instructions = `${chatInstructions(asker, runModel)}\n\n${genUiInstructions}`;
+    const model = languageModel(provider, apiKey, runModel);
     // A ChatGPT plan call keeps nothing on OpenAI's side between calls; see chatgptProviderOptions.
     const planOptions = provider === "chatgpt" ? chatgptProviderOptions : null;
-    const thinking = reasoningOptions(provider, reasoning);
+    const thinking = reasoningOptions(provider, smart ? null : reasoning); // with Auto the model's own default thinking is used
     const providerOptions = { ...("providerOptions" in thinking ? thinking.providerOptions : {}), ...(planOptions ?? {}) };
 
+    let firstToken = 0;
     /** One attempt at the answer. Returns the provider error, if any, instead of throwing it. */
     const attempt = async (withTools: boolean): Promise<unknown> => {
       // streamText reports provider errors (bad key, unknown model) through onError and ends the stream quietly.
@@ -344,6 +391,10 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       for await (const part of result.fullStream) {
         if (part.type === "tool-call") breakBefore = text.length > 0;
         if (part.type !== "text-delta") continue;
+        if (smart && !firstToken) {
+          firstToken = Date.now();
+          console.log(`[smart] chat ${chatId}: first words ${firstToken - startedAt}ms after the key was read`);
+        }
         text += (breakBefore ? "\n\n" : "") + part.text;
         breakBefore = false;
         if (Date.now() - lastSent >= BROADCAST_EVERY_MS) {
@@ -369,12 +420,13 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
     if (folder || mcpUsed.size) meta = { ...meta, ...fitFiles(folder?.use ?? { files: new Set(), offline: false, edits: [], mcp: mcpUsed }) };
+    if (auto.chosen) meta = { ...meta, smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);
   } catch (err) {
     if (err instanceof UserFacing && err.code === "stopped" && text.trim()) {
       // Stopping keeps what was written so far.
-      await db.from("messages").update({ content: text, status: "done" }).eq("id", assistant.id);
+      await db.from("messages").update({ content: text, status: "done", ...(auto.chosen && !summary ? { meta: { smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) } } : {}) }).eq("id", assistant.id);
       await db.from("messages").update({ status: "done" }).in("id", batchIds);
     } else {
       // Everyone in the chat sees this message, so provider details stay in the server log.
@@ -389,6 +441,30 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     await db.removeChannel(channel);
   }
   return true;
+}
+
+/** The models Auto may choose from for this asker. Auto works only when the asker switched Smart model selection on, with a big enough set. */
+async function smartPool(userId: string | null): Promise<string[]> {
+  const state = userId ? await getSmart(userId) : null;
+  if (!userId || !state?.enabled) {
+    throw new UserFacing("model", "Auto is switched off for you. Switch on Smart model selection under Settings, AI key, or pick a model.");
+  }
+  const set = state.models;
+  if (set.length < LIMITS.smartMin) throw new UserFacing("model", `Your Smart set needs at least ${LIMITS.smartMin} models. Add them in the model picker, under Smart selector.`);
+  return set;
+}
+
+/** How long Auto waits for the model list before choosing without it. */
+const INFO_WAIT_MS = 1_500;
+
+/** The promise's value, or `fallback` if it takes longer than `ms`. */
+async function withinMs<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<T>((resolve) => (timer = setTimeout(() => resolve(fallback), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 class UserFacing extends Error {

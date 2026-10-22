@@ -1,10 +1,11 @@
-import { NOTE_LIMITS, type ProjectNote, type ProjectSummary } from "@mc/shared";
+import { answerPreview, hasGeneratedUi, NOTE_LIMITS, splitAnswer, type ProjectNote, type ProjectSummary } from "@mc/shared";
 import { FileText, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { notifyChanged, useApp, useLive } from "../data.tsx";
 import { listTime } from "../lib/time.ts";
 import { supabase } from "../supabase.ts";
+import { AnswerBody } from "../genui/AnswerBody.tsx";
 import { ConfirmDialog } from "./Dialogs.tsx";
 import { AiAvatar, Avatar, Button, ErrorLine, ICON_SM, IconButton, Menu, Spinner, STROKE } from "./kit.tsx";
 
@@ -30,12 +31,14 @@ function useProjectNotes(projectId: string) {
   }, [projectId]);
 }
 
-/** One line of the note's text for the list: Markdown marks and line breaks dropped. */
-const preview = (body: string) => body.replace(/[#*_`>~-]+/g, " ").replace(/\s+/g, " ").trim();
+/** One line of the note's text for the list: Markdown marks and line breaks dropped, a visual named "[visual]". */
+const preview = (body: string) => answerPreview(body).replace(/[#*_`>~-]+/g, " ").replace(/\s+/g, " ").trim();
 
 /** A title for a note saved from a message: its first line of text, Markdown marks dropped, cut to fit. */
 export function noteTitleFrom(text: string): string {
-  const line = text.split("\n").map((l) => l.replace(/[#*_`>~|-]+/g, " ").replace(/\s+/g, " ").trim()).find(Boolean) ?? "Note";
+  const words = splitAnswer(text).flatMap((p) => (p.kind === "markdown" ? [p.text] : [])).join("\n"); // a visual's code is no title
+  if (!words.trim() && hasGeneratedUi(text)) return "Visual note";
+  const line = words.split("\n").map((l) => l.replace(/[#*_`>~|-]+/g, " ").replace(/\s+/g, " ").trim()).find(Boolean) ?? "Note";
   return line.length > 60 ? `${line.slice(0, 57).trimEnd()}…` : line;
 }
 
@@ -167,7 +170,10 @@ function NoteRowView({ note, canDelete, onOpen, onEdit, onDelete }: { note: Note
   );
 }
 
-/** A note opened to read: the whole text as plain text, who wrote it and when. Nothing is editable until Edit is chosen. */
+/**
+ * A note opened to read: the whole text as plain text, who wrote it and when. Nothing is editable until Edit is chosen.
+ * A note with a visual (saved from an AI answer) is drawn like the answer: Markdown plus the visual.
+ */
 function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => void; onEdit: () => void }) {
   return (
     <article className={`note-reader ${note.by_ai ? "ai" : ""}`} aria-label={note.title} onKeyDown={(e) => e.key === "Escape" && onClose()}>
@@ -175,7 +181,17 @@ function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => v
         <span className="note-avatar">{note.by_ai ? <AiAvatar size={22} /> : note.created_by ? <Avatar id={note.created_by} name={note.author_name} src={note.author_avatar} size={22} /> : null}</span>
         <h3 className="note-reader-title">{note.title}</h3>
       </header>
-      {note.body ? <div className="note-reader-body">{note.body}</div> : <p className="small muted">No text.</p>}
+      {note.body ? (
+        hasGeneratedUi(note.body) ? (
+          <div className="note-reader-body rich">
+            <AnswerBody text={note.body} />
+          </div>
+        ) : (
+          <div className="note-reader-body">{note.body}</div>
+        )
+      ) : (
+        <p className="small muted">No text.</p>
+      )}
       <div className="note-edit-actions">
         <span className="small muted grow truncate">
           {note.by_ai ? "AI for " : ""}

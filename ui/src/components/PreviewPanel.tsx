@@ -1,5 +1,5 @@
 import { parsePreviewUrl, PREVIEW_PORTS, previewLabel } from "@mc/shared";
-import { ArrowLeft, ArrowRight, ChevronLeft, ExternalLink, Maximize2, Minimize2, MoreHorizontal, RotateCw, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ExternalLink, FileText, Maximize2, Minimize2, MoreHorizontal, RotateCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { FLOATING, intersects, usePreviewState, type PreviewBridge, type Rect } from "../lib/preview.ts";
 import { Button, ICON, ICON_SM, IconButton, Menu, Spinner, STROKE, useToast } from "./kit.tsx";
@@ -34,9 +34,11 @@ export function PreviewPanel({
   remembered,
   full,
   narrow,
+  runPath,
   onNavigate,
   onFull,
   onClose,
+  onShowFile,
 }: {
   bridge: PreviewBridge;
   /** The address to show; null until one is chosen. */
@@ -45,10 +47,14 @@ export function PreviewPanel({
   remembered: string | null;
   full: boolean;
   narrow: boolean;
+  /** Set when this is a shared HTML file running ("Run page"): the shared path of the file. The address is then fixed and not an address to type. */
+  runPath?: string;
   /** An address the app opened (the one to remember). */
   onNavigate: (url: string) => void;
   onFull: (full: boolean) => void;
   onClose: () => void;
+  /** A running file: go back to the static view of the file. */
+  onShowFile?: () => void;
 }) {
   const toast = useToast();
   const state = usePreviewState(bridge);
@@ -216,35 +222,48 @@ export function PreviewPanel({
             </IconButton>
           </>
         )}
-        <form className="preview-address" onSubmit={submit}>
-          <input
-            className={`preview-input ${bad ? "invalid" : ""}`}
-            value={draft}
-            placeholder="localhost:5173"
-            aria-label="Address"
-            aria-invalid={bad ? true : undefined}
-            spellCheck={false}
-            autoComplete="off"
-            autoCapitalize="off"
-            autoFocus={url === null}
-            onFocus={(e) => {
-              setEditing(true);
-              e.currentTarget.select();
-            }}
-            onBlur={() => setEditing(false)}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              setBad(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setDraft(state?.url ? previewLabel(state.url) : "");
-                e.currentTarget.blur();
-              }
-            }}
-          />
-        </form>
-        {url !== null && (
+        {runPath !== undefined ? (
+          <div className="preview-address">
+            <div className="preview-input readonly truncate" title={runPath}>
+              Run · {runPath}
+            </div>
+          </div>
+        ) : (
+          <form className="preview-address" onSubmit={submit}>
+            <input
+              className={`preview-input ${bad ? "invalid" : ""}`}
+              value={draft}
+              placeholder="localhost:5173"
+              aria-label="Address"
+              aria-invalid={bad ? true : undefined}
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoFocus={url === null}
+              onFocus={(e) => {
+                setEditing(true);
+                e.currentTarget.select();
+              }}
+              onBlur={() => setEditing(false)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setBad(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setDraft(state?.url ? previewLabel(state.url) : "");
+                  e.currentTarget.blur();
+                }
+              }}
+            />
+          </form>
+        )}
+        {runPath !== undefined && onShowFile && (
+          <IconButton label="Show the file" onClick={onShowFile}>
+            <FileText size={ICON} strokeWidth={STROKE} />
+          </IconButton>
+        )}
+        {url !== null && runPath === undefined && (
           <IconButton label="Open in my browser" disabled={!shown} onClick={() => bridge.openExternal()}>
             <ExternalLink size={ICON} strokeWidth={STROKE} />
           </IconButton>
@@ -254,35 +273,38 @@ export function PreviewPanel({
             {full ? <Minimize2 size={ICON} strokeWidth={STROKE} /> : <Maximize2 size={ICON} strokeWidth={STROKE} />}
           </IconButton>
         )}
-        <Menu
-          label="Preview options"
-          align="end"
-          items={[
-            {
-              label: "Forget this site's cookies and data",
-              icon: <Trash2 size={ICON_SM} strokeWidth={STROKE} aria-hidden />,
-              onSelect: () =>
-                void bridge.clearData().then(
-                  () => {
-                    toast.push("Cookies and data of the previewed site are gone");
-                    if (url !== null) bridge.reload();
-                  },
-                  () => toast.push("Could not clear them", "error"),
-                ),
-            },
-          ]}
-          trigger={({ toggle, open }) => (
-            <IconButton label="Preview options" onClick={toggle} active={open} aria-haspopup="menu" aria-expanded={open}>
-              <MoreHorizontal size={ICON} strokeWidth={STROKE} />
-            </IconButton>
-          )}
-        />
+        {runPath === undefined && (
+          <Menu
+            label="Preview options"
+            align="end"
+            items={[
+              {
+                label: "Forget this site's cookies and data",
+                icon: <Trash2 size={ICON_SM} strokeWidth={STROKE} aria-hidden />,
+                onSelect: () =>
+                  void bridge.clearData().then(
+                    () => {
+                      toast.push("Cookies and data of the previewed site are gone");
+                      if (url !== null) bridge.reload();
+                    },
+                    () => toast.push("Could not clear them", "error"),
+                  ),
+              },
+            ]}
+            trigger={({ toggle, open }) => (
+              <IconButton label="Preview options" onClick={toggle} active={open} aria-haspopup="menu" aria-expanded={open}>
+                <MoreHorizontal size={ICON} strokeWidth={STROKE} />
+              </IconButton>
+            )}
+          />
+        )}
         {!narrow && (
           <IconButton label="Close the preview" onClick={onClose}>
             <X size={ICON} strokeWidth={STROKE} />
           </IconButton>
         )}
       </header>
+      {runPath !== undefined && <div className="preview-note small muted">Scripts run. The network is off. Only run files you trust.</div>}
       {bad && (
         <div className="preview-note error-line" role="alert">
           {bad}
@@ -335,9 +357,11 @@ export function PreviewPanel({
               <Button size="sm" onClick={() => bridge.reload()}>
                 Retry
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => bridge.openExternal()}>
-                <ExternalLink size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Open in my browser
-              </Button>
+              {runPath === undefined && (
+                <Button size="sm" variant="ghost" onClick={() => bridge.openExternal()}>
+                  <ExternalLink size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Open in my browser
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -384,7 +408,8 @@ export function PreviewResizer({ width, room, onChange }: { width: number; room:
       onDoubleClick={() => onChange(Math.round(room * 0.55), true)}
       onKeyDown={(e) => {
         const step = e.shiftKey ? 48 : 16;
-        const next = e.key === "ArrowLeft" ? width + step : e.key === "ArrowRight" ? width - step : e.key === "Home" ? PREVIEW_MIN : e.key === "End" ? max : null;
+        const next =
+          e.key === "ArrowLeft" ? width + step : e.key === "ArrowRight" ? width - step : e.key === "Home" ? PREVIEW_MIN : e.key === "End" ? max : null;
         if (next === null) return;
         e.preventDefault();
         onChange(next, true);

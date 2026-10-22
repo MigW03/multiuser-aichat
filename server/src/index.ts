@@ -17,6 +17,7 @@ import { keys } from "./routes/keys.ts";
 import { notes } from "./routes/notes.ts";
 import { mcpOauthPublic, mcpServers } from "./routes/mcp.ts";
 import { projects } from "./routes/projects.ts";
+import { smart } from "./routes/smart.ts";
 import { recoverRuns } from "./run-queue.ts";
 
 const app = new Hono<AuthVars>();
@@ -39,6 +40,7 @@ app.route("/api/mcp/oauth", mcpOauthPublic);
 
 app.use("/api/*", requireUser);
 app.route("/api", keys);
+app.route("/api", smart);
 app.route("/api/projects", projects);
 app.route("/api/projects", folder);
 app.route("/api/projects", notes);

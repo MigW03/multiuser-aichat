@@ -46,7 +46,7 @@ export function showSupabaseTab(state: Pick<SupabaseState, "link" | "mine"> | nu
 /** One Supabase project in the person's own account, to pick from when linking. */
 export type SupabaseProjectOption = { ref: string; name: string; region: string; status: string };
 
-export const SUPABASE_SECTIONS = ["overview", "checks", "tables", "migrations", "logs", "functions", "connect"] as const;
+export const SUPABASE_SECTIONS = ["overview", "checks", "tables", "users", "migrations", "logs", "functions", "connect"] as const;
 export type SupabaseSection = (typeof SUPABASE_SECTIONS)[number];
 
 export const SUPABASE_LOG_SOURCES = ["edge_logs", "postgres_logs", "auth_logs", "auth_audit_logs", "postgrest_logs", "realtime_logs", "pgbouncer_logs", "function_edge_logs", "function_logs", "storage_logs"] as const;
@@ -66,7 +66,11 @@ export type SupabaseOverview = {
   migrations: number | null;
 };
 export type SupabaseCheck = { kind: "security" | "performance"; level: "ERROR" | "WARN" | "INFO"; title: string; detail: string; count: number; url: string | null };
-export type SupabaseTable = { name: string; rls: boolean; rows: number | null };
+/** One field of a table: its name and type, and what the table says about it. Never a value stored in it. */
+export type SupabaseColumn = { name: string; type: string; pk: boolean; unique: boolean; nullable: boolean; /** The table this field points to, when it is a foreign key. */ fk: string | null };
+export type SupabaseTable = { name: string; rls: boolean; rows: number | null; columns: SupabaseColumn[] };
+/** Counts about the people who sign in to the project. No names, emails or ids. */
+export type SupabaseUsers = { total: number | null; confirmed: number | null; unconfirmed: number | null; new7d: number | null; active7d: number | null; methods: { provider: string; count: number }[] };
 export type SupabaseMigration = { version: string; name: string };
 export type SupabaseLogRow = { time: string; message: string };
 export type SupabaseFunction = { slug: string; name: string; status: string; version: number | null; updatedAt: string | null };
@@ -76,6 +80,7 @@ export type SupabaseSectionData = {
   overview: SupabaseOverview;
   checks: { items: SupabaseCheck[] };
   tables: { tables: SupabaseTable[] };
+  users: SupabaseUsers;
   migrations: { migrations: SupabaseMigration[] };
   logs: { source: SupabaseLogSource; rows: SupabaseLogRow[] };
   functions: { functions: SupabaseFunction[] };

@@ -9,8 +9,10 @@ import {
   type SupabaseProjectOption,
   type SupabaseSection,
   type SupabaseSectionData,
+  type SupabaseTable,
+  type SupabaseUsers,
 } from "@mc/shared";
-import { ChevronDown, ChevronRight, Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { useApp } from "../data.tsx";
@@ -528,17 +530,94 @@ export function SupabaseBody({ project, sup }: { project: ProjectSummary; sup: S
   return <ReadyBody project={project} link={link} />;
 }
 
+const PROVIDER_LABEL: Record<string, string> = { email: "Email", google: "Google", github: "GitHub", apple: "Apple", phone: "Phone", azure: "Microsoft", facebook: "Facebook", discord: "Discord" };
+const providerLabel = (p: string) => PROVIDER_LABEL[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
+
+/** Counts of the people who sign in. No names, emails or ids. */
+function UsersView({ u }: { u: SupabaseUsers }) {
+  const count = (n: number | null) => (n === null ? "–" : n);
+  return (
+    <>
+      <ul className="supa-list compact supa-counts">
+        {([["Total", u.total], ["Confirmed", u.confirmed], ["Not confirmed", u.unconfirmed], ["New in 7 days", u.new7d], ["Active in 7 days", u.active7d]] as const).map(([label, n]) => (
+          <li key={label}>
+            <span className="grow">{label}</span>
+            <span className="strong">{count(n)}</span>
+          </li>
+        ))}
+      </ul>
+      {u.methods.length > 0 && (
+        <>
+          <p className="small muted supa-note">Sign-in methods</p>
+          <ul className="supa-list compact supa-counts">
+            {u.methods.map((m) => (
+              <li key={m.provider}>
+                <span className="grow">{providerLabel(m.provider)}</span>
+                <span className="strong">{m.count}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+/** The fields of one table: name, type and what the table says about it. Never a value stored in it. */
+function TableDetail({ table, onBack }: { table: SupabaseTable; onBack: () => void }) {
+  return (
+    <div className="side-card-body supa-body">
+      <div className="supa-head">
+        <Button size="sm" variant="ghost" onClick={onBack}>
+          <ArrowLeft size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Tables
+        </Button>
+        <span className="grow" />
+        <b className="truncate" title={table.name}>
+          {table.name}
+        </b>
+      </div>
+      <ul className="supa-fields" aria-label={`Fields of ${table.name}`}>
+        {table.columns.map((c) => (
+          <li key={c.name}>
+            <span className="strong truncate supa-field-name" title={c.name}>
+              {c.name}
+            </span>
+            <span className="small muted truncate">{c.type}</span>
+            <span className="supa-tags">
+              {c.pk && <span className="supa-tag" title="Primary key">PK</span>}
+              {c.fk && <span className="supa-tag" title={`Points to ${c.fk}`}>FK</span>}
+              {c.unique && <span className="supa-tag" title="Unique">unique</span>}
+              {c.nullable && <span className="supa-tag" title="May be empty">null</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {table.columns.length === 0 && <Note>No fields to show.</Note>}
+      {table.columns.some((c) => c.fk) && <p className="small muted supa-note">Links to: {[...new Set(table.columns.flatMap((c) => (c.fk ? [c.fk] : [])))].join(", ")}</p>}
+      <p className="small muted supa-note">
+        {table.rows !== null ? `${table.rows} rows · ` : ""}
+        {table.rls ? "RLS on" : "RLS off"} · Fields only, never what is stored in them.
+      </p>
+    </div>
+  );
+}
+
 function ReadyBody({ project, link }: { project: ProjectSummary; link: SupabaseLink }) {
   const [version, setVersion] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [table, setTable] = useState<string | null>(null); // the table whose fields are shown
   const overview = useSection(project.id, "overview", {}, true, version);
   const checks = useSection(project.id, "checks", {}, true, version);
   const tables = useSection(project.id, "tables", {}, open === "tables", version);
+  const users = useSection(project.id, "users", {}, open === "users", version);
   const migrations = useSection(project.id, "migrations", {}, open === "migrations", version);
   const functions = useSection(project.id, "functions", {}, open === "functions", version);
   const connectInfo = useSection(project.id, "connect", {}, open === "connect", version);
   const toggle = (id: string) => setOpen((cur) => (cur === id ? null : id));
   const o = overview.data;
+
+  const picked = table ? (tables.data?.tables.find((t) => t.name === table) ?? null) : null;
+  if (picked) return <TableDetail table={picked} onBack={() => setTable(null)} />;
 
   // The first read decides what the person sees: no access to the project, or the Supabase connection needs them.
   if (overview.error && !o) {
@@ -589,13 +668,14 @@ function ReadyBody({ project, link }: { project: ProjectSummary; link: SupabaseL
               <ul className="supa-list compact">
                 {tables.data.tables.map((t) => (
                   <li key={t.name}>
-                    <span className="supa-item-text grow">
-                      <span className="truncate">{t.name}</span>
-                    </span>
-                    {t.rows !== null && <span className="small muted">{t.rows} rows</span>}
-                    <span className={`small ${t.rls ? "supa-on" : "supa-off"}`} title={t.rls ? "Row level security is on" : "Row level security is off: anyone with the API key can read this table"}>
-                      {t.rls ? "RLS on" : "RLS off"}
-                    </span>
+                    <button type="button" className="supa-table-row" onClick={() => setTable(t.name)} aria-label={`Fields of ${t.name}`}>
+                      <span className="truncate grow">{t.name}</span>
+                      {t.rows !== null && <span className="small muted">{t.rows}</span>}
+                      <span className={`small ${t.rls ? "supa-on" : "supa-off"}`} title={t.rls ? "Row level security is on" : "Row level security is off: anyone with the API key can read this table"}>
+                        {t.rls ? "RLS on" : "RLS off"}
+                      </span>
+                      <ChevronRight size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -603,6 +683,9 @@ function ReadyBody({ project, link }: { project: ProjectSummary; link: SupabaseL
           ) : (
             <SectionState s={tables} />
           )}
+        </Accordion>
+        <Accordion title="Users" hint={users.data?.total ?? undefined} open={open === "users"} onToggle={() => toggle("users")}>
+          {users.data ? <UsersView u={users.data} /> : users.error ? <Note>Not available with your Supabase access.</Note> : <SectionState s={users} />}
         </Accordion>
         <Accordion title="Migrations" hint={o?.migrations ?? undefined} open={open === "migrations"} onToggle={() => toggle("migrations")}>
           {migrations.data ? (

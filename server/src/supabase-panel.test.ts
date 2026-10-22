@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import type { McpCallResult, McpRemoteServer } from "@mc/shared";
 import { RelayError } from "./folder-relay.ts";
 import type { RemoteRow } from "./mcp-remote-store.ts";
-import { byLevel, findPublishableKey, logsSql, mineOf, PanelError, parseAnswer, parseChecks, parseConnect, parseFunctions, parseLogs, parseMigrations, parseOverview, parseProjects, parseTables, READ_TOOLS, SupabasePanel, supabaseRowOf } from "./supabase-panel.ts";
+import { byLevel, findPublishableKey, logsSql, mineOf, PanelError, parseAnswer, parseChecks, parseConnect, parseFunctions, parseLogs, parseMigrations, parseOverview, parseProjects, parseTables, parseUsers, READ_TOOLS, USERS_SQL, SupabasePanel, supabaseRowOf } from "./supabase-panel.ts";
 
 const REF = "abcdefghijklmnopqrst";
 const row = (over: Partial<RemoteRow> = {}): RemoteRow => ({
@@ -68,7 +68,7 @@ describe("reading answers", () => {
     assert.equal(items.find((i) => i.title === "Unused Index")!.detail, "Index x has not been used");
   });
   test("tables, migrations (newest first), functions", () => {
-    assert.deepEqual(parseTables({ tables: [{ name: "public.chats", rls_enabled: true, rows: 13 }, { name: "public.x", rls_enabled: false, rows: null }, { rls_enabled: true }] }), [{ name: "chats", rls: true, rows: 13 }, { name: "x", rls: false, rows: null }]);
+    assert.deepEqual(parseTables({ tables: [{ name: "public.chats", rls_enabled: true, rows: 13 }, { name: "public.x", rls_enabled: false, rows: null }, { rls_enabled: true }] }), [{ name: "chats", rls: true, rows: 13, columns: [] }, { name: "x", rls: false, rows: null, columns: [] }]);
     assert.deepEqual(parseMigrations({ migrations: [{ version: "1", name: "init" }, { version: "2", name: "next" }] }).map((m) => m.version), ["2", "1"]);
     const f = parseFunctions({ functions: [{ slug: "hello", name: "Hello", status: "ACTIVE", version: 3, updated_at: 1761163383000 }, { name: "no slug" }] });
     assert.equal(f.length, 1);
@@ -119,6 +119,47 @@ describe("the panel", () => {
   test("every tool the panel can call is a read tool", () => {
     for (const t of READ_TOOLS) assert.doesNotMatch(t, /^(apply_migration|deploy|create|delete|merge|rebase|reset|pause|restore|update)/);
     assert.equal(READ_TOOLS.has("execute_sql"), true);
+  });
+
+  test("tables: fields with type and keys, never values, defaults or rules", () => {
+    const t = parseTables({
+      tables: [
+        {
+          name: "public.chats",
+          rls_enabled: true,
+          rows: 14,
+          columns: [
+            { name: "id", format: "uuid", data_type: "uuid", options: ["updatable"], default_value: "gen_random_uuid()" },
+            { name: "project_id", format: "uuid", data_type: "uuid", options: ["nullable", "updatable"], check: "secret check" },
+            { name: "tags", format: "_text", data_type: "ARRAY", options: ["unique"] },
+            { format: "text" },
+          ],
+          primary_keys: ["id"],
+          foreign_key_constraints: [
+            { source_table: "public.chats", source_columns: ["project_id"], target_table: "public.projects", target_columns: ["id"] },
+            { source_table: "public.messages", source_columns: ["chat_id"], target_table: "public.chats", target_columns: ["id"] },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual(t[0]!.columns, [
+      { name: "id", type: "uuid", pk: true, unique: false, nullable: false, fk: null },
+      { name: "project_id", type: "uuid", pk: false, unique: false, nullable: true, fk: "projects" },
+      { name: "tags", type: "text[]", pk: false, unique: true, nullable: false, fk: null },
+    ]);
+    assert.doesNotMatch(JSON.stringify(t), /gen_random_uuid|secret check/);
+  });
+
+  test("users: counts only, from one fixed query", async () => {
+    assert.deepEqual(parseUsers([{ total: 7, confirmed: 7, unconfirmed: 0, new_7d: 1, active_7d: 4, methods: [{ provider: "email", count: 6 }, { provider: "google", count: 1 }, { provider: "<b>x</b>", count: 9 }] }]), {
+      total: 7, confirmed: 7, unconfirmed: 0, new7d: 1, active7d: 4, methods: [{ provider: "email", count: 6 }, { provider: "google", count: 1 }],
+    });
+    assert.deepEqual(parseUsers([{ total: "3", methods: '[{"provider":"email","count":3}]' }]).methods, [{ provider: "email", count: 3 }]);
+    assert.equal(parseUsers([]).total, null);
+    assert.doesNotMatch(USERS_SQL, /\b(email|phone|raw_user_meta_data|encrypted_password)\b/i);
+    const { panel, calls } = make(() => ok([{ total: 2 }], true));
+    assert.equal((await panel.section("u1", REF, "users")).total, 2);
+    assert.deepEqual(calls.map((c) => [c.tool, c.args.project_id, c.args.query]), [["execute_sql", REF, USERS_SQL]]);
   });
 
   test("overview: project and a fixed read query, with the person's own entry name", async () => {

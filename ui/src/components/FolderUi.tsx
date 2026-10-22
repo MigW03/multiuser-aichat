@@ -5,6 +5,7 @@ import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectShares, useScripts, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
+import { showScriptsTab } from "../lib/scriptsTab.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
@@ -76,11 +77,13 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const mine = (shares.data ?? []).filter((s) => s.owner_id === me.id);
   const share = useShare(project, bridge, mine.length > 0);
 
-  // The Scripts tab: only in the desktop app, for a person who shares a folder from this computer (the scripts run there).
+  // The Scripts tab: only in the desktop app, for a person who shares a folder from this computer (the scripts run there),
+  // and only when that folder has scripts to run.
   const local = useLocalFolder(project.id);
   const scriptsApi = bridge?.scripts ?? null;
-  const hasScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
-  const scripts = useScripts(project.id, hasScripts);
+  const canScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
+  const scripts = useScripts(project.id, canScripts);
+  const hasScripts = canScripts && showScriptsTab(scripts.info);
   const [tabPref, setTabPref] = useState<"files" | "scripts">(() => (readPref<string>(PREF.filesTab(me.id), "files") === "scripts" ? "scripts" : "files"));
   const tab = hasScripts && tabPref === "scripts" ? "scripts" : "files";
   const pickTab = (next: "files" | "scripts") => {
@@ -306,8 +309,7 @@ function useShare(project: ProjectSummary, bridge: FolderBridge | null, shared: 
   return { start, onDropped, dialog, error: notice ? null : error, busy };
 }
 
-const AI_EDIT_TEXT: Record<AiEditState, string> = {
-  edit: "The AI can propose edits. The person who shares a folder approves each one in their desktop app.",
+const AI_EDIT_TEXT: Partial<Record<AiEditState, string>> = {
   off: "The AI can read these files but not change them. Whoever shares a folder can allow edits in Project settings, in the desktop app.",
   offline: "AI edits are paused: the app of whoever shares is closed. Edits need it running.",
 };
@@ -325,7 +327,7 @@ function AiEditStatus({ projectId, onlineKey }: { projectId: string; onlineKey: 
       clearInterval(timer);
     };
   }, [projectId, onlineKey]);
-  if (!state) return null;
+  if (!state || !AI_EDIT_TEXT[state]) return null;
   return (
     <div className={`ai-edit-status small muted ${state}`} role="status">
       {AI_EDIT_TEXT[state]}

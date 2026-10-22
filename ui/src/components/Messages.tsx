@@ -1,7 +1,8 @@
 import { answerPreview, findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
-import { Fragment, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
+import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
+import { findFilePaths } from "../lib/fileKind.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
 import { AnswerBody } from "../genui/AnswerBody.tsx";
@@ -230,6 +231,31 @@ function PreviewChips({ text }: { text: string }) {
   );
 }
 
+const FILE_CHIPS = 3;
+
+/** A button under an answer for each file it names, when the project shares files: opens it in the file panel. The first few show; the rest follow "+N more". */
+function FileChips({ text }: { text: string }) {
+  const files = useContext(AppContext)?.files;
+  const [all, setAll] = useState(false);
+  const paths = useMemo(() => (files?.hasAny ? findFilePaths(text) : []), [files?.hasAny, text]);
+  if (paths.length === 0 || !files) return null;
+  const shown = all ? paths : paths.slice(0, FILE_CHIPS);
+  return (
+    <div className="preview-offers">
+      {shown.map((p) => (
+        <button key={p} type="button" className="btn secondary sm" title={p} onClick={() => files.open(p, true)}>
+          <File size={ICON_SM} strokeWidth={STROKE} aria-hidden /> <span className="truncate file-chip-name">{p.split("/").at(-1)}</span>
+        </button>
+      ))}
+      {!all && paths.length > FILE_CHIPS && (
+        <button type="button" className="btn ghost sm" onClick={() => setAll(true)}>
+          +{paths.length - FILE_CHIPS} more
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AssistantMessage(props: RowProps) {
   const { m, meId, names, streamingText, isLatestAnswer } = props;
   const asker = names.get(m.for_user_id ?? "") ?? null;
@@ -272,6 +298,7 @@ function AssistantMessage(props: RowProps) {
           </div>
         )}
         {!streaming && !failed && <PreviewChips text={text} />}
+        {!streaming && !failed && <FileChips text={text} />}
         {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>

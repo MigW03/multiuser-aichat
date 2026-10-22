@@ -722,8 +722,6 @@ h1, h2, h3, p { margin: 0; }
 .folder-list .folder-row-more { width: 24px; height: 24px; padding: 0; justify-content: center; }
 .folder-list li:hover .folder-row-more, .folder-list li:focus-within .folder-row-more, .folder-list .folder-row-more.open { opacity: 1; }
 @media (hover: none) { .folder-list .folder-row-more { opacity: 1; } }
-.file-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; min-height: 0; }
-.file-text { margin: 0; flex: 1; min-height: 120px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font: 12.5px/1.5 var(--mono); white-space: pre; tab-size: 4; }
 
 /* Notes card under the files card */
 .notes-card { flex: var(--notes-grow, 1) 1 0; min-height: 120px; }
@@ -864,3 +862,29 @@ h1, h2, h3, p { margin: 0; }
 .script-log pre { margin: 0; max-height: 220px; min-height: 64px; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; user-select: text; }
 .script-crash { margin: 0; padding: 4px 8px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-tint); color: var(--danger); }
 .script-log-actions { display: flex; align-items: center; gap: 6px; }
+
+/* A shared file, in the middle of the main panel in place of the chat (FilePanel). */
+.file-slot { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.file-card .file-bar { gap: 6px; }
+.file-title { flex: 1; min-width: 0; padding: 0 4px; }
+.file-title .mono { font: 600 13px var(--mono); }
+.seg { display: inline-flex; flex: none; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--muted); }
+.seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; font: var(--text-small); font-weight: 600; color: var(--muted-fg); }
+.seg button:hover { color: var(--fg); }
+.seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.file-body { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--card); }
+.file-body.is-frame { overflow: hidden; background: #fff; }
+.file-markdown { max-width: var(--message-column); margin: 0 auto; padding: 20px 22px 32px; }
+.file-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; color-scheme: light; }
+.file-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 100%; padding: 24px; text-align: center; }
+.file-state p { margin: 0; max-width: 360px; }
+.file-source { margin: 0; padding: 12px 0; min-height: 100%; font: 12.5px/1.55 var(--mono); white-space: pre; tab-size: 4; outline: none; }
+.file-line { display: block; padding-right: 16px; }
+.file-ln { display: inline-block; min-width: 4.5ch; margin-right: 14px; padding-left: 14px; text-align: right; color: var(--muted-fg); user-select: none; }
+/* `code` in an answer that names a shared file, and a link to another file inside a Markdown file. */
+.file-code { display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.file-code code { color: var(--p-text); text-decoration: underline; text-decoration-color: var(--t40); text-underline-offset: 2px; }
+.file-code:hover code { text-decoration-color: currentColor; }
+.file-link { display: inline; padding: 0; border: 0; background: none; font: inherit; color: var(--p-text); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.file-chip-name { max-width: 200px; }
+.folder-list button[aria-current="true"] { background: var(--t8); color: var(--p-text); }

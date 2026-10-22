@@ -14,7 +14,7 @@ import {
   type AppContextValue,
   type Me,
 } from "../data.tsx";
-import { useFolderHost, useMcpHost } from "../lib/folder.ts";
+import { useFolderHost, useMcpHost, useProjectShares } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { previewBridge } from "../lib/preview.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
@@ -27,6 +27,7 @@ import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
 import { ApprovalDock } from "./Changes.tsx";
+import { FilePanel, type FileRequest } from "./FilePanel.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { RightColumn } from "./FolderUi.tsx";
 import { JoinSignedIn } from "./Join.tsx";
@@ -162,6 +163,29 @@ export function Shell({ userId }: { userId: string }) {
   const [mainRoom, setMainRoom] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => setPreview(null), [projectId]);
+
+  // A shared file shows in the middle of the main panel in place of the chat (the chat stays mounted behind it). It and the
+  // localhost preview never show together: opening one closes the other.
+  const shares = useProjectShares(projectId);
+  const activeShares = useMemo(() => (shares.data ?? []).filter((r) => r.status === "active"), [shares.data]);
+  const shareFolders = useMemo(() => activeShares.filter((r) => r.kind === "dir").map((r) => r.name), [activeShares]);
+  const [fileReq, setFileReq] = useState<FileRequest | null>(null);
+  useEffect(() => setFileReq(null), [projectId, settingsOpen]);
+  const closeFile = useCallback(() => setFileReq(null), []);
+  const hasShares = activeShares.length > 0;
+  const filesCtx = useMemo(
+    () => ({
+      hasAny: hasShares,
+      path: fileReq && !fileReq.guess ? fileReq.path : null,
+      open: (path: string, guess = false) => {
+        setPreview(null);
+        setFileReq((cur) => ({ path, guess, n: (cur?.n ?? 0) + 1 }));
+        setFolderDrawer(false);
+      },
+      close: closeFile,
+    }),
+    [hasShares, fileReq, closeFile],
+  );
   useEffect(() => {
     const el = mainRef.current;
     if (!el || !previewOpen || typeof ResizeObserver === "undefined") return;
@@ -174,7 +198,11 @@ export function Shell({ userId }: { userId: string }) {
     () => ({
       available: !!previewApi,
       open: previewOpen,
-      show: (url?: string) => setPreview((cur) => (previewApi ? { url: url ?? cur?.url ?? null, full: cur?.full ?? false } : cur)),
+      show: (url?: string) => {
+        if (!previewApi) return;
+        setFileReq(null);
+        setPreview((cur) => ({ url: url ?? cur?.url ?? null, full: cur?.full ?? false }));
+      },
       close: () => setPreview(null),
     }),
     [previewApi, previewOpen],
@@ -250,8 +278,9 @@ export function Shell({ userId }: { userId: string }) {
         openInvite: (target) => setInviteReq(target),
         folderPanel: { open: folderOpen, drawer: narrow, toggle: toggleFolder },
         preview: previewCtx,
+        files: filesCtx,
       },
-    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder, previewCtx],
+    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder, previewCtx, filesCtx],
   );
 
   if (route.name === "reset") return <ResetPassword />;
@@ -343,7 +372,12 @@ export function Shell({ userId }: { userId: string }) {
         )}
         <main className={`main ${previewApi && preview && !narrow && !preview.full ? "with-preview" : ""}`} ref={mainRef}>
           {/* The chat stays mounted behind a full-size preview, so nothing typed or scrolled is lost. */}
-          <div className={`main-slot ${preview && (narrow || preview.full) ? "hidden" : ""}`}>{main}</div>
+          <div className={`main-slot ${(preview && (narrow || preview.full)) || (fileReq && project) ? "hidden" : ""}`}>{main}</div>
+          {fileReq && project && (
+            <div className="file-slot">
+              <FilePanel projectId={project.id} request={fileReq} folders={shareFolders} onClose={closeFile} />
+            </div>
+          )}
           {previewApi && preview && (
             <div className={`preview-slot ${narrow || preview.full ? "full" : ""}`} style={narrow || preview.full ? undefined : { width: clampPreviewWidth(previewStored, mainRoom) }}>
               <PreviewPanel

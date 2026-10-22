@@ -22,7 +22,6 @@ import type {
   ProviderId,
   SendMessageRequest,
   SendMessageResponse,
-  SmartSet,
   SmartSettings,
   SummarizeRequest,
 } from "@mc/shared";
@@ -96,11 +95,10 @@ export const api = {
   chatgptUsage: (refresh = false) => call<ChatGptUsage>("GET", `/api/chatgpt/usage${refresh ? "?refresh=1" : ""}`),
   chatgptPoll: (flow: string) => call<ChatGptPollResponse>("POST", "/api/chatgpt/poll", { flow }),
 
-  /** Smart model selection: this person's set of models for Auto, and their own switch for a project. */
-  smartSet: () => call<SmartSet>("GET", "/api/smart/set"),
-  saveSmartSet: (models: string[]) => call<SmartSet>("PUT", "/api/smart/set", { models }),
-  smartSettings: (projectId: string, check = false) => call<SmartSettings>("GET", `/api/projects/${projectId}/smart${check ? "?check=1" : ""}`),
-  setSmart: (projectId: string, enabled: boolean) => call<SmartSettings>("PUT", `/api/projects/${projectId}/smart`, { enabled }),
+  /** Smart model selection: this person's switch and set of models for Auto (`check` also tests the OpenRouter key). */
+  smart: (check = false) => call<SmartSettings>("GET", `/api/smart${check ? "?check=1" : ""}`),
+  setSmart: (enabled: boolean) => call<SmartSettings>("PUT", "/api/smart/enabled", { enabled }),
+  saveSmartSet: (models: string[]) => call<SmartSettings>("PUT", "/api/smart/set", { models }),
 
   createProject: (name: string) => call<{ id: string }>("POST", "/api/projects", { name }),
   renameProject: (id: string, name: string) => call<{ ok: true }>("PATCH", `/api/projects/${id}`, { name }),

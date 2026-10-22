@@ -33,7 +33,7 @@ import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
 import { newestPictureIds, promptName, toModelMessages, transcriptText, withinBudget, type Row } from "./model-messages.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
-import { getSmartSet, isSmartOn } from "./smart.ts";
+import { getSmart } from "./smart.ts";
 import { answeredBy, smartProviderOptions } from "./smart-rules.ts";
 import { admin, type Admin } from "./supabase.ts";
 
@@ -231,7 +231,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (!authorId || !provider || !modelId) throw new UserFacing("no_key", "This message was sent without a model selected.");
     apiKey = await getUserKey(authorId, provider);
     if (!apiKey) throw new UserFacing("no_key", isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
-    const smartModels = smart ? await smartPool(db, chatId, authorId) : null;
+    const smartModels = smart ? await smartPool(authorId) : null;
 
     let instructions: string;
     let messages: ModelMessage[];
@@ -405,14 +405,13 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   return true;
 }
 
-/** The models Auto may choose from for this asker. Auto works only where the asker switched Smart model selection on, with a big enough set. */
-async function smartPool(db: Admin, chatId: string, userId: string | null): Promise<string[]> {
-  const { data: chat } = await db.from("chats").select("project_id").eq("id", chatId).maybeSingle();
-  const projectId = (chat?.project_id as string | null | undefined) ?? null;
-  if (!userId || !projectId || !(await isSmartOn(userId, projectId))) {
-    throw new UserFacing("model", "Auto is switched off for you here. Switch on Smart model selection in Project settings, or pick a model.");
+/** The models Auto may choose from for this asker. Auto works only when the asker switched Smart model selection on, with a big enough set. */
+async function smartPool(userId: string | null): Promise<string[]> {
+  const state = userId ? await getSmart(userId) : null;
+  if (!userId || !state?.enabled) {
+    throw new UserFacing("model", "Auto is switched off for you. Switch on Smart model selection under Settings, AI key, or pick a model.");
   }
-  const set = await getSmartSet(userId);
+  const set = state.models;
   if (set.length < LIMITS.smartMin) throw new UserFacing("model", `Your Smart set needs at least ${LIMITS.smartMin} models. Add them in the model picker, under Smart selector.`);
   return set;
 }

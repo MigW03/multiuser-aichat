@@ -1,16 +1,11 @@
-import { DEFAULT_REASONING, isSmartModel, LIMITS, PROVIDER_BILLING_URLS, SMART_MODEL_ID, type AllowedCommand, type ProjectSummary, type SmartKeyStatus } from "@mc/shared";
+import type { AllowedCommand, ProjectSummary } from "@mc/shared";
 import { ArrowLeft, PanelLeftOpen } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { api, ApiRequestError } from "../api.ts";
-import { useApp } from "../data.tsx";
 import { folderBridge, useAllowedCommands, useLocalFolder } from "../lib/folder.ts";
-import { loadModels } from "../lib/models.ts";
 import { closeProjectSettings } from "../lib/router.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import { RightPanelToggle } from "./FolderUi.tsx";
-import { defaultModelFor } from "./Pickers.tsx";
-import { smartChanged, useSmart } from "./useSmart.ts";
 
 // The project's settings, in place of the chat (project menu > Project settings). Add a setting by adding a
 // <SettingRow> to a <SettingsSection>; a new group of settings is a new <SettingsSection>.
@@ -136,109 +131,6 @@ function CapSetting({ project, which }: { project: ProjectSummary; which: CapSwi
   );
 }
 
-const SMART_PROBLEMS: Record<Exclude<SmartKeyStatus, "ok">, string> = {
-  no_key: "Add your OpenRouter API key to use this.",
-  invalid_key: "OpenRouter rejected your key. Update it to use this.",
-  no_credits: "Your OpenRouter key has no credits left.",
-  unreachable: "Could not reach OpenRouter to check your key. Try again in a moment.",
-};
-
-/** This person's own switch for letting Auto choose the model that answers them in this project. It needs their OpenRouter key. */
-function SmartSetting({ project }: { project: ProjectSummary }) {
-  const { openSettings, choice, setChoice } = useApp();
-  const smart = useSmart(project.id);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<Exclude<SmartKeyStatus, "ok"> | null>(null);
-  const [keyOk, setKeyOk] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function check() {
-    setBusy(true);
-    setError(null);
-    try {
-      const { key } = await api.smartSettings(project.id, true);
-      setProblem(key && key !== "ok" ? key : null);
-      setKeyOk(key === "ok");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not check your key.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function set(next: boolean) {
-    setBusy(true);
-    setError(null);
-    setProblem(null);
-    setKeyOk(false);
-    try {
-      await api.setSmart(project.id, next);
-      smartChanged();
-      if (next) {
-        setKeyOk(true);
-        // Switched on with a big enough set: start using Auto right away.
-        if (smart.models.length >= LIMITS.smartMin) setChoice({ provider: "openrouter", model: SMART_MODEL_ID, reasoning: choice?.reasoning ?? DEFAULT_REASONING });
-      } else if (isSmartModel(choice?.model)) {
-        // Auto no longer works for this person: go back to an ordinary model.
-        const model = defaultModelFor("openrouter", await loadModels("openrouter").catch(() => []));
-        if (model) setChoice({ provider: "openrouter", model, reasoning: choice?.reasoning ?? DEFAULT_REASONING });
-      }
-    } catch (e) {
-      const code = e instanceof ApiRequestError ? e.code : undefined;
-      const status = code?.startsWith("smart_") ? (code.slice(6) as SmartKeyStatus) : null;
-      if (status && status !== "ok" && status in SMART_PROBLEMS) setProblem(status);
-      else setError(e instanceof Error ? e.message : "Could not change this.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <SettingRow
-        title="Smart model selection"
-        text="Off by default. When on, you can pick Auto in the model picker (Smart selector tab): before each of your messages, OpenRouter's Jev Router chooses one model from the set you pick, and each answer shows the model that wrote it. It uses your own OpenRouter key and credits. This is your own setting: it does not change what other people in the project use."
-        note={
-          smart.enabled ? (
-            <>
-              Your Smart set: {smart.models.length} {smart.models.length === 1 ? "model" : "models"}.{" "}
-              {smart.models.length < LIMITS.smartMin ? `Add at least ${LIMITS.smartMin} in the model picker, under Smart selector.` : "Change it in the model picker, under Smart selector."}
-            </>
-          ) : null
-        }
-        control={<input type="checkbox" className="setting-switch" role="switch" aria-label="Smart model selection" checked={smart.enabled} disabled={busy || !smart.loaded} onChange={(e) => void set(e.target.checked)} />}
-      />
-      {problem && (
-        <ErrorLine>
-          {SMART_PROBLEMS[problem]}{" "}
-          {(problem === "no_key" || problem === "invalid_key") && (
-            <Button size="sm" onClick={() => openSettings("key")}>
-              {problem === "no_key" ? "Add key" : "Update key"}
-            </Button>
-          )}
-          {problem === "no_credits" && (
-            <a className="btn sm" href={PROVIDER_BILLING_URLS.openrouter} target="_blank" rel="noreferrer">
-              Add credits
-            </a>
-          )}{" "}
-          <Button size="sm" busy={busy} onClick={() => void check()}>
-            Check again
-          </Button>
-        </ErrorLine>
-      )}
-      {error && <ErrorLine>{error}</ErrorLine>}
-      {smart.enabled && !problem && (
-        <div className="setting-row">
-          <div className="grow small muted">{keyOk ? "OpenRouter key checked. Credits can only be confirmed by OpenRouter when a message is sent." : "OpenRouter tells us a key's credits only in some cases, so a key that ran out is caught when a message is sent."}</div>
-          <Button size="sm" busy={busy} onClick={() => void check()}>
-            Check my key
-          </Button>
-        </div>
-      )}
-    </>
-  );
-}
-
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 /** The commands this person chose to always allow in this project, each with Revoke. They are added only in the desktop app's own confirmation window. */
@@ -311,9 +203,6 @@ export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { projec
             <CapSetting project={project} which={SWITCHES.git} />
             <CapSetting project={project} which={SWITCHES.exec} />
             <AlwaysAllowed project={project} />
-          </SettingsSection>
-          <SettingsSection title="Models">
-            <SmartSetting project={project} />
           </SettingsSection>
         </div>
       </div>

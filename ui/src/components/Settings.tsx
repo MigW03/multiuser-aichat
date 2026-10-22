@@ -6,6 +6,7 @@ import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
 import { McpTab } from "./McpSettings.tsx";
 import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
+import { SmartSetting } from "./SmartSetting.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
@@ -379,6 +380,7 @@ function KeyTab() {
         </div>
         <KeyForm />
       </div>
+      <SmartSetting />
     </div>
   );
 }

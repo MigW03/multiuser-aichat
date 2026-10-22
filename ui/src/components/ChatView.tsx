@@ -268,7 +268,6 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         people={others}
         choice={choice}
         onModel={pickModel}
-        projectId={project?.id ?? null}
         onReasoning={pickReasoning}
         replyTo={reply}
         onClearReply={() => setReply(null)}

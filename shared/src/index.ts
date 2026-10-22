@@ -289,10 +289,8 @@ export type ApiError = { error: string };
 
 /** Whether this person's OpenRouter key can run Smart model selection. `no_credits` only when OpenRouter says the key has none left. */
 export type SmartKeyStatus = "ok" | "no_key" | "invalid_key" | "no_credits" | "unreachable";
-/** This person's own Smart model selection setting for one project (`key` only when asked for). */
-export type SmartSettings = { enabled: boolean; key?: SmartKeyStatus };
-/** The OpenRouter models this person lets Auto choose from. */
-export type SmartSet = { models: string[] };
+/** This person's own Smart model selection: the switch, and the OpenRouter models they let Auto choose from (`key` only when asked for). */
+export type SmartSettings = { enabled: boolean; models: string[]; key?: SmartKeyStatus };
 
 export type InviteScope = "project" | "chat";
 export type PendingInvite = { id: string; email: string; role: AssignableRole; token: string; created_at: string; expires_at: string };

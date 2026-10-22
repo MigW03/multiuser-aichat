@@ -38,8 +38,8 @@ export function defaultModelFor(provider: ProviderId, models: ModelInfo[]): stri
 
 const AUTO: Pick<ModelChoice, "provider" | "model"> = { provider: "openrouter", model: SMART_MODEL_ID };
 
-export function ModelPicker({ choice, onChoose, disabled, projectId }: { choice: ModelChoice | null; onChoose: (c: Pick<ModelChoice, "provider" | "model">) => void; disabled?: boolean; projectId?: string | null }) {
-  const smart = useSmart(projectId ?? null);
+export function ModelPicker({ choice, onChoose, disabled }: { choice: ModelChoice | null; onChoose: (c: Pick<ModelChoice, "provider" | "model">) => void; disabled?: boolean }) {
+  const smart = useSmart();
   const auto = !!choice && choice.provider === "openrouter" && isSmartModel(choice.model);
   // With Smart model selection on, picking a model yourself pins it until you go back to Auto.
   const pinned = smart.enabled && !!choice && !auto;

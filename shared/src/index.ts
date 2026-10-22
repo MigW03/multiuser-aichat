@@ -622,3 +622,4 @@ export type AllowedCommand = { id: string; command: string; folder: string; scri
 export * from "./mcp-text.ts";
 export * from "./preview-url.ts";
 export * from "./genui.ts";
+export * from "./supabase.ts";

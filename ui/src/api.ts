@@ -24,6 +24,11 @@ import type {
   SendMessageResponse,
   SmartSettings,
   SummarizeRequest,
+  SupabaseLink,
+  SupabaseProjectOption,
+  SupabaseSection,
+  SupabaseSectionData,
+  SupabaseState,
 } from "@mc/shared";
 import { config } from "./config.ts";
 import { supabase } from "./supabase.ts";
@@ -128,6 +133,19 @@ export const api = {
   gitStatus: (projectId: string) => call<GitStatusResult>("GET", `/api/projects/${projectId}/folder/git/status`),
   gitDiff: (projectId: string, path: string, target: "worktree" | "staged" | "head" = "head") =>
     call<GitTextResult>("GET", `/api/projects/${projectId}/folder/git/diff?${new URLSearchParams({ path, target })}`),
+
+  /** The Supabase tab: the project's link, this person's own Supabase connection, and one section read through it. */
+  supabaseState: (projectId: string) => call<SupabaseState>("GET", `/api/projects/${projectId}/supabase`),
+  supabaseProjects: (projectId: string) => call<{ projects: SupabaseProjectOption[] }>("GET", `/api/projects/${projectId}/supabase/projects`),
+  supabaseLink: (projectId: string, ref: string) => call<{ link: SupabaseLink | null }>("PUT", `/api/projects/${projectId}/supabase`, { ref }),
+  supabaseUnlink: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/supabase`),
+  supabaseData: <S extends SupabaseSection>(projectId: string, section: S, q: { source?: string; minutes?: number; errors?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (q.source) params.set("source", q.source);
+    if (q.minutes) params.set("minutes", String(q.minutes));
+    if (q.errors) params.set("errors", "1");
+    return call<{ data: SupabaseSectionData[S] }>("GET", `/api/projects/${projectId}/supabase/data/${section}${params.size ? `?${params}` : ""}`);
+  },
 
   createChat: (projectId: string | null) => call<{ id: string }>("POST", "/api/chats", { projectId }),
   renameChat: (id: string, title: string) => call<{ title: string }>("PATCH", `/api/chats/${id}`, { title }),

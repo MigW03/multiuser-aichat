@@ -5,6 +5,7 @@ import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectShares, useScripts, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
+import { showScriptsTab } from "../lib/scriptsTab.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
@@ -76,11 +77,13 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const mine = (shares.data ?? []).filter((s) => s.owner_id === me.id);
   const share = useShare(project, bridge, mine.length > 0);
 
-  // The Scripts tab: only in the desktop app, for a person who shares a folder from this computer (the scripts run there).
+  // The Scripts tab: only in the desktop app, for a person who shares a folder from this computer (the scripts run there),
+  // and only when that folder has scripts to run.
   const local = useLocalFolder(project.id);
   const scriptsApi = bridge?.scripts ?? null;
-  const hasScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
-  const scripts = useScripts(project.id, hasScripts);
+  const canScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
+  const scripts = useScripts(project.id, canScripts);
+  const hasScripts = canScripts && showScriptsTab(scripts.info);
   const [tabPref, setTabPref] = useState<"files" | "scripts">(() => (readPref<string>(PREF.filesTab(me.id), "files") === "scripts" ? "scripts" : "files"));
   const tab = hasScripts && tabPref === "scripts" ? "scripts" : "files";
   const pickTab = (next: "files" | "scripts") => {

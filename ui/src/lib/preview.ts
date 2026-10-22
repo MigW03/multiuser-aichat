@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 // `previewBridge()` is null and nothing about it shows.
 
 export type PreviewState = {
+  /** `run`: a shared HTML file served by the app with scripts but no network (Run page). Absent in older builds of the app. */
+  mode?: "localhost" | "run";
   url: string;
   title: string;
   loading: boolean;

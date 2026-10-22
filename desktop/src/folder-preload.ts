@@ -48,6 +48,11 @@ export const folderApi = {
   },
   /** Stops sharing one item. Resolves to the new name, or null when nothing is left. */
   remove: (projectId: string, name: string): Promise<{ name: string | null }> => ipcRenderer.invoke("folder:remove", projectId, name),
+  /**
+   * Runs an HTML file this person shares, with its scripts, in the preview's strict mode (no network). The page names the project
+   * and the shared path; the app checks it, asks in a window of its own, and resolves to the address for the preview to open.
+   */
+  runPage: (projectId: string, path: string): Promise<unknown> => ipcRenderer.invoke("folder:run-page", projectId, path),
   /** Reconnects a project now. */
   connect: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:connect", projectId),
   unlink: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:unlink", projectId),

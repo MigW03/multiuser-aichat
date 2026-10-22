@@ -9,10 +9,11 @@ import { stageChange } from "./folder-changes.ts";
 import { stageExec } from "./folder-exec.ts";
 import { listScripts, longRunningRefusal, ScriptRunner, stageScript } from "./folder-scripts.ts";
 import { stageGitChange } from "./folder-git.ts";
-import { FolderError, isHiddenName, validateRoot } from "./folder-fs.ts";
+import { FolderError, isHiddenName, locate, validateRoot } from "./folder-fs.ts";
 import { workerSearch } from "./folder-grep.ts";
 import { FolderConn, isUuid, originOf, serverSocketUrl, type FolderState, type HostSession } from "./folder-host.ts";
-import { nameItems, servedItems, summaryName, type Item, type ItemSpec, type ItemStatus } from "./folder-items.ts";
+import { nameItems, resolve as resolveItem, servedItems, summaryName, type Item, type ItemSpec, type ItemStatus } from "./folder-items.ts";
+import type { RunServer } from "./run-server.ts";
 
 // Wires this person's shared files to the app window. The page can: say who is signed in and which projects they belong
 // to, ask what is shared, open the native "choose" dialog (or hand over what was dropped on it), remove an item and
@@ -73,7 +74,7 @@ const NO_CAPS: FolderCaps = { edit: false, git: false, exec: false };
 const EMPTY: FolderInfo = { linked: false, name: null, items: [], state: "off", caps: NO_CAPS, error: null };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
-export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
+export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; run: RunServer }) {
   let links: Links = {};
   let session: HostSession | null = null;
   const conns = new Map<string, FolderConn>();
@@ -90,6 +91,8 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("folder:changed", projectId);
   /** What may be served: approved items only, under the names the project gave them. */
   const itemsOf = (projectId: string): Item[] => servedItems(links[projectId]?.items ?? [], assigned.get(projectId));
+  // Pages that run from the disk read what is served right now, so removing an item stops it at once.
+  opts.run.setItems((projectId) => (mine(projectId) ? itemsOf(projectId) : []));
   /** Everything shared from here, for the server to record. The names are suggestions; the server decides. */
   const report = (projectId: string) => nameItems(links[projectId]?.items ?? []).flatMap((i) => (i.key ? [{ key: i.key, name: i.name, kind: i.kind }] : []));
   /** Every item with the name and approval the server last gave it, for the page. */
@@ -547,6 +550,54 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     allowChanged(projectId);
   });
 
+  // ---- Run page: an HTML file this person shares, run with its scripts in the preview's strict mode (run-server.ts, preview.ts).
+  // The page only names a project and a path. The app checks that the file is an HTML file in an item this person shares from
+  // this computer, asks in a window of its own (default Cancel, once per file until the app quits) and only then starts the server.
+  const runApproved = new Set<string>();
+  type RunPageResult = { ok: true; url: string } | { ok: false; code: "cancelled" | "unavailable"; error: string };
+  ipcMain.handle("folder:run-page", async (e, projectId: unknown, path: unknown): Promise<RunPageResult> => {
+    const no = (error: string): RunPageResult => ({ ok: false, code: "unavailable", error });
+    if (!trusted(e) || !isUuid(projectId) || typeof path !== "string") return no("That page can't be run.");
+    await ready;
+    if (!mine(projectId)) return no("A page runs from the computer that shares it.");
+    if (!/\.html?$/i.test(path)) return no("Only .html files can be run.");
+    try {
+      const t = resolveItem(itemsOf(projectId), path);
+      if (t === "top" || (await locate(t.root, t.start.join("/"))).isDir) throw new FolderError("not_a_file", "That isn't a file.");
+    } catch {
+      return no("That file isn't shared from this computer, or it can't be run.");
+    }
+    const key = `${projectId}\n${path}`;
+    if (!runApproved.has(key)) {
+      const win = opts.getWindow();
+      const options = {
+        type: "warning" as const,
+        title: "Run this page?",
+        message: `Run ${path} with its scripts?`,
+        detail: [
+          `The page will run code from this file in a browser view of this app, on your computer.`,
+          "",
+          "It can read the other files you share in this project.",
+          "It cannot use the internet, and it has no access to your account in this app.",
+          "",
+          "Only run files you trust.",
+        ].join("\n"),
+        buttons: ["Cancel", "Run page"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+      if (r.response !== 1) return { ok: false, code: "cancelled", error: "" };
+      runApproved.add(key);
+    }
+    try {
+      return { ok: true, url: await opts.run.urlFor(projectId, path) };
+    } catch {
+      return no("The page could not be started.");
+    }
+  });
+
   // ---- The Scripts tab: package.json scripts of the folders this person shares from this computer.
   const NO_SCRIPTS: ScriptsInfo = { scripts: [], runs: [] };
   const isName = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= 64;
@@ -633,6 +684,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     links = rest;
     await saveLinks(links);
     assigned.delete(projectId);
+    for (const k of runApproved) if (k.startsWith(`${projectId}\n`)) runApproved.delete(k);
     approvals.closeProject(projectId);
     scripts.stopProject(projectId);
     await allow.revokeProject(projectId);

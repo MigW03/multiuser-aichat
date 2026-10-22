@@ -271,6 +271,14 @@ A shared file opens in the middle of the main panel, **in place of the chat** (t
 - **Limits:** one read returns at most 2000 lines / 50 KB (`FOLDER_LIMITS`), so a longer file is cut and the panel says which lines it shows (the HTML Preview then shows only that part). Binary, over 2 MB, blocked paths: the host's refusal is shown as written.
 - Own view only: other members never see what a person has open; nothing is stored.
 
+## Run page: an HTML file running with scripts (dev branch, 2026-10-22, desktop app, host only)
+
+A shared `.html` file can run with its scripts, styles and pictures in the preview's browser view. A **Run page** button shows in the file panel (and a link in the yellow "Static view" bar) only for an HTML file this computer shares; everyone else, and the web, keep the static Preview. One confirmation in a native window (default Cancel, once per file until the app quits), then the page opens in the preview beside the chat with a read-only address (`Run · path`), a "Show the file" button and a note "Scripts run. The network is off."
+
+- **How:** `desktop/src/run-server.ts` serves the shared items from disk on `127.0.0.1` (random port, random token in every address, `Host` check, same path walk as every read, CSP that allows this server only). `preview.ts` opens addresses the run server handed out in a stricter "run" mode: session of its own, no network at all (request filter + dead proxy + no WebRTC UDP), no hand-off to the person's browser. The mode is decided in the main process from the address; the page cannot choose it. `folder:run-page` (`folder-ipc.ts`) checks the file, asks, starts the server and returns the address.
+- **Why not CDN libraries:** a file from a teammate could otherwise send the host's shared files to the internet. Allowing it is a separate decision for the owner.
+- **Security notes for audits (walls, what is left over, what was verified):** [security-notes.md](security-notes.md), section 3.
+
 ## Decisions
 
 - TypeScript everywhere: one language and one CRDT library (Yjs) across server, web and desktop.

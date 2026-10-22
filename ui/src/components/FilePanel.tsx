@@ -1,7 +1,8 @@
 import type { FolderReadResult } from "@mc/shared";
-import { ChevronLeft, Copy, RotateCw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, Copy, Play, RotateCw, X } from "lucide-react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
+import { AppContext } from "../data.tsx";
 import { candidatePaths, dirOf, fileKind } from "../lib/fileKind.ts";
 import { FRAME_SANDBOX, frameDocument } from "../lib/htmlFrame.ts";
 import { Button, ICON, ICON_SM, IconButton, Spinner, STROKE, useToast } from "./kit.tsx";
@@ -22,6 +23,7 @@ const MISSING = new Set(["not_found", "not_a_file", "invalid_path", "excluded"])
  */
 export function FilePanel({ projectId, request, folders, onClose }: { projectId: string; request: FileRequest; folders: string[]; onClose: () => void }) {
   const toast = useToast();
+  const files = useContext(AppContext)?.files;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
@@ -112,6 +114,11 @@ export function FilePanel({ projectId, request, folders, onClose }: { projectId:
           <b className="mono">{name}</b>
           {dir && <span className="small muted"> {dir}/</span>}
         </div>
+        {kind === "html" && loaded && files?.canRun(path) && (
+          <Button size="sm" onClick={() => files.run(path)} title="Run this page with its scripts, here on your computer">
+            <Play size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Run page
+          </Button>
+        )}
         {kind !== "text" && loaded && (
           <div className="seg" role="group" aria-label="View">
             <button type="button" aria-pressed={showing === "preview"} className={showing === "preview" ? "on" : ""} onClick={() => flip("preview")}>
@@ -133,7 +140,19 @@ export function FilePanel({ projectId, request, folders, onClose }: { projectId:
         </IconButton>
       </header>
 
-      {kind === "html" && loaded && showing === "preview" && <div className="preview-note small muted">Static view. Scripts and content from the web are off.</div>}
+      {kind === "html" && loaded && showing === "preview" && (
+        <div className="preview-note small muted">
+          Static view. Scripts and content from the web are off.
+          {files?.canRun(path) && (
+            <>
+              {" "}
+              <button type="button" className="link-btn" onClick={() => files.run(path)}>
+                Run it with scripts
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {loaded?.result.truncated && (
         <div className="preview-note small muted">
           Showing lines {loaded.result.startLine}–{loaded.result.endLine} of {loaded.result.totalLines}.

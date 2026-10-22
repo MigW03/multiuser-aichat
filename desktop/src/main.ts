@@ -5,6 +5,7 @@ import { parseDeepLink, SCHEME } from "./deeplink.ts";
 import { setupFolderHost } from "./folder-ipc.ts";
 import { setupMcp } from "./mcp-ipc.ts";
 import { setupPreview } from "./preview.ts";
+import { createRunServer } from "./run-server.ts";
 
 // Production loads the web build from a private app:// origin (not file://, which would give the page
 // access to the whole disk). Development loads the Vite dev server.
@@ -106,7 +107,9 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => callback(allowed(permission, details.requestingUrl)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => allowed(permission, requestingOrigin));
     if (!DEV_URL) serveWebBuild();
-    setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    // Serves shared HTML pages from this computer's disk to the preview ("Run page"); starts only when one runs.
+    const run = createRunServer();
+    setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
     setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     // The window frame (title bar) follows the app's own light/dark choice instead of the computer's.
     ipcMain.on("theme:set", (e, pref: unknown) => {
@@ -114,7 +117,7 @@ if (!app.requestSingleInstanceLock()) {
       if (pref === "light" || pref === "dark" || pref === "system") nativeTheme.themeSource = pref;
     });
     // A project's own web page, served from this computer, shown in the main panel.
-    setupPreview({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    setupPreview({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

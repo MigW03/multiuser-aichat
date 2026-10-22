@@ -14,7 +14,7 @@ import {
   type AppContextValue,
   type Me,
 } from "../data.tsx";
-import { useFolderHost, useMcpHost, useProjectShares } from "../lib/folder.ts";
+import { folderBridge, useFolderHost, useLocalFolder, useMcpHost, useProjectShares } from "../lib/folder.ts";
 import { useNarrow, useProjectPresence } from "../lib/hooks.ts";
 import { previewBridge } from "../lib/preview.ts";
 import { clearPref, PREF, readPref, writePref } from "../lib/prefs.ts";
@@ -36,7 +36,7 @@ import { PanelResizer, useLeftWidth, useRightWidth } from "./PanelResizer.tsx";
 import { clampPreviewWidth, PreviewPanel, PreviewResizer } from "./PreviewPanel.tsx";
 import { defaultModelFor } from "./Pickers.tsx";
 import { AddKeyDialog, SettingsDialog, type SettingsTab } from "./Settings.tsx";
-import { Button, Spinner } from "./kit.tsx";
+import { Button, Spinner, useToast } from "./kit.tsx";
 
 type InviteRequest = { kind: "project"; projectId: string } | { kind: "chat"; chatId: string };
 
@@ -157,7 +157,8 @@ export function Shell({ userId }: { userId: string }) {
 
   // The preview of a localhost page (desktop app only) shares the main panel with the chat. null: closed; url null: open, no address yet.
   const previewApi = useMemo(() => previewBridge(), []);
-  const [preview, setPreview] = useState<{ url: string | null; full: boolean } | null>(null);
+  // `runPath`: the preview is a shared HTML file running with its scripts ("Run page"), not an address the person typed.
+  const [preview, setPreview] = useState<{ url: string | null; full: boolean; runPath?: string } | null>(null);
   const previewOpen = !!preview;
   const [previewStored, setPreviewStored] = useState<number | null>(() => readPref<number | null>(PREF.previewWidth(userId), null));
   const [mainRoom, setMainRoom] = useState(0);
@@ -173,6 +174,33 @@ export function Shell({ userId }: { userId: string }) {
   useEffect(() => setFileReq(null), [projectId, settingsOpen]);
   const closeFile = useCallback(() => setFileReq(null), []);
   const hasShares = activeShares.length > 0;
+  // Run page (desktop app): an HTML file shared from this computer runs with its scripts in the preview beside the chat.
+  const local = useLocalFolder(projectId);
+  const runApi = folderBridge()?.runPage ? folderBridge() : null;
+  const toast = useToast();
+  const canRun = useCallback(
+    (path: string) => {
+      if (!runApi || !previewApi || !projectId || !/\.html?$/i.test(path)) return false;
+      const top = path.split("/")[0];
+      return !!local?.items.some((i) => i.status === "active" && i.name === top && (i.kind === "dir" ? path.includes("/") : path === i.name));
+    },
+    [runApi, previewApi, projectId, local],
+  );
+  const runPage = useCallback(
+    (path: string) => {
+      if (!runApi?.runPage || !projectId) return;
+      void runApi.runPage(projectId, path).then(
+        (r) => {
+          if (r.ok) {
+            setFileReq(null);
+            setPreview({ url: r.url, full: false, runPath: path });
+          } else if (r.code !== "cancelled") toast.push(r.error || "The page could not be run.", "error");
+        },
+        () => toast.push("The page could not be run.", "error"),
+      );
+    },
+    [runApi, projectId, toast],
+  );
   const filesCtx = useMemo(
     () => ({
       hasAny: hasShares,
@@ -183,8 +211,10 @@ export function Shell({ userId }: { userId: string }) {
         setFolderDrawer(false);
       },
       close: closeFile,
+      canRun,
+      run: runPage,
     }),
-    [hasShares, fileReq, closeFile],
+    [hasShares, fileReq, closeFile, canRun, runPage],
   );
   useEffect(() => {
     const el = mainRef.current;
@@ -201,7 +231,7 @@ export function Shell({ userId }: { userId: string }) {
       show: (url?: string) => {
         if (!previewApi) return;
         setFileReq(null);
-        setPreview((cur) => ({ url: url ?? cur?.url ?? null, full: cur?.full ?? false }));
+        setPreview((cur) => ({ url: url ?? (cur?.runPath ? null : cur?.url) ?? null, full: cur?.full ?? false }));
       },
       close: () => setPreview(null),
     }),
@@ -386,8 +416,11 @@ export function Shell({ userId }: { userId: string }) {
                 remembered={readPref<string | null>(PREF.previewUrl(userId, projectId), null)}
                 full={preview.full}
                 narrow={narrow}
+                {...(preview.runPath !== undefined ? { runPath: preview.runPath } : {})}
+                onShowFile={() => preview.runPath !== undefined && filesCtx.open(preview.runPath)}
                 onNavigate={(url) => {
-                  writePref(PREF.previewUrl(userId, projectId), url);
+                  // The address of a running file carries a one-time token: it is not an address to remember.
+                  if (preview.runPath === undefined) writePref(PREF.previewUrl(userId, projectId), url);
                   setPreview((cur) => (cur ? { ...cur, url } : cur));
                 }}
                 onFull={(full) => setPreview((cur) => (cur ? { ...cur, full } : cur))}

@@ -888,3 +888,4 @@ h1, h2, h3, p { margin: 0; }
 .file-link { display: inline; padding: 0; border: 0; background: none; font: inherit; color: var(--p-text); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .file-chip-name { max-width: 200px; }
 .folder-list button[aria-current="true"] { background: var(--t8); color: var(--p-text); }
+.preview-input.readonly { display: flex; align-items: center; background: var(--muted); color: var(--muted-fg); cursor: default; user-select: text; }

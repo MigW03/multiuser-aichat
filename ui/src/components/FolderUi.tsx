@@ -25,6 +25,8 @@ const sizeLabel = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Mat
 
 /** Hovering must rest this long before a tooltip shows, so one that is only passed over stays quiet. */
 const TIP_DELAY_MS = 600;
+/** The list of git changes under the Files card is switched off until its design is settled (the AI's git tools are unaffected). */
+const SHOW_GIT_PANEL = false;
 
 const REFUSED: Record<string, string> = {
   too_many: `A project can share up to ${FOLDER_LIMITS.items} folders and files in all. Remove one first.`,
@@ -397,7 +399,7 @@ function FolderBody({ project, rows, share }: { project: ProjectSummary; rows: S
       {/* Keyed by the items: adding or removing one starts browsing from the top again. */}
       <FolderBrowser key={listed.map((r) => r.id).join(",")} projectId={project.id} rows={listed} meId={me.id} canRemoveOthers={decides} onRemove={(row) => void remove(row)} />
       {listed.some((r) => r.status === "active") && <AiEditStatus projectId={project.id} onlineKey={listed.map((r) => `${r.id}:${r.online}`).join(",")} />}
-      {anyOnline && <GitChanges key={`git-${listed.map((r) => r.id).join(",")}`} projectId={project.id} />}
+      {SHOW_GIT_PANEL && anyOnline && <GitChanges key={`git-${listed.map((r) => r.id).join(",")}`} projectId={project.id} />}
       {(error || share.error) && <ErrorLine>{error ?? share.error}</ErrorLine>}
       {share.dialog}
     </div>

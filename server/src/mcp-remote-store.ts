@@ -17,6 +17,8 @@ export type RemoteRow = {
   oauth_state_expires: string | null;
   enabled: boolean;
   disabled_tools: string[];
+  /** Migration 0023. Absent on a database that does not have it yet, which reads as false. */
+  all_tools?: boolean;
   created_at: string;
 };
 
@@ -24,7 +26,7 @@ export type RemoteStore = {
   list: (userId: string) => Promise<RemoteRow[]>;
   get: (userId: string, id: string) => Promise<RemoteRow | null>;
   byState: (state: string) => Promise<RemoteRow | null>;
-  insert: (row: Omit<RemoteRow, "id" | "created_at" | "oauth_state" | "oauth_state_expires" | "oauth_enc" | "enabled" | "disabled_tools"> & { oauth_enc?: string | null }) => Promise<RemoteRow>;
+  insert: (row: Omit<RemoteRow, "id" | "created_at" | "oauth_state" | "oauth_state_expires" | "oauth_enc" | "enabled" | "disabled_tools" | "all_tools"> & { oauth_enc?: string | null }) => Promise<RemoteRow>;
   update: (userId: string, id: string, patch: Partial<Omit<RemoteRow, "id" | "user_id" | "created_at">>) => Promise<RemoteRow | null>;
   remove: (userId: string, id: string) => Promise<boolean>;
 };

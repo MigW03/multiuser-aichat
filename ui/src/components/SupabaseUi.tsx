@@ -326,7 +326,7 @@ function useSection<S extends SupabaseSection>(projectId: string, section: S, q:
   return { data, error, loading, reload: () => setAgain((n) => n + 1) };
 }
 
-function Accordion({ title, hint, open, onToggle, children }: { title: string; hint?: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function Accordion({ title, hint, open, onToggle, children }: { title: string; hint?: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <li className="supa-sec">
       <button type="button" className="supa-sec-head" aria-expanded={open} onClick={onToggle}>
@@ -340,7 +340,7 @@ function Accordion({ title, hint, open, onToggle, children }: { title: string; h
   );
 }
 
-const Note = ({ children }: { children: ReactNode }) => <p className="small muted supa-note">{children}</p>;
+export const Note = ({ children }: { children: ReactNode }) => <p className="small muted supa-note">{children}</p>;
 
 function SectionState({ s, empty }: { s: Loaded<SupabaseSection>; empty?: string }) {
   if (s.loading && !s.data) return <Spinner />;

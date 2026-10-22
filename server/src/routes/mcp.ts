@@ -1,4 +1,4 @@
-import type { McpRemoteList, McpRemoteServer } from "@mc/shared";
+import { mcpPresetFor, type McpRemoteList, type McpRemoteServer } from "@mc/shared";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
@@ -78,7 +78,7 @@ export function createMcpRoutes(deps: { store: RemoteStore; remoteMcp: RemoteMcp
     }
   });
 
-  const patchBody = z.object({ enabled: z.boolean().optional(), tool: z.object({ name: z.string().min(1).max(64), enabled: z.boolean() }).optional() });
+  const patchBody = z.object({ enabled: z.boolean().optional(), allTools: z.boolean().optional(), tool: z.object({ name: z.string().min(1).max(64), enabled: z.boolean() }).optional() });
 
   mcpServers.patch("/servers/:id", limit("mcp-edit", 60, 60_000), async (c) => {
     const parsed = patchBody.safeParse(await c.req.json().catch(() => null));
@@ -87,8 +87,10 @@ export function createMcpRoutes(deps: { store: RemoteStore; remoteMcp: RemoteMcp
     try {
       const row = await deps.store.get(userId, c.req.param("id"));
       if (!row) return c.json({ error: "Not found" }, 404);
+      if (parsed.data.allTools !== undefined && mcpPresetFor(row.url) === null) return c.json({ error: "Nido has no preset for this server." }, 400);
       const patch: Partial<RemoteRow> = {};
       if (parsed.data.enabled !== undefined) patch.enabled = parsed.data.enabled;
+      if (parsed.data.allTools !== undefined) patch.all_tools = parsed.data.allTools;
       if (parsed.data.tool) {
         const { name: tool, enabled } = parsed.data.tool;
         patch.disabled_tools = (enabled ? row.disabled_tools.filter((t) => t !== tool) : [...new Set([...row.disabled_tools, tool])]).slice(0, 500);

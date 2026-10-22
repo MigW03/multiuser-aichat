@@ -47,7 +47,7 @@ const TOOL_NAME = new RegExp(`^[A-Za-z0-9_.-]{1,${M.toolNameChars}}$`);
 /** A tool as reported to the person. `usable` is false when it can't be offered to the AI (odd name, huge schema). */
 export type ToolEntry = { name: string; description: string; inputSchema: Record<string, unknown>; usable: boolean; note?: string };
 
-const MAX_TOOLS_LISTED = 200;
+const MAX_TOOLS_LISTED = 400;
 const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
 const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}…` : s);
 

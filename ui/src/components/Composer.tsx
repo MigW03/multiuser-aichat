@@ -1,4 +1,4 @@
-import { IMAGE_LIMITS, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
+import { answerPreview, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
 import { ArrowUp, CornerUpLeft, Plus, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { findSecret, maskSecret } from "../lib/secrets.ts";
@@ -35,6 +35,8 @@ type Props = {
   focusKey: string;
   /** Small line on the left above the input, e.g. who is typing. */
   status?: ReactNode;
+  /** Text to put in the box, ready to send or change: a click in a generated answer. `key` changes for each new draft. */
+  draft?: { text: string; key: number } | null;
 };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -46,7 +48,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
     .map((p) => p.id);
 }
 
-export function Composer({ people, choice, onModel, projectId, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status }: Props) {
+export function Composer({ people, choice, onModel, projectId, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft }: Props) {
   const thinking = useModelReasoning(choice);
   const vision = useModelVision(choice);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -75,6 +77,13 @@ export function Composer({ people, choice, onModel, projectId, onReasoning, repl
   useEffect(() => {
     ref.current?.focus();
   }, [focusKey, replyTo]);
+
+  // A click in a generated answer drafts a reply: it replaces what was typed, and the caret goes to the end.
+  useEffect(() => {
+    if (!draft) return;
+    setText(draft.text);
+    pendingCaret.current = draft.text.length;
+  }, [draft?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Grow with the text, up to about eight lines.
   useLayoutEffect(() => {
@@ -243,7 +252,7 @@ export function Composer({ people, choice, onModel, projectId, onReasoning, repl
             <div className="reply-strip">
               <CornerUpLeft size={ICON_SM} strokeWidth={STROKE} aria-hidden />
               <span className="truncate">
-                Replying to <b>{replyTo.who}</b> · {replyTo.quote ? `“${replyTo.quote}”` : replyTo.message.content === IMAGE_ONLY_TEXT ? "a picture" : replyTo.message.content.replace(/\s+/g, " ").slice(0, 100)}
+                Replying to <b>{replyTo.who}</b> · {replyTo.quote ? `“${replyTo.quote}”` : replyTo.message.content === IMAGE_ONLY_TEXT ? "a picture" : answerPreview(replyTo.message.content).replace(/\s+/g, " ").slice(0, 100)}
               </span>
               <button type="button" className="icon-btn" aria-label="Cancel reply" onClick={onClearReply}>
                 <X size={ICON_SM} strokeWidth={STROKE} />

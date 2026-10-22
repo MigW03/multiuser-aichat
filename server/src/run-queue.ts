@@ -20,6 +20,7 @@ import {
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
 import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
 import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
@@ -269,7 +270,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         .in("status", ["done", "processing"])
         .order("seq", { ascending: false })
         .limit(HISTORY_LIMIT);
-      instructions = chatInstructions(asker, smart ? "" : modelId); // with Auto the model is not known yet
+      // Chat answers may add visuals the app draws (generated UI); summaries stay plain Markdown.
+      instructions = `${chatInstructions(asker, smart ? "" : modelId)}\n\n${genUiInstructions}`; // with Auto the model is not known yet
       const rows = ((history ?? []) as Row[]).reverse();
       // The AI gets the files of the newest pictures only; older ones are named as not shown.
       const pictures = await loadImages(chatId, newestPictureIds(withinBudget(rows)));

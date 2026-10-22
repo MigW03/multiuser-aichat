@@ -45,6 +45,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
   const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url }]);
   const [reply, setReply] = useState<ReplyTarget | null>(null);
+  const [draft, setDraft] = useState<{ text: string; key: number } | null>(null);
   const [dialog, setDialog] = useState<"rename" | "delete" | "summarize" | null>(null);
   const [extraNames, setExtraNames] = useState<Map<string, string>>(new Map());
   const [extraAvatars, setExtraAvatars] = useState<Map<string, string | null>>(new Map());
@@ -169,6 +170,12 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
   }
 
+  /** A click in an answer's generated UI: a reply to that answer, drafted in the composer for the person to send or change. */
+  function draftReply(m: ChatMessage, text: string) {
+    replyTo(m);
+    setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }));
+  }
+
   const pickModel = (c: Pick<ModelChoice, "provider" | "model">) => setChoice({ ...c, reasoning: choice?.reasoning ?? DEFAULT_REASONING });
   const pickReasoning = (r: Reasoning) => choice && setChoice({ ...choice, reasoning: r });
 
@@ -248,6 +255,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         {...(project ? { onSaveNote: (m: ChatMessage) => void saveNote(m) } : {})}
         onAddKey={openAddKey}
         onUpdateKey={() => openSettings("key")}
+        onDraft={draftReply}
         emptyState={room.loaded ? <EmptyChat shared={shared} hasKey={hasKey} onAddKey={openAddKey} /> : null}
       />
 
@@ -266,6 +274,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         placeholder={shared ? "Message the chat. Tag someone with @ to talk to them, not the AI." : choice ? `Message ${modelName(choice.model)}` : "Message the AI"}
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}
+        draft={draft}
       />
 
       {dialog === "rename" && (

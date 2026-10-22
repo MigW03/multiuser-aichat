@@ -1,6 +1,6 @@
-import { findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
+import { answerPreview, findPreviewUrls, hasGeneratedUi, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
 import { Copy, CornerUpLeft, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
-import { Fragment, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
@@ -11,6 +11,9 @@ import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
 import type { Proposal } from "./useChatRoom.ts";
 
 export const OPTIMISTIC_SEQ = Number.MAX_SAFE_INTEGER;
+
+/** The generated-UI renderer (OpenUI) loads only once an answer has a visual in it. */
+const GeneratedAnswer = lazy(() => import("../genui/GeneratedAnswer.tsx").then((m) => ({ default: m.GeneratedAnswer })));
 
 export type MessageListProps = {
   messages: ChatMessage[];
@@ -33,6 +36,8 @@ export type MessageListProps = {
   onSaveNote?: (m: ChatMessage) => void;
   onAddKey: () => void;
   onUpdateKey: () => void;
+  /** A click in an answer's generated UI drafts a reply to that answer. */
+  onDraft?: (m: ChatMessage, text: string) => void;
   emptyState: ReactNode;
 };
 
@@ -150,7 +155,7 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
     <div className="quoted">
       <CornerUpLeft size={12} strokeWidth={STROKE} aria-hidden />
       <span className="truncate">
-        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? (target.content === IMAGE_ONLY_TEXT && target.images.length ? "a picture" : target.content.replace(/\s+/g, " ").slice(0, 90)) : ""}
+        <b>{who}</b> {m.meta.quote ? `“${m.meta.quote}”` : target ? (target.content === IMAGE_ONLY_TEXT && target.images.length ? "a picture" : answerPreview(target.content).replace(/\s+/g, " ").slice(0, 90)) : ""}
       </span>
     </div>
   );
@@ -264,7 +269,7 @@ function AssistantMessage(props: RowProps) {
                 <span className="muted small">Answering {forMe ? "you" : (asker ?? "")}</span>
               </div>
             ) : (
-              <Markdown text={text} />
+              <AnswerBody text={text} streaming={streaming} {...(props.onDraft ? { onDraft: (draft: string) => props.onDraft?.(m, draft) } : {})} />
             )}
           </div>
         )}
@@ -292,6 +297,17 @@ function AssistantMessage(props: RowProps) {
         )}
       </div>
     </div>
+  );
+}
+
+/** An answer's text: Markdown, or Markdown with visuals when it has an openui-lang block. */
+function AnswerBody({ text, streaming, onDraft }: { text: string; streaming: boolean; onDraft?: (text: string) => void }) {
+  const visual = useMemo(() => hasGeneratedUi(text), [text]);
+  if (!visual) return <Markdown text={text} />;
+  return (
+    <Suspense fallback={<Markdown text={text} />}>
+      <GeneratedAnswer text={text} streaming={streaming} {...(onDraft ? { onDraft } : {})} />
+    </Suspense>
   );
 }
 

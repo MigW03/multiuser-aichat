@@ -70,6 +70,10 @@ plan = Checklist([Task("Ship beta", "Ana", true), Task("Write docs", "Ben")], "N
     `root = Stack([card, form])
 card = Card("Heads up", [Callout("warning", "Breaking change", "Run the **migration** first"), Buttons([Button("Show me how", @ToAssistant("How do I run the migration?"), "primary"), Button("Copy", @CopyText("npm run migrate"))])])
 form = Form("trip", [Input("destination", "Where to?"), Select("budget", "Budget", ["Low", "High"])], "Plan my trip")`,
+    `root = Stack([inputs, results])
+$c = 20
+inputs = Input("c", "Celsius", $c, "", "number")
+results = Stack([Stat("Fahrenheit", @Round($c * 9 / 5 + 32, 1)), Stat("Kelvin", @Round($c + 273.15, 2))], "row")`,
   ];
   for (const p of programs) {
     const result = parser.parse(p);

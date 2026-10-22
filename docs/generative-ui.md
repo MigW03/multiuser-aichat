@@ -32,13 +32,13 @@ An AI answer can now include small interfaces next to its Markdown: key numbers,
 8. **No live shared state (votes, tallies).** A "Choice" is answered by sending a message, so the chat itself is the record, and the AI can count replies later.
    Alternative: a real shared poll component with a DB table and realtime updates (bigger feature, needs a migration and design).
 
-9. **No data tools inside generated UI.** OpenUI's `Query()` / `Mutation()` / `$variables` are switched off: a visual can't fetch or change anything.
-   Alternatives: expose read-only tools (e.g. the project's notes, files list) so visuals can stay live; allow `$variables` for local filters and tabs (cheap, safe, adds prompt size).
+9. **No data tools inside generated UI.** OpenUI's `Query()` / `Mutation()` are switched off: a visual can't fetch or change anything. Local `$variables` are on (see #20).
+   Alternatives: expose read-only tools (e.g. the project's notes, files list) so visuals can stay live.
 
 10. **Actions offered: `@ToAssistant` (drafts a reply), `@OpenUrl` (http/https only; the desktop app opens https only), and our own `@CopyText`.** The copy toast shows what was copied; hovering a link button shows its address; `@ToAssistant` hidden context is shown in the draft as "Details: …".
     Alternatives: add `@SaveNote` (save to project Notes), `@OpenFile` (open a file from the shared folder), `@Mention` (tag a person).
 
-11. **Always on, for every model and every chat.** Costs about 2,000 extra prompt tokens per answer (cached by providers that cache system prompts).
+11. **Always on, for every model and every chat.** Costs about 3,200 extra prompt tokens per answer since #20 (was 2,000) (cached by providers that cache system prompts).
     Alternatives: a per-project switch in Project settings; a per-person switch in Settings; only for models known to follow it well.
 
 12. **No OpenUI Gateway or Autofix.** Bad blocks fall back to showing their code; nothing else changes.
@@ -65,6 +65,9 @@ An AI answer can now include small interfaces next to its Markdown: key numbers,
 
 19. **AI titles for notes saved from a message** (added 2026-10-22 at Miguel's request). The note is saved at once with a quick title (first words), then the AI titles it from the question that was asked and the saved answer (3 to 8 words, 60 characters at most). It uses the saver's own key and current model. The AI title replaces the quick one only if nobody edited the title meanwhile. With no key, with Auto, or when the AI fails, the quick title stays.
     Alternatives: wait for the AI title before saving (slower, up to 20 s); show the AI title in an editable field first; use a fixed cheap model instead of the saver's choice; title with Auto too (needs the Smart set in this call).
+
+20. **Calculators and converters compute inside the visual, with no message sent** (added 2026-10-22 after a temperature converter came back as an HTML page, then as a form that could only send a prompt). OpenUI's local state is on: `$variables`, arithmetic (`+ - * / %`), `@Round` and the other built-in functions, `@Set`/`@Reset`. Inputs and dropdowns can stand alone outside a form, bound to a `$variable`, and number fields store numbers; Text and Stat show results that update as the person types. The prompt now names calculators, converters and estimators as a reason for a visual, and says to write an HTML/JS page only when the person asks for code or a file. Everything runs in OpenUI's own evaluator: no JavaScript from the model ever runs.
+    Alternatives: run a model-written HTML/JS page in a sandboxed iframe (any tool is possible, but it runs code the AI wrote, needs a strict sandbox and CSP, and looks unlike the app); add fixed widgets (a Converter or Calculator component with set formulas: safest, but only what we build); keep calculation out and send a message each time (what happened before).
 
 ## How the pieces fit
 

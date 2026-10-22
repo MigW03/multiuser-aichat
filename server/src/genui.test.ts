@@ -14,4 +14,9 @@ describe("genUiInstructions", () => {
   it("offers no data tools to generated UI", () => {
     assert.doesNotMatch(genUiInstructions, /Query\(|Mutation\(|@Run/);
   });
+  it("lets blocks compute locally ($variables and built-in functions) for calculators", () => {
+    assert.match(genUiInstructions, /\$variable/);
+    assert.match(genUiInstructions, /@Round/);
+    assert.match(genUiInstructions, /calculator, converter or estimator/);
+  });
 });

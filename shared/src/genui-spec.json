@@ -2,11 +2,11 @@
   "root": "Stack",
   "components": {
     "Stack": {
-      "signature": "Stack(children: (Card | Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form)[], direction?: \"column\" | \"row\")",
+      "signature": "Stack(children: (Card | Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form | Input | Select)[], direction?: \"column\" | \"row\")",
       "description": "The top-level container. Blocks go one under the other, or side by side with direction \"row\" (they wrap on narrow screens)."
     },
     "Card": {
-      "signature": "Card(title: string, children: (Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form)[], subtitle?: string)",
+      "signature": "Card(title: string, children: (Text | Stat | Table | BarChart | Checklist | Callout | Choice | Buttons | Form | Input | Select)[], subtitle?: string)",
       "description": "A titled box that groups related blocks, such as one option of several or one person's part."
     },
     "Text": {
@@ -45,6 +45,14 @@
       "signature": "Form(name: string, fields: (Input | Select)[], submitLabel?: string)",
       "description": "Questions for the reader to fill in. The submit button drafts a reply with the answers."
     },
+    "Input": {
+      "signature": "Input(name: string, label: string, value?: $binding<string | number>, placeholder?: string, type?: \"text\" | \"number\", multiline?: boolean)",
+      "description": "A text or number field: in a Form (`name` is the field's key in the reply), or on its own bound to a $variable as `value` so other blocks can compute from it. A \"number\" field stores a number."
+    },
+    "Select": {
+      "signature": "Select(name: string, label: string, options: string[], value?: $binding<string>)",
+      "description": "A dropdown with the choices as plain text: in a Form, or on its own bound to a $variable as `value`."
+    },
     "Series": {
       "signature": "Series(name: string, values: number[])",
       "description": "One named set of numbers for a BarChart, one number per label."
@@ -60,14 +68,6 @@
     "Button": {
       "signature": "Button(label: string, action?: ActionExpression, variant?: \"primary\" | \"secondary\")",
       "description": "A button. Without an action, clicking drafts a reply with its label."
-    },
-    "Input": {
-      "signature": "Input(name: string, label: string, placeholder?: string, multiline?: boolean)",
-      "description": "A text field in a Form. `name` is the field's key in the reply."
-    },
-    "Select": {
-      "signature": "Select(name: string, label: string, options: string[])",
-      "description": "A dropdown in a Form, with the choices as plain text."
     }
   },
   "componentGroups": [
@@ -106,7 +106,8 @@
         "Select"
       ],
       "notes": [
-        "- A click only drafts a reply in the clicker's message box; they still send it. Write option labels and @ToAssistant messages as the reply the person would send, in their voice."
+        "- A click only drafts a reply in the clicker's message box; they still send it. Write option labels and @ToAssistant messages as the reply the person would send, in their voice.",
+        "- Calculators and converters work on their own, with no message sent: declare $variables, bind them to Input/Select as `value` (outside a Form), and show results with Text or Stat using arithmetic and @Round, e.g. $c = 20, Input(\"c\", \"Celsius\", $c, \"\", \"number\"), Stat(\"Fahrenheit\", @Round($c * 9 / 5 + 32, 1)). Results update as the person types."
       ]
     }
   ],
@@ -153,6 +154,12 @@
       "Form": {
         "$ref": "#/$defs/Form"
       },
+      "Input": {
+        "$ref": "#/$defs/Input"
+      },
+      "Select": {
+        "$ref": "#/$defs/Select"
+      },
       "Series": {
         "$ref": "#/$defs/Series"
       },
@@ -164,12 +171,6 @@
       },
       "Button": {
         "$ref": "#/$defs/Button"
-      },
-      "Input": {
-        "$ref": "#/$defs/Input"
-      },
-      "Select": {
-        "$ref": "#/$defs/Select"
       }
     },
     "required": [
@@ -184,12 +185,12 @@
       "Choice",
       "Buttons",
       "Form",
+      "Input",
+      "Select",
       "Series",
       "Task",
       "Option",
-      "Button",
-      "Input",
-      "Select"
+      "Button"
     ],
     "additionalProperties": false,
     "$defs": {
@@ -231,6 +232,12 @@
                     },
                     {
                       "$ref": "#/$defs/Form"
+                    },
+                    {
+                      "$ref": "#/$defs/Input"
+                    },
+                    {
+                      "$ref": "#/$defs/Select"
                     }
                   ]
                 }
@@ -287,6 +294,12 @@
                 },
                 {
                   "$ref": "#/$defs/Form"
+                },
+                {
+                  "$ref": "#/$defs/Input"
+                },
+                {
+                  "$ref": "#/$defs/Select"
                 }
               ]
             }
@@ -657,8 +670,21 @@
           "label": {
             "type": "string"
           },
+          "value": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
           "placeholder": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number"
+            ]
           },
           "multiline": {
             "type": "boolean"
@@ -669,7 +695,7 @@
           "label"
         ],
         "additionalProperties": false,
-        "description": "A text field in a Form. `name` is the field's key in the reply."
+        "description": "A text or number field: in a Form (`name` is the field's key in the reply), or on its own bound to a $variable as `value` so other blocks can compute from it. A \"number\" field stores a number."
       },
       "Select": {
         "type": "object",
@@ -685,6 +711,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "value": {
+            "type": "string"
           }
         },
         "required": [
@@ -693,7 +722,7 @@
           "options"
         ],
         "additionalProperties": false,
-        "description": "A dropdown in a Form, with the choices as plain text."
+        "description": "A dropdown with the choices as plain text: in a Form, or on its own bound to a $variable as `value`."
       }
     },
     "actions": {

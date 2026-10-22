@@ -1,5 +1,5 @@
 import "./no-devtools.ts";
-import { action, createLibrary, defineAction, defineComponent, FormNameContext, useFormName, useStateField, useTriggerAction } from "@openuidev/react-lang";
+import { action, createLibrary, defineAction, defineComponent, FormNameContext, reactive, useFormName, useStateField, useTriggerAction } from "@openuidev/react-lang";
 import { Check, Circle } from "lucide-react";
 import { createContext, useContext, type ReactNode } from "react";
 import { z } from "zod/v4";
@@ -220,14 +220,42 @@ const Buttons = defineComponent({
   component: ({ props, renderNode }) => <div className="gen-buttons">{renderNode((props.buttons ?? []).slice(0, 8))}</div>,
 });
 
+/** What a field shows: text as typed, a number as a number, nothing for anything else. */
+const shown = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
+
 const Input = defineComponent({
   name: "Input",
-  description: "A text field in a Form. `name` is the field's key in the reply.",
-  props: z.object({ name: z.string(), label: z.string(), placeholder: z.string().optional(), multiline: z.boolean().optional() }),
+  description:
+    "A text or number field: in a Form (`name` is the field's key in the reply), or on its own bound to a $variable as `value` so other blocks can compute from it. A \"number\" field stores a number.",
+  props: z.object({
+    name: z.string(),
+    label: z.string(),
+    value: reactive(z.union([z.string(), z.number()]).optional()),
+    placeholder: z.string().optional(),
+    type: z.enum(["text", "number"]).optional(),
+    multiline: z.boolean().optional(),
+  }),
   component: ({ props }) => {
-    const field = useStateField(props.name);
-    const value = typeof field.value === "string" ? field.value : "";
+    const field = useStateField(props.name, props.value);
+    const value = shown(field.value);
     const id = `gen-${useFormName() ?? "form"}-${props.name}`;
+    if (props.type === "number") {
+      return (
+        <label className="gen-field" htmlFor={id}>
+          <span>{props.label}</span>
+          <input
+            id={id}
+            className="input"
+            type="number"
+            step="any"
+            inputMode="decimal"
+            value={value}
+            placeholder={props.placeholder}
+            onChange={(e) => field.setValue(e.target.value === "" || !Number.isFinite(e.target.valueAsNumber) ? "" : e.target.valueAsNumber)}
+          />
+        </label>
+      );
+    }
     return (
       <label className="gen-field" htmlFor={id}>
         <span>{props.label}</span>
@@ -243,11 +271,11 @@ const Input = defineComponent({
 
 const Select = defineComponent({
   name: "Select",
-  description: "A dropdown in a Form, with the choices as plain text.",
-  props: z.object({ name: z.string(), label: z.string(), options: z.array(z.string()) }),
+  description: "A dropdown with the choices as plain text: in a Form, or on its own bound to a $variable as `value`.",
+  props: z.object({ name: z.string(), label: z.string(), options: z.array(z.string()), value: reactive(z.string().optional()) }),
   component: ({ props }) => {
-    const field = useStateField(props.name);
-    const value = typeof field.value === "string" ? field.value : "";
+    const field = useStateField(props.name, props.value);
+    const value = shown(field.value);
     const id = `gen-${useFormName() ?? "form"}-${props.name}`;
     return (
       <label className="gen-field" htmlFor={id}>
@@ -292,7 +320,7 @@ const Form = defineComponent({
   },
 });
 
-const contentBlocks = [Text, Stat, Table, BarChart, Checklist, Callout, Choice, Buttons, Form] as const;
+const contentBlocks = [Text, Stat, Table, BarChart, Checklist, Callout, Choice, Buttons, Form, Input, Select] as const;
 const Content = z.union(contentBlocks.map((c) => c.ref) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]);
 
 const Card = defineComponent({
@@ -326,7 +354,7 @@ export const CopyText = defineAction({
 
 export const genLibrary = createLibrary({
   root: "Stack",
-  components: [Stack, Card, ...contentBlocks, Series, Task, Option, Button, Input, Select],
+  components: [Stack, Card, ...contentBlocks, Series, Task, Option, Button],
   actions: [CopyText],
   componentGroups: [
     { name: "Layout", components: ["Stack", "Card"] },
@@ -334,7 +362,10 @@ export const genLibrary = createLibrary({
     {
       name: "Asking the people in the chat",
       components: ["Choice", "Option", "Buttons", "Button", "Form", "Input", "Select"],
-      notes: ["- A click only drafts a reply in the clicker's message box; they still send it. Write option labels and @ToAssistant messages as the reply the person would send, in their voice."],
+      notes: [
+        "- A click only drafts a reply in the clicker's message box; they still send it. Write option labels and @ToAssistant messages as the reply the person would send, in their voice.",
+        '- Calculators and converters work on their own, with no message sent: declare $variables, bind them to Input/Select as `value` (outside a Form), and show results with Text or Stat using arithmetic and @Round, e.g. $c = 20, Input("c", "Celsius", $c, "", "number"), Stat("Fahrenheit", @Round($c * 9 / 5 + 32, 1)). Results update as the person types.',
+      ],
     },
   ],
 });

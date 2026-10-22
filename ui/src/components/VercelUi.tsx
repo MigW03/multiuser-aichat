@@ -639,8 +639,14 @@ function ReadyBody({ project, link, overview, onRefresh }: { project: ProjectSum
         <>
           <p className="small muted supa-summary">
             {prod ? `Production · ${prod.state.toLowerCase()}${prod.sha ? ` · ${prod.sha}` : ""}${prod.createdAt ? ` · ${ago(prod.createdAt)}` : ""}` : "No production deployment yet"}
-            {o.domain ? ` · ${o.domain}` : ""}
           </p>
+          {o.domain && (
+            <p className="small supa-summary vcl-url">
+              <a href={`https://${o.domain}`} target="_blank" rel="noopener noreferrer" title={`Open https://${o.domain}`} onClick={(e) => { e.preventDefault(); openExternal(`https://${o.domain}`); }}>
+                {o.domain}
+              </a>
+            </p>
+          )}
           {facts && <p className="small muted supa-summary">{facts}</p>}
         </>
       ) : overview.loading ? (

@@ -1,9 +1,13 @@
 import type { AllowedCommand, ProjectSummary } from "@mc/shared";
 import { ArrowLeft, PanelLeftOpen } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { api } from "../api.ts";
 import { folderBridge, useAllowedCommands, useLocalFolder } from "../lib/folder.ts";
 import { closeProjectSettings } from "../lib/router.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
+import { notifySupabaseChanged, useSupabaseState } from "../lib/supabaseState.ts";
+import { ConfirmDialog } from "./Dialogs.tsx";
+import { LinkSupabaseDialog, linkText, supabaseDashboardUrl } from "./SupabaseUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import { RightPanelToggle } from "./FolderUi.tsx";
 
@@ -177,6 +181,93 @@ function AlwaysAllowed({ project }: { project: ProjectSummary }) {
   );
 }
 
+/** The Supabase project linked to this one. Linking adds the Supabase tab to the Files card for everyone in the project; what each person sees inside comes from their own Supabase account. */
+function SupabaseSetting({ project }: { project: ProjectSummary }) {
+  const sup = useSupabaseState(project.id);
+  const [dialog, setDialog] = useState<"link" | "change" | "setup" | null>(null);
+  const [unlink, setUnlink] = useState(false);
+  const state = sup.state;
+  const title = "Supabase";
+
+  if (!state) {
+    return <SettingRow title={title} text={sup.failed ? "Could not load this. Reload the page to try again." : "Loading…"} control={null} />;
+  }
+  const close = () => setDialog(null);
+  const dialogs = (
+    <>
+      {dialog && <LinkSupabaseDialog project={project} sup={sup} mode={dialog} onClose={close} />}
+      {unlink && (
+        <ConfirmDialog
+          title="Unlink Supabase?"
+          confirmLabel="Unlink"
+          danger
+          onClose={() => setUnlink(false)}
+          onConfirm={async () => {
+            await api.supabaseUnlink(project.id);
+            notifySupabaseChanged();
+          }}
+        >
+          <p>The Supabase tab goes away for everyone in {project.name}. Nothing in Supabase changes.</p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
+
+  if (!state.link) {
+    return (
+      <>
+        <SettingRow
+          title={title}
+          text="Not linked. Link a Supabase project to see its tables, checks and logs in the Files card. Read-only."
+          note={state.canLink ? null : "The host or an admin links it."}
+          control={
+            state.canLink ? (
+              <Button size="sm" variant="primary" onClick={() => setDialog("link")}>
+                Link project…
+              </Button>
+            ) : null
+          }
+        />
+        {dialogs}
+      </>
+    );
+  }
+
+  const none = state.mine.state === "none";
+  return (
+    <>
+      <SettingRow
+        title={title}
+        text={`Linked to ${linkText(state.link)}. Everyone in ${project.name} sees the Supabase tab once they have Supabase set up. What they see inside comes from their own Supabase account.`}
+        note={none ? "You have not set up Supabase yet, so you don't see the tab." : null}
+        control={
+          <span className="setting-actions">
+            {none && (
+              <Button size="sm" variant="primary" onClick={() => setDialog("setup")}>
+                Set up Supabase
+              </Button>
+            )}
+            {state.canLink && (
+              <>
+                <Button size="sm" onClick={() => setDialog("change")}>
+                  Change…
+                </Button>
+                <Button size="sm" onClick={() => setUnlink(true)}>
+                  Unlink…
+                </Button>
+              </>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => window.open(supabaseDashboardUrl(state.link!.ref), "_blank", "noopener,noreferrer")}>
+              Open in Supabase ↗
+            </Button>
+          </span>
+        }
+      />
+      {dialogs}
+    </>
+  );
+}
+
 export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { project: ProjectSummary; leftCollapsed: boolean; onShowLeft: () => void }) {
   return (
     <section className="chat-card project-settings" aria-label="Project settings">
@@ -203,6 +294,9 @@ export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { projec
             <CapSetting project={project} which={SWITCHES.git} />
             <CapSetting project={project} which={SWITCHES.exec} />
             <AlwaysAllowed project={project} />
+          </SettingsSection>
+          <SettingsSection title="Connected services">
+            <SupabaseSetting project={project} />
           </SettingsSection>
         </div>
       </div>

@@ -18,6 +18,7 @@ import { notes } from "./routes/notes.ts";
 import { mcpOauthPublic, mcpServers } from "./routes/mcp.ts";
 import { projects } from "./routes/projects.ts";
 import { smart } from "./routes/smart.ts";
+import { supabase } from "./routes/supabase.ts";
 import { recoverRuns } from "./run-queue.ts";
 
 const app = new Hono<AuthVars>();
@@ -44,6 +45,7 @@ app.route("/api", smart);
 app.route("/api/projects", projects);
 app.route("/api/projects", folder);
 app.route("/api/projects", notes);
+app.route("/api/projects", supabase);
 app.route("/api/mcp", mcpServers);
 app.route("/api/chats", chats);
 app.route("/api/messages", messages);

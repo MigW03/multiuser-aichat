@@ -889,3 +889,48 @@ h1, h2, h3, p { margin: 0; }
 .file-chip-name { max-width: 200px; }
 .folder-list button[aria-current="true"] { background: var(--t8); color: var(--p-text); }
 .preview-input.readonly { display: flex; align-items: center; background: var(--muted); color: var(--muted-fg); cursor: default; user-select: text; }
+
+/* Supabase tab of the Files card, and the "Connected services" row */
+.setting-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.supa-body { gap: 8px; }
+.supa-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.supa-pill { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; font: var(--text-small); color: var(--muted-fg); white-space: nowrap; }
+.supa-summary { margin: 0; }
+.supa-paused { margin: 0; padding: 6px 8px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-tint); }
+.supa-secs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; }
+.supa-sec + .supa-sec { border-top: 1px solid var(--border); }
+.supa-sec-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 10px; border: 0; background: none; color: inherit; font: var(--text-row); text-align: left; cursor: pointer; border-radius: 10px; }
+.supa-sec-head:hover { background: var(--hover-row); }
+.supa-sec-body { display: flex; flex-direction: column; gap: 8px; padding: 2px 10px 10px; }
+.supa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.supa-list > li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.supa-list.compact { gap: 4px; }
+.supa-list.compact > li { align-items: center; }
+.supa-level { flex: none; padding: 0 6px; border-radius: 4px; font: var(--text-small); font-weight: 600; background: var(--muted); color: var(--muted-fg); }
+.supa-level.warn { background: var(--warning-tint); color: var(--warning); }
+.supa-level.bad { background: var(--danger-tint); color: var(--danger); }
+.supa-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.supa-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.supa-note { margin: 0; }
+.supa-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.supa-controls .input { width: auto; max-width: 100%; }
+.supa-check { display: inline-flex; align-items: center; gap: 4px; }
+.supa-logs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.supa-log { display: flex; gap: 8px; width: 100%; padding: 3px 4px; border: 0; border-radius: 6px; background: none; color: inherit; text-align: left; cursor: pointer; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.supa-log:hover { background: var(--hover-row); }
+.supa-log-time { flex: none; color: var(--muted-fg); }
+.supa-log-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supa-log.wide .supa-log-text { white-space: pre-wrap; word-break: break-word; }
+.supa-copy { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.supa-copy code { flex: 1; min-width: 0; font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.supa-on { color: var(--online); }
+.supa-off { color: var(--danger); }
+.supa-date { flex: none; font-variant-numeric: tabular-nums; }
+.supa-open { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; }
+.supa-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.supa-wait { display: flex; align-items: center; gap: 8px; }
+.supa-steps { margin: 0 0 8px; }
+.supa-pick { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.supa-pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.supa-pick-row.on { border-color: var(--p); background: var(--t12); }
+.supa-pick-text { display: flex; flex-direction: column; min-width: 0; }

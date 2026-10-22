@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { FOLDER_LIMITS, showSupabaseTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
 import { Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
@@ -6,11 +6,13 @@ import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectShares, useScripts, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
 import { showScriptsTab } from "../lib/scriptsTab.ts";
+import { useSupabaseState } from "../lib/supabaseState.ts";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
 import { SplitResizer, useSplit } from "./PanelResizer.tsx";
 import { ScriptsBody, scriptsDot } from "./ScriptsUi.tsx";
+import { SupabaseBody } from "./SupabaseUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared files live in the right column of a project's chats, as the approved hi-fi boards draw it
@@ -84,9 +86,16 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const canScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
   const scripts = useScripts(project.id, canScripts);
   const hasScripts = canScripts && showScriptsTab(scripts.info);
-  const [tabPref, setTabPref] = useState<"files" | "scripts">(() => (readPref<string>(PREF.filesTab(me.id), "files") === "scripts" ? "scripts" : "files"));
-  const tab = hasScripts && tabPref === "scripts" ? "scripts" : "files";
-  const pickTab = (next: "files" | "scripts") => {
+  // The Supabase tab: for everyone in a project linked to a Supabase project, once they have Supabase set up themselves.
+  const sup = useSupabaseState(project.id);
+  const hasSupabase = !!sup.state && showSupabaseTab(sup.state);
+  type Tab = "files" | "scripts" | "supabase";
+  const [tabPref, setTabPref] = useState<Tab>(() => {
+    const saved = readPref<string>(PREF.filesTab(me.id), "files");
+    return saved === "scripts" || saved === "supabase" ? saved : "files";
+  });
+  const tab: Tab = tabPref === "scripts" && hasScripts ? "scripts" : tabPref === "supabase" && hasSupabase ? "supabase" : "files";
+  const pickTab = (next: Tab) => {
     setTabPref(next);
     writePref(PREF.filesTab(me.id), next);
   };
@@ -131,7 +140,7 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const empty = shares.data.length === 0;
   const overlay = over && <DropOverlay />;
 
-  if (empty) {
+  if (empty && !hasSupabase) {
     return (
       <section className="side-card folder-card empty" aria-label="Files" {...dragProps}>
         <span className="folder-empty-close">
@@ -161,16 +170,23 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   return (
     <section className="side-card folder-card" aria-label="Files" {...dragProps}>
       <header className="side-card-head">
-        {hasScripts ? (
+        {hasScripts || hasSupabase ? (
           <span className="side-card-title grow">
-            <span className="notes-filter files-tabs" role="tablist" aria-label="Files and scripts">
+            <span className="notes-filter files-tabs" role="tablist" aria-label="Files, scripts and Supabase">
               <button type="button" role="tab" aria-selected={tab === "files"} className={`notes-tab ${tab === "files" ? "on" : ""}`} onClick={() => pickTab("files")}>
                 Files
               </button>
-              <button type="button" role="tab" aria-selected={tab === "scripts"} className={`notes-tab ${tab === "scripts" ? "on" : ""}`} onClick={() => pickTab("scripts")}>
-                Scripts
-                <ScriptsDot info={scripts.info} />
-              </button>
+              {hasScripts && (
+                <button type="button" role="tab" aria-selected={tab === "scripts"} className={`notes-tab ${tab === "scripts" ? "on" : ""}`} onClick={() => pickTab("scripts")}>
+                  Scripts
+                  <ScriptsDot info={scripts.info} />
+                </button>
+              )}
+              {hasSupabase && (
+                <button type="button" role="tab" aria-selected={tab === "supabase"} className={`notes-tab ${tab === "supabase" ? "on" : ""}`} onClick={() => pickTab("supabase")}>
+                  Supabase
+                </button>
+              )}
             </span>
             {tab === "files" && <FolderInfo />}
           </span>
@@ -188,7 +204,17 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
           <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>
       </header>
-      {tab === "scripts" && scriptsApi ? <ScriptsBody project={project} info={scripts.info} version={scripts.version} execOn={local?.caps?.exec === true} bridge={scriptsApi} /> : <FolderBody project={project} rows={shares.data} share={share} />}
+      {tab === "scripts" && scriptsApi ? (
+        <ScriptsBody project={project} info={scripts.info} version={scripts.version} execOn={local?.caps?.exec === true} bridge={scriptsApi} />
+      ) : tab === "supabase" ? (
+        <SupabaseBody project={project} sup={sup} />
+      ) : empty ? (
+        <div className="side-card-body">
+          <p className="small muted">Nothing is shared in {project.name} yet. Folders and files are shared from your computer, in the desktop app.</p>
+        </div>
+      ) : (
+        <FolderBody project={project} rows={shares.data} share={share} />
+      )}
       {overlay}
     </section>
   );

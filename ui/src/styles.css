@@ -934,3 +934,11 @@ h1, h2, h3, p { margin: 0; }
 .supa-pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .supa-pick-row.on { border-color: var(--p); background: var(--t12); }
 .supa-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.supa-table-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 4px; border: 0; border-radius: 6px; background: none; color: inherit; font: var(--text-row); text-align: left; cursor: pointer; min-width: 0; }
+.supa-table-row:hover { background: var(--hover-row); }
+.supa-list.compact > li:has(.supa-table-row) { display: block; }
+.supa-counts > li { padding: 0 4px; }
+.supa-fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.supa-fields > li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--border); }
+.supa-tags { display: inline-flex; gap: 4px; justify-content: flex-end; }
+.supa-tag { padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--muted); font: 10px/16px var(--font, inherit); font-weight: 600; }

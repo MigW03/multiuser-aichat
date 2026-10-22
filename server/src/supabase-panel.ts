@@ -16,7 +16,9 @@ import {
   type SupabaseProjectOption,
   type SupabaseSection,
   type SupabaseSectionData,
+  type SupabaseColumn,
   type SupabaseTable,
+  type SupabaseUsers,
 } from "@mc/shared";
 import { RelayError } from "./folder-relay.ts";
 import type { McpRequest } from "./mcp-relay.ts";
@@ -164,13 +166,75 @@ export function parseChecks(data: unknown, kind: SupabaseCheck["kind"]): Supabas
 
 export const byLevel = (a: SupabaseCheck, b: SupabaseCheck) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level);
 
+const tableName = (v: unknown) => str(v, 120).replace(/^public\./, "");
+
+/** "_uuid" is how Postgres names an array of uuid. */
+const typeName = (c: Record<string, unknown>) => {
+  const f = str(c.format, 60) || str(c.data_type, 60);
+  return f.startsWith("_") ? `${f.slice(1)}[]` : f;
+};
+
+/** Tables with their fields, from list_tables. Only structure is read: names, types, keys. Defaults and check rules are left out. */
 export function parseTables(data: unknown): SupabaseTable[] {
   const list = isObj(data) ? arr(data.tables) : arr(data);
   return list
     .filter(isObj)
-    .map((t) => ({ name: str(t.name, 120).replace(/^public\./, ""), rls: t.rls_enabled === true, rows: num(t.rows) }))
+    .map((t) => {
+      const name = tableName(t.name);
+      const pks = new Set(arr(t.primary_keys).map((k) => str(k, 120)));
+      const fks = new Map<string, string>();
+      for (const f of arr(t.foreign_key_constraints)) {
+        if (!isObj(f) || tableName(f.source_table) !== name) continue;
+        const target = tableName(f.target_table);
+        for (const col of arr(f.source_columns)) fks.set(str(col, 120), target);
+      }
+      const columns: SupabaseColumn[] = arr(t.columns)
+        .filter(isObj)
+        .map((c) => {
+          const options = arr(c.options).map((o) => str(o, 30));
+          const cname = str(c.name, 120);
+          return { name: cname, type: typeName(c), pk: pks.has(cname), unique: options.includes("unique"), nullable: options.includes("nullable"), fk: fks.get(cname) ?? null };
+        })
+        .filter((c) => c.name)
+        .slice(0, 200);
+      return { name, rls: t.rls_enabled === true, rows: num(t.rows), columns };
+    })
     .filter((t) => t.name)
     .slice(0, 200);
+}
+
+/** Counts of the people who sign in, one fixed read-only query. Nothing in it comes from a person. */
+export const USERS_SQL =
+  "select count(*)::int as total, count(confirmed_at)::int as confirmed, " +
+  "(count(*) filter (where confirmed_at is null))::int as unconfirmed, " +
+  "(count(*) filter (where created_at > now() - interval '7 days'))::int as new_7d, " +
+  "(count(*) filter (where last_sign_in_at > now() - interval '7 days'))::int as active_7d, " +
+  "(select coalesce(json_agg(json_build_object('provider', provider, 'count', n)), '[]'::json) from " +
+  "(select provider, count(*)::int as n from auth.identities group by provider order by n desc limit 10) m) as methods " +
+  "from auth.users";
+
+export function parseUsers(data: unknown): SupabaseUsers {
+  const row = isObj(arr(data)[0]) ? (arr(data)[0] as Record<string, unknown>) : {};
+  let methods = row.methods;
+  if (typeof methods === "string") {
+    try {
+      methods = JSON.parse(methods);
+    } catch {
+      methods = [];
+    }
+  }
+  return {
+    total: num(row.total),
+    confirmed: num(row.confirmed),
+    unconfirmed: num(row.unconfirmed),
+    new7d: num(row.new_7d),
+    active7d: num(row.active_7d),
+    methods: arr(methods)
+      .filter(isObj)
+      .map((m) => ({ provider: str(m.provider, 30).toLowerCase(), count: num(m.count) ?? 0 }))
+      .filter((m) => /^[a-z0-9_.-]{1,30}$/.test(m.provider))
+      .slice(0, 10),
+  };
 }
 
 export function parseMigrations(data: unknown): SupabaseMigration[] {
@@ -302,7 +366,10 @@ export class SupabasePanel {
         break;
       }
       case "tables":
-        out = { tables: parseTables(await go("list_tables", { schemas: ["public"], verbose: false })) };
+        out = { tables: parseTables(await go("list_tables", { schemas: ["public"], verbose: true })) };
+        break;
+      case "users":
+        out = parseUsers(await go("execute_sql", { query: USERS_SQL }));
         break;
       case "migrations":
         out = { migrations: parseMigrations(await go("list_migrations", {})) };

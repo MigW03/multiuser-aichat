@@ -171,7 +171,7 @@ describe("reading a linked project", () => {
     answers = { list_tables: ok({ tables: [{ name: "public.chats", rls_enabled: true, rows: 13 }] }) };
     const r = await call(MEMBER, "GET", "/data/tables");
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json.data.tables, [{ name: "chats", rls: true, rows: 13 }]);
+    assert.deepEqual(r.json.data.tables, [{ name: "chats", rls: true, rows: 13, columns: [] }]);
     assert.deepEqual(tools.map((t) => [t.user, t.tool, t.args.project_id]), [[MEMBER, "list_tables", REF]]);
   });
   test("someone without a Supabase entry gets a clear answer and nothing is read", async () => {

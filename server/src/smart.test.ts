@@ -128,14 +128,6 @@ describe("pickSmartModel", () => {
     assert.equal(seen!.auth, "Bearer sk-test");
     assert.ok(!seen!.body.includes("sk-test"));
   });
-  it("skips the classifier for a very short message", async () => {
-    const fetchImpl = (async () => {
-      throw new Error("must not be called");
-    }) as unknown as typeof fetch;
-    assert.deepEqual(await pick({ ...args, latest: "hi", fetchImpl }), { model: "openai/gpt-oss-20b", fallback: false });
-    // a picture always gets the classifier, even with a short caption
-    assert.equal((await pick({ ...args, models: ["google/gemini-2.5-flash-lite", "anthropic/claude-opus-4.1"], latest: "hi", pictures: true, fetchImpl })).fallback, true);
-  });
   it("falls back to the cheapest model of the set when OpenRouter refuses", async () => {
     for (const status of [400, 401, 402, 429, 500]) assert.deepEqual(await pick({ ...args, fetchImpl: reply(status, {}) }), { model: "openai/gpt-oss-20b", fallback: true, why: `HTTP ${status}` });
   });

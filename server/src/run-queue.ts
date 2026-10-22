@@ -248,9 +248,13 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       runModel = picked.model;
       auto.chosen = true;
       auto.fallback = picked.fallback ? (picked.why ?? "unknown") : null;
-      const saved = Date.now();
-      await db.from("messages").update({ model: runModel }).eq("id", assistant.id);
-      console.log(`[smart] chat ${chatId}: model list ${infoMs}ms${info.length ? "" : " (not ready)"}, choice ${picked.ms ?? 0}ms${picked.fallback ? ` (fallback: ${picked.why})` : ""}, saved ${Date.now() - saved}ms`);
+      console.log(`[smart] chat ${chatId}: model list ${infoMs}ms${info.length ? "" : " (not ready)"}, choice ${picked.ms ?? 0}ms${picked.fallback ? ` (fallback: ${picked.why})` : ""}`);
+      // Saved beside the stream, not before it: the answer starts without waiting for the database.
+      void db
+        .from("messages")
+        .update({ model: runModel })
+        .eq("id", assistant.id)
+        .then(({ error }) => error && console.error("[smart] could not save the chosen model:", error.message));
     };
     let picking: Promise<void> = Promise.resolve();
 

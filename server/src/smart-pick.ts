@@ -6,8 +6,6 @@ import type { ModelInfo } from "@mc/shared";
 
 // The reply waits for this choice, so it must be quick: a slow classifier costs more than a cheaper model's worse answer.
 const TIMEOUT_MS = 3_000;
-/** A message this short ("hi", "thanks", "ok?") needs no classifier: the cheapest model of the set answers it. */
-const TRIVIAL_CHARS = 24;
 
 /** `why` is a short reason when the choice could not be made, shown under the answer to help find the cause. `ms` is how long the choice took. */
 export type Pick = { model: string; fallback: boolean; why?: string; ms?: number };
@@ -21,7 +19,6 @@ export async function pickSmartModel(args: { apiKey: string; models: string[]; i
     return { model: cheapest(options).id, fallback: true, why, ms: Date.now() - started };
   };
   if (options.length === 1) return { model: options[0]!.id, fallback: false, ms: 0 };
-  if (!args.pictures && args.latest.trim().length <= TRIVIAL_CHARS) return { model: cheapest(options).id, fallback: false, ms: 0 };
   try {
     const res = await (args.fetchImpl ?? fetch)(DECISIONS_URL, {
       method: "POST",

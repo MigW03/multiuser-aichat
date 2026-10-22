@@ -15,7 +15,7 @@ const info: ModelInfo[] = [
   { id: "anthropic/claude-opus-4.1", name: "Anthropic: Claude Opus 4.1", pricing: { input: 15, output: 75 }, vision: true },
 ];
 const SET = ["google/gemini-2.5-flash-lite", "openai/gpt-oss-20b"];
-const input = { latest: "hi", context: [], pictures: false };
+const input = { latest: "Explain how a B-tree index speeds up lookups.", context: [], pictures: false };
 
 describe("cleanSmartSet", () => {
   it("keeps valid ids once each, in order", () => {
@@ -107,6 +107,13 @@ describe("extractChoice", () => {
 
 const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 
+/** The choice without its timing. */
+const pick = async (a: Parameters<typeof pickSmartModel>[0]) => {
+  const { ms, ...rest } = await pickSmartModel(a);
+  assert.equal(typeof ms, "number");
+  return rest;
+};
+
 describe("pickSmartModel", () => {
   const args = { apiKey: "sk-test", models: SET, info, ...input };
   it("returns the model Jev chose, and sends the key only to the decisions endpoint", async () => {
@@ -115,28 +122,36 @@ describe("pickSmartModel", () => {
       seen = { url, auth: new Headers(init.headers).get("authorization"), body: String(init.body) };
       return new Response(JSON.stringify({ pick: { choice: "m1" } }));
     }) as unknown as typeof fetch;
-    const r = await pickSmartModel({ ...args, fetchImpl });
+    const r = await pick({ ...args, fetchImpl });
     assert.deepEqual(r, { model: "google/gemini-2.5-flash-lite", fallback: false });
     assert.equal(seen!.url, "https://openrouter.ai/api/alpha/decisions");
     assert.equal(seen!.auth, "Bearer sk-test");
     assert.ok(!seen!.body.includes("sk-test"));
   });
+  it("skips the classifier for a very short message", async () => {
+    const fetchImpl = (async () => {
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    assert.deepEqual(await pick({ ...args, latest: "hi", fetchImpl }), { model: "openai/gpt-oss-20b", fallback: false });
+    // a picture always gets the classifier, even with a short caption
+    assert.equal((await pick({ ...args, models: ["google/gemini-2.5-flash-lite", "anthropic/claude-opus-4.1"], latest: "hi", pictures: true, fetchImpl })).fallback, true);
+  });
   it("falls back to the cheapest model of the set when OpenRouter refuses", async () => {
-    for (const status of [400, 401, 402, 429, 500]) assert.deepEqual(await pickSmartModel({ ...args, fetchImpl: reply(status, {}) }), { model: "openai/gpt-oss-20b", fallback: true, why: `HTTP ${status}` });
+    for (const status of [400, 401, 402, 429, 500]) assert.deepEqual(await pick({ ...args, fetchImpl: reply(status, {}) }), { model: "openai/gpt-oss-20b", fallback: true, why: `HTTP ${status}` });
   });
   it("falls back when the answer is unreadable or names a model outside the set", async () => {
-    assert.deepEqual(await pickSmartModel({ ...args, fetchImpl: reply(200, { pick: { choice: "openai/gpt-6-luna" } }) }), { model: "openai/gpt-oss-20b", fallback: true, why: "unreadable answer" });
-    assert.deepEqual(await pickSmartModel({ ...args, fetchImpl: reply(200, "nope") }), { model: "openai/gpt-oss-20b", fallback: true, why: "unreadable answer" });
+    assert.deepEqual(await pick({ ...args, fetchImpl: reply(200, { pick: { choice: "openai/gpt-6-luna" } }) }), { model: "openai/gpt-oss-20b", fallback: true, why: "unreadable answer" });
+    assert.deepEqual(await pick({ ...args, fetchImpl: reply(200, "nope") }), { model: "openai/gpt-oss-20b", fallback: true, why: "unreadable answer" });
   });
   it("falls back when the request itself fails", async () => {
     const fetchImpl = (async () => {
       throw new TypeError("network down");
     }) as unknown as typeof fetch;
-    assert.deepEqual(await pickSmartModel({ ...args, fetchImpl }), { model: "openai/gpt-oss-20b", fallback: true, why: "request failed" });
+    assert.deepEqual(await pick({ ...args, fetchImpl }), { model: "openai/gpt-oss-20b", fallback: true, why: "request failed" });
   });
   it("never answers with a model outside the set", async () => {
     for (const body of [{ pick: { choice: "m9" } }, {}, { pick: { choice: "anthropic/claude-opus-4.1" } }]) {
-      const r = await pickSmartModel({ ...args, fetchImpl: reply(200, body) });
+      const r = await pick({ ...args, fetchImpl: reply(200, body) });
       assert.ok(SET.includes(r.model));
     }
   });

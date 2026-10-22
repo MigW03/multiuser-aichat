@@ -45,6 +45,9 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
   let mode: PreviewMode = "localhost";
   let runJar: Promise<Session> | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
+  // Counts every close: a view that is still being made (the run session is built first) when the panel closes, or when another
+  // open replaces it, must not be added afterwards, or it stays on screen with nothing left that can close it.
+  let epoch = 0;
 
   const trusted = (e: IpcMainEvent | IpcMainInvokeEvent) => {
     const win = opts.getWindow();
@@ -126,6 +129,7 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
   };
 
   function close() {
+    epoch++;
     const v = view;
     const win = host;
     if (v && mode === "run") stopRunLater();
@@ -144,7 +148,9 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
   }
 
   async function create(win: BrowserWindow, want: PreviewMode) {
+    const born = epoch;
     const sess = want === "run" ? await runSession() : preview();
+    if (born !== epoch || win.isDestroyed()) return null;
     const v = new WebContentsView({
       webPreferences: {
         session: sess,
@@ -240,6 +246,7 @@ export function setupPreview(opts: { allowedOrigin: string; getWindow: () => Bro
     // An address the run server handed out opens in the strict mode; the page cannot choose the mode.
     const want: PreviewMode = opts.run.owns(url) ? "run" : "localhost";
     const v = view && host === win && mode === want ? view : (close(), await create(win, want));
+    if (!v) return { ok: false as const }; // closed or replaced while it was being made
     lastError = null;
     lastUrl = url;
     void v.webContents.loadURL(url).catch(() => undefined); // failures arrive as did-fail-load

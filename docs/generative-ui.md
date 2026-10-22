@@ -54,6 +54,15 @@ An AI answer can now include small interfaces next to its Markdown: key numbers,
 15. **Copy, Save as note and the summary keep the raw block text.** Reply previews show "[visual]" instead.
     Alternatives: copy/save a Markdown version of the visual (tables as Markdown tables, choices as lists); strip visuals from notes.
 
+16. **Notes draw their visuals** (added 2026-10-22 at Miguel's request). A note with an `openui-lang` block opens like the answer it came from: Markdown plus the visual, in the notes column. Notes without a visual keep the plain-text reader. The editor still shows the raw text. Titles and list previews skip the visual's code ("Visual note", "[visual]").
+    Alternatives: render every note as Markdown; render visuals only in notes the AI made; open visual notes in a wider panel or dialog.
+
+17. **A click in a note's visual drafts a message in the chat that is open** (no reply link, since the note isn't a message). With no chat open, the text is copied.
+    Alternatives: notes are read-only (buttons, options and forms disabled); always copy; open the chat the note came from (needs storing the source message id).
+
+18. **Visuals in notes render for notes written by anyone in the project**, not only AI-made ones ("Save as note" stores the note as the person's). Same safe components and click rules as in chat.
+    Alternative: only render when the note came from an AI answer (needs a "source message" field on notes, a migration).
+
 ## How the pieces fit
 
 - `ui/src/genui/library.tsx`: the components (Zod props + React), and `CopyText`.

@@ -1,9 +1,10 @@
-import { answerPreview, findPreviewUrls, hasGeneratedUi, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
+import { answerPreview, findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
 import { Copy, CornerUpLeft, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
-import { Fragment, lazy, Suspense, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
+import { AnswerBody } from "../genui/AnswerBody.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PictureGrid } from "./Pictures.tsx";
 import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
@@ -11,9 +12,6 @@ import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
 import type { Proposal } from "./useChatRoom.ts";
 
 export const OPTIMISTIC_SEQ = Number.MAX_SAFE_INTEGER;
-
-/** The generated-UI renderer (OpenUI) loads only once an answer has a visual in it. */
-const GeneratedAnswer = lazy(() => import("../genui/GeneratedAnswer.tsx").then((m) => ({ default: m.GeneratedAnswer })));
 
 export type MessageListProps = {
   messages: ChatMessage[];
@@ -297,17 +295,6 @@ function AssistantMessage(props: RowProps) {
         )}
       </div>
     </div>
-  );
-}
-
-/** An answer's text: Markdown, or Markdown with visuals when it has an openui-lang block. */
-function AnswerBody({ text, streaming, onDraft }: { text: string; streaming: boolean; onDraft?: (text: string) => void }) {
-  const visual = useMemo(() => hasGeneratedUi(text), [text]);
-  if (!visual) return <Markdown text={text} />;
-  return (
-    <Suspense fallback={<Markdown text={text} />}>
-      <GeneratedAnswer text={text} streaming={streaming} {...(onDraft ? { onDraft } : {})} />
-    </Suspense>
   );
 }
 

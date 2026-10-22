@@ -5,13 +5,14 @@ import { Component, useCallback, useMemo, useState, type ReactNode } from "react
 import { Markdown } from "../components/Markdown.tsx";
 import { useToast } from "../components/kit.tsx";
 import { copyText } from "../lib/actions.ts";
+import { draftInOpenChat } from "../lib/drafts.ts";
 import { GenTextContext, genLibrary } from "./library.tsx";
 
 type Props = {
   text: string;
   /** The answer is still being written: the last block may be unfinished. */
   streaming: boolean;
-  /** A click in the generated UI drafts this reply in the reader's composer. Absent: clicks only copy and open links. */
+  /** A click in the generated UI drafts this reply in the reader's composer. Absent (a note): drafts in the open chat. */
   onDraft?: (text: string) => void;
 };
 
@@ -41,8 +42,9 @@ function GenBlock({ code, streaming, onDraft }: { code: string; streaming: boole
       if (event.type === BuiltinActionType.ContinueConversation) {
         const draft = draftFromAction(event.humanFriendlyMessage, event.formState, event.formName, event.params?.context);
         if (!draft) return;
+        // In a chat: a reply to this answer. In a note: a message in the open chat, or copied when no chat is open.
         if (onDraft) onDraft(draft);
-        else void copyText(draft).then((ok) => toast.push(ok ? "Copied" : "Could not copy", "info"));
+        else if (!draftInOpenChat(draft)) void copyText(draft).then((ok) => toast.push(ok ? "Copied. Open a chat to paste it" : "Could not copy", "info"));
       } else if (event.type === BuiltinActionType.OpenUrl) {
         const url = safeUrl(event.params?.url);
         if (url) window.open(url, "_blank", "noopener,noreferrer");

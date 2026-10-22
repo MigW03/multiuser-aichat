@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
+import { setDraftTarget } from "../lib/drafts.ts";
 import { uploadPictures } from "../lib/images.ts";
 import { useModelReasoning } from "../lib/models.ts";
 import { navigate } from "../lib/router.ts";
@@ -169,6 +170,9 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   function replyTo(m: ChatMessage, quote?: string) {
     setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
   }
+
+  // A click in a note's generated UI drafts a message here, in the chat that is open.
+  useEffect(() => setDraftTarget((text) => setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }))), []);
 
   /** A click in an answer's generated UI: a reply to that answer, drafted in the composer for the person to send or change. */
   function draftReply(m: ChatMessage, text: string) {

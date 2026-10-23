@@ -225,6 +225,8 @@ export type ModelInfo = {
   reasoning?: Reasoning[];
   /** Whether the model can look at pictures. Missing: the provider does not say, so pictures are allowed and it may refuse. */
   vision?: boolean;
+  /** Whether the model can call tools. Missing: the provider does not say. */
+  tools?: boolean;
 };
 
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */

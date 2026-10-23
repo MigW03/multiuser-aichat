@@ -60,6 +60,13 @@ describe("smartOptions and cheapest", () => {
   it("keeps all models when none can see pictures", () => {
     assert.equal(smartOptions(["openai/gpt-oss-20b"], info, true).length, 1);
   });
+  it("leaves out models that cannot call tools when the answer is offered tools, unless none can", () => {
+    const withTools: ModelInfo[] = [{ id: "a/tools", name: "A", tools: true }, { id: "b/none", name: "B", tools: false }, { id: "c/unknown", name: "C" }];
+    assert.deepEqual(smartOptions(["a/tools", "b/none", "c/unknown"], withTools, false, true).map((o) => o.id), ["a/tools", "c/unknown"]);
+    assert.equal(smartOptions(["a/tools", "b/none"], withTools, false, false).length, 2);
+    assert.deepEqual(smartOptions(["b/none"], withTools, false, true).map((o) => o.id), ["b/none"]);
+    assert.match(describeOption(smartOptions(["a/tools"], withTools, false)[0]!, []), /Can call tools\./);
+  });
   it("picks the cheapest by price, treating an unknown price as the dearest", () => {
     assert.equal(cheapest(smartOptions(SET, info, false)).id, "openai/gpt-oss-20b");
     assert.equal(cheapest(smartOptions(["x/unknown", "openai/gpt-oss-20b"], info, false)).id, "openai/gpt-oss-20b");

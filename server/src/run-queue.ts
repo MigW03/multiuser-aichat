@@ -20,7 +20,7 @@ import {
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
 import { designAi } from "./design-events.ts";
-import { designInstructions, designTools } from "./design-tools.ts";
+import { designInstructions, designsOffInstructions, designTools } from "./design-tools.ts";
 import { FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
@@ -278,6 +278,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let noting: ToolSet | null = null;
     /** The project's designs, in any project chat (they belong to the project, not to a folder). */
     let designing: ReturnType<typeof designTools> | null = null;
+    /** A project chat on a server without design storage: the AI is told designs can't be saved here. */
+    let designsOff = false;
     /** What this answer read and changed, for the note under it. Shared by the folder and the design tools. */
     const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
     let runSeconds = LOCK_SECONDS;
@@ -315,6 +317,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         latest: mine.map((r) => r.content).join("\n\n"),
         context: rows.filter((r) => !batchIds.includes(r.id) && r.kind === "message").map((r) => ({ from: r.role === "assistant" ? "ai" : "person", text: r.content })),
         pictures: mine.some((r) => r.images.length > 0),
+        tools: true,
       });
       picking.catch(() => undefined); // awaited below; this only stops it counting as unhandled while the setup runs
       // The AI gets the files of the newest pictures only; older ones are named as not shown.
@@ -328,7 +331,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         noting = noteTools(notesFor(db, chatId, projectId, authorId));
         // Designs are saved without approval (the server accepts only inert HTML in them). Drafting one takes several
         // steps, so these runs get the longer lock too.
-        if (storageOn()) {
+        designsOff = !storageOn();
+        if (!designsOff) {
           designs.projectId = projectId;
           designing = designTools(projectDesigns, { userId: authorId, projectId }, use, {
             event: (path, state, version) => {
@@ -399,7 +403,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),

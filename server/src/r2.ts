@@ -35,10 +35,16 @@ export class StorageOffError extends Error {
   }
 }
 
+/** The names of the R2 variables that are not set (never their values). */
+export function missingR2(): string[] {
+  const { accessKeyId, secretAccessKey, endpoint, bucket } = env.r2;
+  return Object.entries({ R2_ACCESS_KEY_ID: accessKeyId, R2_SECRET_ACCESS_KEY: secretAccessKey, R2_ENDPOINT: endpoint, R2_BUCKET: bucket }).filter(([, v]) => !v).map(([k]) => k);
+}
+
 /** The configuration from the environment, or an error naming the variables that are not set (never their values). */
 export function r2ConfigFromEnv(): R2Config {
   const { accessKeyId, secretAccessKey, endpoint, bucket } = env.r2;
-  const missing = Object.entries({ R2_ACCESS_KEY_ID: accessKeyId, R2_SECRET_ACCESS_KEY: secretAccessKey, R2_ENDPOINT: endpoint, R2_BUCKET: bucket }).filter(([, v]) => !v).map(([k]) => k);
+  const missing = missingR2();
   if (missing.length > 0 || !accessKeyId || !secretAccessKey || !endpoint || !bucket) throw new StorageOffError(missing);
   return { accessKeyId, secretAccessKey, endpoint, bucket };
 }

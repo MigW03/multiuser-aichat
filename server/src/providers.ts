@@ -146,7 +146,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
       // OpenRouter prices are USD per token as strings; negative means dynamic pricing.
       const input = Number(m.pricing?.prompt) * 1e6;
       const output = Number(m.pricing?.completion) * 1e6;
-      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined, reasoning: openRouterLevels(m), vision: m.architecture?.input_modalities ? m.architecture.input_modalities.includes("image") : undefined };
+      return { id: m.id, name: m.name ?? m.id, pricing: input >= 0 && output >= 0 ? { input, output } : undefined, reasoning: openRouterLevels(m), vision: m.architecture?.input_modalities ? m.architecture.input_modalities.includes("image") : undefined, tools: Array.isArray(m.supported_parameters) ? m.supported_parameters.includes("tools") : undefined };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

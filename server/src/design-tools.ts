@@ -130,7 +130,7 @@ export function designInstructions(): string {
 
 Design format (follow it exactly; the canvas reads it and code is built from it):
 - Plain HTML, no <html>, <head> or <body>. A design starts with the comment <!-- Nido design. Open it in Nido's design mode. --> and then has one element per artboard.
-- Artboard: a top-level element with data-board="Name", data-x and data-y (its place on the canvas, px), data-w (width px) and optional data-h (minimum height px). Desktop pages 1440 wide, phones 390x844. Put artboards side by side with 80 px between them (data-x of the next = previous data-x + data-w + 80), rows 160 px apart.
+- Artboard: a top-level element with data-board="Name", data-x and data-y (its place on the canvas, px), data-w (width px) and optional data-h (minimum height px). Desktop pages 1920x1080, phones 390x844. Put artboards side by side with 80 px between them (data-x of the next = previous data-x + data-w + 80), rows 160 px apart.
 - Every element has a unique data-nid ("b1", "n2", ...; any short id, unique in the design) and important ones a data-name ("Hero", "Sign up button"). Never change or reuse an existing data-nid.
 - Styles only in the style attribute (inline). No <style>, <script>, <link>, <iframe>, <form>, event handlers, external images, fonts or url() other than data:image. Elements use box-sizing: border-box. Use system font stacks.
 - Lay out with flexbox or grid (display:flex; flex-direction; gap; padding; align-items; justify-content), like Figma auto layout. Use position:absolute with left/top only inside a parent marked data-layout="free" with position:relative. Sizes: fixed px, width:100% or flex:1 to fill, nothing to hug content.

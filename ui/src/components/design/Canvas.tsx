@@ -670,8 +670,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
         b.setAttribute("data-nid", made);
         b.setAttribute("data-x", String(Math.round(x0)));
         b.setAttribute("data-y", String(Math.round(y0)));
-        b.setAttribute("data-w", String(w ?? 1440));
-        b.setAttribute("data-h", String(h ?? 900));
+        b.setAttribute("data-w", String(w ?? 1920));
+        b.setAttribute("data-h", String(h ?? 1080));
         b.setAttribute("style", "display: flex; flex-direction: column; gap: 24px; padding: 48px; background: #ffffff; color: #111111");
         root.append(doc.createTextNode("\n"), b, doc.createTextNode("\n"));
       });

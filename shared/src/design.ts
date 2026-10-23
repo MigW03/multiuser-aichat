@@ -128,8 +128,8 @@ export function designUnsafe(html: string): string | null {
 
 /** The text a new, empty design starts with: one desktop board laid out as a stack. */
 export function emptyDesign(board: "desktop" | "phone" = "desktop"): string {
-  const w = board === "phone" ? 390 : 1440;
-  const h = board === "phone" ? 844 : 900;
+  const w = board === "phone" ? 390 : 1920;
+  const h = board === "phone" ? 844 : 1080;
   return `<!-- Nido design. Open it in Nido's design mode. -->
 <section data-board="${board === "phone" ? "Phone" : "Desktop"}" data-nid="b1" data-x="0" data-y="0" data-w="${w}" data-h="${h}" style="display: flex; flex-direction: column; gap: 24px; padding: 48px; background: #ffffff; color: #111111; font-family: system-ui, sans-serif">
 </section>

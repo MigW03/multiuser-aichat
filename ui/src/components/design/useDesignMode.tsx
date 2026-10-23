@@ -44,19 +44,28 @@ export function useDesignMode({ projectId, userId, onOpening }: { projectId: str
     setChip((c) => (c && c.path === was ? null : c));
   }, []);
 
-  // The person who asked the AI for a design sees it drawn: the canvas opens for them when the AI starts writing.
+  // The person who asked the AI for a design sees it drawn: the canvas opens for them when the AI starts writing. If the AI's
+  // save then fails, a canvas opened only for it closes again (a new design that was never saved would say it doesn't exist).
   useEffect(() => {
     if (!projectId) return;
     const leave = joinProject(projectId, userId);
+    let opened: string | null = null;
     const off = onProjectEvent(projectId, "design_ai", (p) => {
       const e = p as Partial<DesignAiEvent>;
-      if (e.state === "start" && e.by === userId && isDesignPath(e.path) && openRef.current?.path !== e.path) show(e.path);
+      if (e.by !== userId || !isDesignPath(e.path)) return;
+      if (e.state === "start" && openRef.current?.path !== e.path) {
+        opened = e.path;
+        show(e.path);
+      } else if (e.state === "done" && opened === e.path) {
+        opened = null;
+        if (typeof e.version !== "number" && openRef.current?.path === e.path) close();
+      }
     });
     return () => {
       off();
       leave();
     };
-  }, [projectId, userId, show]);
+  }, [projectId, userId, show, close]);
 
   const logEdit = useCallback((path: string, desc: string) => {
     const list = edits.current.get(path) ?? [];

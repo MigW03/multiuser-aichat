@@ -21,10 +21,16 @@ function fenced(label: string, body: string): string {
 export type DesignHooks = { event: (path: string, state: "start" | "done", version?: number) => void };
 export type DesignUse = { edits: { p: string; ok: boolean }[] };
 
+const STORAGE_SETUP_ERRORS = new Set(["InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "NoSuchBucket", "Unauthorized", "InvalidArgument", "InvalidBucketName", "PermanentRedirect", "AuthorizationHeaderMalformed"]);
+
 function failure(e: unknown): string {
   if (e instanceof DesignError) return `Error: ${e.message}`;
   if (e instanceof StorageOffError) return "Error: design storage isn't set up on this server. Tell the user designs are unavailable right now.";
   console.error("[design-tool]", e instanceof Error ? (e.message.startsWith("database:") ? e.message : e.name) : "unknown error");
+  // R2 answers a wrong key, secret, endpoint or bucket with one of these names (never with the values). Named, so the person
+  // can fix the server's settings instead of retrying.
+  const name = e instanceof Error ? e.name : "";
+  if (STORAGE_SETUP_ERRORS.has(name)) return `Error: the design storage refused the save (${name}): the server's R2 settings are wrong. Tell the user that in one sentence; retrying will not help.`;
   return "Error: the designs could not be reached. Try again once; if it fails again, tell the user.";
 }
 

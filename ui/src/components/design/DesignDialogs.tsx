@@ -5,7 +5,7 @@ import { api } from "../../api.ts";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, Spinner, STROKE, TextInput } from "../kit.tsx";
 
 const BOARDS = [
-  { id: "desktop", name: "Desktop", size: "1440 × 900", Icon: Monitor },
+  { id: "desktop", name: "Desktop", size: "1920 × 1080", Icon: Monitor },
   { id: "phone", name: "Phone", size: "390 × 844", Icon: Smartphone },
 ] as const;
 

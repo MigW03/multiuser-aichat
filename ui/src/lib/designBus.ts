@@ -23,3 +23,16 @@ export const hasOpenChat = () => sender !== null;
 export function focusComposer() {
   document.querySelector<HTMLTextAreaElement>(".composer-input textarea")?.focus();
 }
+
+// An answer that saved a design tells the open canvas, in case the realtime hint was missed (the canvas re-reads the file).
+type Listener = (path: string) => void;
+const listeners = new Set<Listener>();
+
+export function onDesignChanged(fn: Listener): () => void {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+
+export function designChanged(path: string) {
+  for (const fn of listeners) fn(path);
+}

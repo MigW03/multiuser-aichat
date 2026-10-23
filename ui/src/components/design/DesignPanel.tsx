@@ -2,8 +2,8 @@ import { designMarker, designName, type DesignAiEvent, type DesignAskEvent, type
 import { Code2, Keyboard, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Redo2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError } from "../../api.ts";
-import { focusComposer, hasOpenChat, sendInOpenChat } from "../../lib/designBus.ts";
-import { claimWins, editorOf, viewersOf } from "../../lib/designEditor.ts";
+import { focusComposer, hasOpenChat, onDesignChanged, sendInOpenChat } from "../../lib/designBus.ts";
+import { claimWins, editorOf, sameDesignPath, viewersOf } from "../../lib/designEditor.ts";
 import { boardHash, boardsOf, byNid, changedLayers, layerPath, nidOf, parseDesign, serializeDesign } from "../../lib/designModel.ts";
 import { joinProject, onPresence, onProjectEvent, sendProjectEvent, setPresence, type ProjectPresence } from "../../lib/projectChannel.ts";
 import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, IconButton, Spinner, STROKE, TextInput, useToast } from "../kit.tsx";
@@ -97,9 +97,10 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   }, []);
 
   const load = useCallback(
-    async (opts: { flash?: boolean; keepHistory?: boolean; pushUndo?: boolean } = {}) => {
+    async (opts: { flash?: boolean; keepHistory?: boolean; pushUndo?: boolean; ifChanged?: boolean } = {}) => {
       try {
         const r = await api.designRead(projectId, path);
+        if (opts.ifChanged && r.sha === sha.current) return;
         const before = docRef.current?.root;
         if (opts.pushUndo && before) {
           const text = serializeDesign(before);
@@ -286,21 +287,28 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
     const offs = [
       onProjectEvent(projectId, "design_saved", (p) => {
         const e = p as Partial<DesignSavedEvent>;
-        if (e.path !== path || e.sha === sha.current || e.by === me.id || saving.current) return;
+        if (!sameDesignPath(e.path, path) || e.sha === sha.current || e.by === me.id || saving.current) return;
         void load({ flash: true, keepHistory: true });
       }),
       onProjectEvent(projectId, "design_ai", (p) => {
         const e = p as Partial<DesignAiEvent>;
-        if (e.path !== path || typeof e.chatId !== "string" || typeof e.by !== "string") return;
+        if (!sameDesignPath(e.path, path) || typeof e.chatId !== "string" || typeof e.by !== "string") return;
         window.clearTimeout(aiTimer.current);
         if (e.state === "start") {
           void flush();
           setAi({ chatId: e.chatId, by: e.by });
-          aiTimer.current = window.setTimeout(() => setAi(null), AI_LOCK_MS);
+          // If the "done" hint never comes, unlock and re-read anyway.
+          aiTimer.current = window.setTimeout(() => {
+            setAi(null);
+            void load({ flash: true, pushUndo: true, ifChanged: true });
+          }, AI_LOCK_MS);
         } else {
           setAi(null);
           if (e.sha !== sha.current) void load({ flash: true, pushUndo: true });
         }
+      }),
+      onDesignChanged((changed) => {
+        if (sameDesignPath(changed, path) && !saving.current) void load({ flash: true, pushUndo: true, ifChanged: true });
       }),
       onProjectEvent(projectId, "design_ask", (p) => {
         const e = p as Partial<DesignAskEvent>;

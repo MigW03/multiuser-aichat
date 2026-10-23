@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronRight, Frame as FrameIcon, Image as ImageIcon, LayoutGrid, Rows3, Columns3, Square, Type } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowRight, ArrowUpDown, Ban, ChevronDown, ChevronRight, Columns3, Frame as FrameIcon, Image as ImageIcon, LayoutGrid, Minus, Move, Plus, Rows3, Square, SquareDashed, Type, WrapText } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { boardBox, boardsOf, byNid, insertWithNewline, isBoard, isContainer, isTextLayer, layerName, layoutOf, nidOf, removeLayer, styleGet, styleSet, type Layout } from "../../lib/designModel.ts";
-import { evalMath, sizeModeOf, sizeModeStyle, toHex, type SizeMode } from "../../lib/designEditor.ts";
+import { alignOf, alignStyle, evalMath, paddingOf, paddingStyle, sizeModeOf, sizeModeStyle, strokeOf, strokeStyle, toHex, type Place, type SizeMode, type Stroke } from "../../lib/designEditor.ts";
 import { STROKE } from "../kit.tsx";
 import type { Commit } from "./Canvas.tsx";
 
@@ -46,14 +46,19 @@ function setStyles(root: HTMLElement, nid: string, changes: Record<string, strin
   if (el) styleSet(el, changes);
 }
 
-const LAYOUTS: { v: Layout; label: string }[] = [
-  { v: "flow", label: "None" },
-  { v: "column", label: "Stack ↓" },
-  { v: "row", label: "Stack →" },
-  { v: "grid", label: "Grid" },
-  { v: "free", label: "Free" },
+/** Figma's auto layout choices; "wrap" is a horizontal stack that wraps onto new lines. */
+type LayoutChoice = Layout | "wrap";
+const ICON = { size: 14, strokeWidth: STROKE, "aria-hidden": true } as const;
+const LAYOUTS: { v: LayoutChoice; label: string; icon: ReactNode }[] = [
+  { v: "flow", label: "No layout", icon: <Ban {...ICON} /> },
+  { v: "column", label: "Vertical stack", icon: <ArrowDown {...ICON} /> },
+  { v: "row", label: "Horizontal stack", icon: <ArrowRight {...ICON} /> },
+  { v: "wrap", label: "Wrap", icon: <WrapText {...ICON} /> },
+  { v: "grid", label: "Grid", icon: <LayoutGrid {...ICON} /> },
+  { v: "free", label: "Free (place anywhere)", icon: <Move {...ICON} /> },
 ];
-const STACK_OFF = { display: null, "flex-direction": null, gap: null, "grid-template-columns": null, "align-items": null, "justify-content": null };
+const STACK_OFF = { display: null, "flex-direction": null, "flex-wrap": null, gap: null, "grid-template-columns": null, "align-items": null, "justify-items": null, "justify-content": null };
+const NEW_STROKE: Stroke = { color: "#d4d4d4", width: 1, style: "solid", sides: "all" };
 const SHADOWS: Record<string, string> = { none: "", small: "0 1px 3px rgba(0,0,0,0.12)", large: "0 8px 24px rgba(0,0,0,0.16)" };
 const num = (v: string) => {
   const m = /^(-?\d+(?:\.\d+)?)(px)?$/.exec(v.trim());
@@ -91,8 +96,16 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
       else t.setAttribute(k, v);
     });
 
-  const changeLayout = (next: Layout) => {
-    commit(`set layout of ${name} to ${LAYOUTS.find((l) => l.v === next)?.label ?? next}`, (r) => {
+  const stack = layout === "row" || layout === "column" || layout === "grid";
+  const choice: LayoutChoice = layout === "row" && st.flexWrap === "wrap" ? "wrap" : layout;
+  const align = stack ? alignOf(st, layout) : null;
+  const setAlign = (x: Place, y: Place, auto: boolean) => stack && set("set alignment", alignStyle(layout, x, y, auto));
+  const pad = paddingOf(st);
+  const stroke = strokeOf(st);
+  const setStroke = (desc: string, next: Stroke | null) => set(desc, strokeStyle(next, st));
+
+  const changeLayout = (next: LayoutChoice) => {
+    commit(`set layout of ${name} to ${LAYOUTS.find((l) => l.v === next)?.label.toLowerCase() ?? next}`, (r) => {
       const t = byNid(r, nid);
       if (!t) return;
       const kids = [...t.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.hasAttribute("data-nid"));
@@ -116,8 +129,8 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
         return;
       }
       if (next === "grid") {
-        styleSet(t, { display: "grid", "flex-direction": null, ...(!t.style.gridTemplateColumns ? { "grid-template-columns": "repeat(2, minmax(0, 1fr))" } : {}) });
-      } else styleSet(t, { display: "flex", "flex-direction": next, "grid-template-columns": null });
+        styleSet(t, { display: "grid", "flex-direction": null, "flex-wrap": null, "justify-content": null, ...(!t.style.gridTemplateColumns ? { "grid-template-columns": "repeat(2, minmax(0, 1fr))" } : {}) });
+      } else styleSet(t, { display: "flex", "flex-direction": next === "wrap" ? "row" : next, "flex-wrap": next === "wrap" ? "wrap" : null, "grid-template-columns": null, "justify-items": null });
       if (!t.style.gap) styleSet(t, { gap: "8px" });
     });
   };
@@ -176,55 +189,31 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
 
       {container && (
         <Section title="Layout">
-          <div className="dz-row">
-            <span className="dz-label">Type</span>
-            <select className="dz-select grow" aria-label="Layout" value={layout} disabled={readOnly} onChange={(e) => changeLayout(e.target.value as Layout)}>
-              {LAYOUTS.map((l) => (
-                <option key={l.v} value={l.v}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {(layout === "row" || layout === "column" || layout === "grid") && (
-            <>
-              <div className="dz-row two">
-                <NumField label="Gap" value={num(st.gap)} disabled={readOnly} onCommit={(v) => set("set gap", { gap: `${Math.max(0, v)}px` })} />
+          <IconChoice label="Layout" value={choice} options={LAYOUTS} disabled={readOnly} onChange={changeLayout} />
+          {stack && align && (
+            <div className="dz-auto">
+              <AlignBox x={align.x} y={align.y} auto={align.auto} kind={layout} disabled={readOnly} onChange={(x, y) => setAlign(x, y, align.auto)} />
+              <div className="dz-auto-fields">
+                <div className="dz-row">
+                  <NumField label="Gap" value={align.auto ? null : num(st.gap) ?? 0} placeholder={align.auto ? "Auto" : "0"} disabled={readOnly} onCommit={(v) => set("set gap", { gap: v > 0 ? `${v}px` : null, ...(align.auto ? alignStyle(layout, align.x, align.y, false) : {}) })} />
+                  {layout !== "grid" && (
+                    <button type="button" className={`dz-toggle ${align.auto ? "on" : ""}`} aria-pressed={align.auto} disabled={readOnly} title="Space items out evenly (auto gap)" onClick={() => setAlign(align.x, align.y, !align.auto)}>
+                      Auto
+                    </button>
+                  )}
+                </div>
                 {layout === "grid" && (
                   <NumField
-                    label="Cols"
+                    label="Columns"
                     value={Number(/repeat\((\d+)/.exec(st.gridTemplateColumns)?.[1] ?? 0) || null}
                     disabled={readOnly}
                     onCommit={(v) => set("set columns", { "grid-template-columns": `repeat(${Math.min(12, Math.max(1, Math.round(v)))}, minmax(0, 1fr))` })}
                   />
                 )}
               </div>
-              <div className="dz-row">
-                <span className="dz-label">Align</span>
-                <select className="dz-select grow" aria-label="Align items" value={st.alignItems || "stretch"} disabled={readOnly} onChange={(e) => set("set alignment", { "align-items": e.target.value === "stretch" ? null : e.target.value })}>
-                  <option value="stretch">Stretch</option>
-                  <option value="flex-start">Start</option>
-                  <option value="center">Center</option>
-                  <option value="flex-end">End</option>
-                </select>
-              </div>
-              {layout !== "grid" && (
-                <div className="dz-row">
-                  <span className="dz-label">Spread</span>
-                  <select className="dz-select grow" aria-label="Justify content" value={st.justifyContent || "flex-start"} disabled={readOnly} onChange={(e) => set("set spacing", { "justify-content": e.target.value === "flex-start" ? null : e.target.value })}>
-                    <option value="flex-start">Start</option>
-                    <option value="center">Center</option>
-                    <option value="flex-end">End</option>
-                    <option value="space-between">Space between</option>
-                  </select>
-                </div>
-              )}
-            </>
+            </div>
           )}
-          <div className="dz-row">
-            <span className="dz-label">Padding</span>
-            <TextField value={styleGet(el, "padding")} placeholder="0" disabled={readOnly} onCommit={(v) => set("set padding", { padding: paddingValue(v) })} />
-          </div>
+          <PaddingFields key={nid} value={pad} disabled={readOnly} onCommit={(v) => set("set padding", paddingStyle(v))} />
         </Section>
       )}
 
@@ -248,10 +237,6 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
           <NumField label="Opacity" value={st.opacity ? Math.round(Number(st.opacity) * 100) : 100} disabled={readOnly} onCommit={(v) => set("set opacity", { opacity: v >= 100 ? null : String(Math.max(0, v) / 100) })} />
         </div>
         <div className="dz-row">
-          <span className="dz-label">Border</span>
-          <TextField value={styleGet(el, "border")} placeholder="1px solid #e5e5e5" disabled={readOnly} onCommit={(v) => set("set border", { border: v.trim() || null })} />
-        </div>
-        <div className="dz-row">
           <span className="dz-label">Shadow</span>
           <select
             className="dz-select grow"
@@ -266,6 +251,46 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
             {st.boxShadow && !Object.values(SHADOWS).includes(st.boxShadow) && <option value="custom">Custom</option>}
           </select>
         </div>
+      </Section>
+
+      <Section
+        title="Stroke"
+        action={
+          stroke ? (
+            <button type="button" className="dz-icon-btn" title="Remove stroke" aria-label="Remove stroke" disabled={readOnly} onClick={() => setStroke("removed stroke", null)}>
+              <Minus {...ICON} />
+            </button>
+          ) : (
+            <button type="button" className="dz-icon-btn" title="Add stroke" aria-label="Add stroke" disabled={readOnly} onClick={() => setStroke("added stroke", NEW_STROKE)}>
+              <Plus {...ICON} />
+            </button>
+          )
+        }
+      >
+        {stroke && (
+          <>
+            <ColorRow label="Color" value={stroke.color} disabled={readOnly} onCommit={(v) => v.trim() && setStroke("set stroke color", { ...stroke, color: v.trim() })} />
+            <div className="dz-row two">
+              <NumField label="Weight" value={stroke.width} disabled={readOnly} onCommit={(v) => (v > 0 ? setStroke("set stroke weight", { ...stroke, width: Math.min(100, v) }) : setStroke("removed stroke", null))} />
+              <select className="dz-select" aria-label="Stroke style" value={stroke.style} disabled={readOnly} onChange={(e) => setStroke("set stroke style", { ...stroke, style: e.target.value as Stroke["style"] })}>
+                <option value="solid">Solid</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+              </select>
+            </div>
+            <div className="dz-row">
+              <span className="dz-label">Sides</span>
+              <select className="dz-select grow" aria-label="Stroke sides" value={stroke.sides} disabled={readOnly} onChange={(e) => setStroke("set stroke sides", { ...stroke, sides: e.target.value as Stroke["sides"] })}>
+                <option value="all">All</option>
+                <option value="top">Top</option>
+                <option value="right">Right</option>
+                <option value="bottom">Bottom</option>
+                <option value="left">Left</option>
+                {stroke.sides === "custom" && <option value="custom">Custom</option>}
+              </select>
+            </div>
+          </>
+        )}
       </Section>
 
       {(text || board || (container && (el.textContent ?? "").trim().length > 0)) && (
@@ -297,18 +322,77 @@ function DesignTab({ root, selection, commit, readOnly, boxOf }: Props) {
   );
 }
 
-/** "16" -> "16px", "8 16" -> "8px 16px"; other CSS as typed. */
-function paddingValue(v: string): string | null {
-  const t = v.trim();
-  if (!t) return null;
-  if (/^[\d.\s]+$/.test(t)) return t.split(/\s+/).slice(0, 4).map((n) => `${n}px`).join(" ");
-  return t;
+/** Figma's layout picker: one icon button per choice. */
+function IconChoice<T extends string>({ label, value, options, disabled, onChange }: { label: string; value: T; options: { v: T; label: string; icon: ReactNode }[]; disabled?: boolean; onChange: (v: T) => void }) {
+  return (
+    <div className="dz-iconchoice" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.v} type="button" role="radio" aria-checked={value === o.v} aria-label={o.label} title={o.label} disabled={disabled} className={value === o.v ? "on" : ""} onClick={() => value !== o.v && onChange(o.v)}>
+          {o.icon}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+const PLACES: Place[] = ["start", "center", "end"];
+
+/**
+ * Figma's alignment box: nine spots, click one to put the children there. With auto spacing the main axis is spread out,
+ * so a whole line along it is lit.
+ */
+function AlignBox({ x, y, auto, kind, disabled, onChange }: { x: Place; y: Place; auto: boolean; kind: "row" | "column" | "grid"; disabled?: boolean; onChange: (x: Place, y: Place) => void }) {
+  return (
+    <div className="dz-alignbox" role="grid" aria-label="Alignment">
+      {PLACES.map((py) => (
+        <div key={py} role="row" className="dz-alignrow">
+          {PLACES.map((px) => {
+            const on = auto ? (kind === "row" ? py === y : px === x) : px === x && py === y;
+            return (
+              <button key={px} type="button" role="gridcell" aria-selected={on} aria-label={`Align ${py === "center" && px === "center" ? "center" : `${py === "start" ? "top" : py === "end" ? "bottom" : "middle"} ${px === "start" ? "left" : px === "end" ? "right" : "center"}`}`} title={`Align ${py === "start" ? "top" : py === "end" ? "bottom" : "middle"} ${px === "start" ? "left" : px === "end" ? "right" : "center"}`} disabled={disabled} className={on ? "on" : ""} onClick={() => onChange(px, py)}>
+                <span />
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Padding like Figma: horizontal and vertical, or each side on its own. */
+function PaddingFields({ value, disabled, onCommit }: { value: [number, number, number, number]; disabled?: boolean; onCommit: (v: [number, number, number, number]) => void }) {
+  const [t, r, b, l] = value;
+  const [each, setEach] = useState(t !== b || r !== l);
+  const side = (i: number, v: number) => onCommit(value.map((x, j) => (j === i ? Math.max(0, v) : x)) as [number, number, number, number]);
+  return (
+    <div className="dz-row dz-padding">
+      {each ? (
+        <div className="dz-pad4">
+          {(["Top", "Right", "Bottom", "Left"] as const).map((n, i) => (
+            <NumField key={n} label={n[0]!} name={`Padding ${n.toLowerCase()}`} value={value[i]!} disabled={disabled} onCommit={(v) => side(i, v)} />
+          ))}
+        </div>
+      ) : (
+        <div className="dz-row two grow">
+          <NumField label={<ArrowLeftRight {...ICON} />} name="Horizontal padding" value={r === l ? l : null} disabled={disabled} onCommit={(v) => onCommit([t, Math.max(0, v), b, Math.max(0, v)])} />
+          <NumField label={<ArrowUpDown {...ICON} />} name="Vertical padding" value={t === b ? t : null} disabled={disabled} onCommit={(v) => onCommit([Math.max(0, v), r, Math.max(0, v), l])} />
+        </div>
+      )}
+      <button type="button" className={`dz-icon-btn ${each ? "on" : ""}`} aria-pressed={each} title="Padding for each side" aria-label="Padding for each side" disabled={disabled} onClick={() => setEach((e) => !e)}>
+        <SquareDashed {...ICON} />
+      </button>
+    </div>
+  );
+}
+
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="dz-section">
-      <h3 className="dz-section-title">{title}</h3>
+      <div className="dz-section-head">
+        <h3 className="dz-section-title">{title}</h3>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -343,7 +427,7 @@ function TextField({ value, placeholder, disabled, onCommit }: { value: string; 
  * A number field like Figma's: type a number or arithmetic ("24+8"), arrows step 1 (Shift 10), and drag the label
  * sideways to scrub. Commits once per change.
  */
-function NumField({ label, value, disabled, onCommit }: { label: string; value: number | null; disabled?: boolean; onCommit: (v: number) => void }) {
+function NumField({ label, name, value, placeholder, disabled, onCommit }: { label: ReactNode; name?: string; value: number | null; placeholder?: string; disabled?: boolean; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(value === null ? "" : String(value));
   const scrub = useRef<{ x: number; start: number } | null>(null);
   useEffect(() => setDraft(value === null ? "" : String(value)), [value]);
@@ -377,8 +461,9 @@ function NumField({ label, value, disabled, onCommit }: { label: string; value: 
         className="dz-input"
         inputMode="decimal"
         value={draft}
+        placeholder={placeholder}
         disabled={disabled}
-        aria-label={label}
+        aria-label={name ?? (typeof label === "string" ? label : undefined)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commitText}
         onKeyDown={(e) => {

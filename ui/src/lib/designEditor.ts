@@ -134,3 +134,102 @@ export function toHex(color: string): string | null {
   const named: Record<string, string> = { white: "#ffffff", black: "#000000", transparent: "#ffffff" };
   return named[c] ?? null;
 }
+
+/** Whether two spellings name the same design: the AI may leave out the shared folder's name ("designs/a.design.html"). */
+export function sameDesignPath(a: unknown, b: string): boolean {
+  if (typeof a !== "string" || !a) return false;
+  return a === b || b.endsWith(`/${a}`) || a.endsWith(`/${b}`);
+}
+
+// ---- Figma-like controls over inline CSS: stroke, padding and alignment are read from the style's longhands and
+// written back as the shortest plain CSS, so the file stays readable for people and the AI.
+
+const px = (v: string): number => {
+  const m = /^(-?\d+(?:\.\d+)?)px$/.exec(v.trim());
+  return m ? Number(m[1]) : 0;
+};
+
+export const SIDES = ["top", "right", "bottom", "left"] as const;
+export type Side = (typeof SIDES)[number];
+export type StrokeSides = "all" | Side | "custom";
+export type LineStyle = "solid" | "dashed" | "dotted";
+export type Stroke = { color: string; width: number; style: LineStyle; sides: StrokeSides };
+
+const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
+const sideOf = (st: CSSStyleDeclaration, s: Side) => {
+  const k = cap(s);
+  const read = (p: string) => st.getPropertyValue(`border-${s}-${p}`) || ((st as unknown as Record<string, string>)[`border${k}${cap(p)}`] ?? "");
+  const style = read("style");
+  const width = style && style !== "none" && style !== "hidden" ? (read("width") ? px(read("width")) : 3) : 0;
+  return { width, style, color: read("color") };
+};
+
+/** The element's stroke (CSS border), or null when it has none. */
+export function strokeOf(st: CSSStyleDeclaration): Stroke | null {
+  const all = SIDES.map((s) => ({ side: s, ...sideOf(st, s) }));
+  const on = all.filter((x) => x.width > 0);
+  if (!on.length) return null;
+  const first = on[0]!;
+  const same = on.every((x) => x.width === first.width && x.style === first.style && x.color === first.color);
+  const sides: StrokeSides = on.length === 4 && same ? "all" : on.length === 1 ? first.side : "custom";
+  const style: LineStyle = first.style === "dashed" || first.style === "dotted" ? first.style : "solid";
+  return { color: (first.color && toHex(first.color)) || first.color || "currentcolor", width: first.width, style, sides };
+}
+
+const BORDER_KEYS = ["border", "border-width", "border-style", "border-color", ...SIDES.flatMap((s) => [`border-${s}`, `border-${s}-width`, `border-${s}-style`, `border-${s}-color`])];
+
+/** The style changes for a stroke (null removes it). "custom" keeps the sides that have one. */
+export function strokeStyle(stroke: Stroke | null, current?: CSSStyleDeclaration): Record<string, string | null> {
+  const out: Record<string, string | null> = Object.fromEntries(BORDER_KEYS.map((k) => [k, null]));
+  if (!stroke) return out;
+  const value = `${Math.max(0, Math.round(stroke.width * 10) / 10)}px ${stroke.style} ${stroke.color}`;
+  if (stroke.sides === "all") out.border = value;
+  else if (stroke.sides === "custom") {
+    for (const s of SIDES) if (!current || sideOf(current, s).width > 0) out[`border-${s}`] = value;
+  } else out[`border-${stroke.sides}`] = value;
+  return out;
+}
+
+/** Padding as [top, right, bottom, left] in px. */
+export function paddingOf(st: CSSStyleDeclaration): [number, number, number, number] {
+  return SIDES.map((s) => px(st.getPropertyValue(`padding-${s}`) || ((st as unknown as Record<string, string>)[`padding${cap(s)}`] ?? ""))) as [number, number, number, number];
+}
+
+/** The shortest padding that gives these four sides. */
+export function paddingStyle([t, r, b, l]: [number, number, number, number]): Record<string, string | null> {
+  const n = (v: number) => `${Math.max(0, Math.round(v))}px`;
+  const out: Record<string, string | null> = { padding: null, ...Object.fromEntries(SIDES.map((s) => [`padding-${s}`, null])) };
+  if (t === r && r === b && b === l) out.padding = t > 0 ? n(t) : null;
+  else if (t === b && r === l) out.padding = `${n(t)} ${n(r)}`;
+  else out.padding = `${n(t)} ${n(r)} ${n(b)} ${n(l)}`;
+  return out;
+}
+
+export type Place = "start" | "center" | "end";
+type StackKind = "row" | "column" | "grid";
+
+const placeOf = (v: string): Place => (/center/.test(v) ? "center" : /end/.test(v) ? "end" : "start");
+
+/** Where children sit in a stack or grid, as Figma's 3x3 alignment box shows it (x across, y down). */
+export function alignOf(st: CSSStyleDeclaration, kind: StackKind): { x: Place; y: Place; auto: boolean } {
+  const auto = kind !== "grid" && st.justifyContent === "space-between";
+  if (kind === "grid") return { x: placeOf(st.justifyItems), y: placeOf(st.alignItems), auto: false };
+  const main = placeOf(st.justifyContent);
+  const cross = placeOf(st.alignItems);
+  return kind === "row" ? { x: main, y: cross, auto } : { x: cross, y: main, auto };
+}
+
+/**
+ * The style changes for an alignment. Start along the cross axis of a vertical stack leaves the CSS default (children
+ * stretch, which is how Fill width works); auto spacing is space-between on the main axis.
+ */
+export function alignStyle(kind: StackKind, x: Place, y: Place, auto: boolean): Record<string, string | null> {
+  const flex = (p: Place) => (p === "start" ? "flex-start" : p === "end" ? "flex-end" : "center");
+  if (kind === "grid") return { "justify-items": x === "start" ? null : x, "align-items": y === "start" ? null : y, "justify-content": null };
+  const main = kind === "row" ? x : y;
+  const cross = kind === "row" ? y : x;
+  return {
+    "justify-content": auto ? "space-between" : main === "start" ? null : flex(main),
+    "align-items": kind === "column" && cross === "start" ? null : flex(cross),
+  };
+}

@@ -2,6 +2,8 @@ import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY
 import { Code2, Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Shapes, Sparkles } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
+import { designChanged } from "../lib/designBus.ts";
+import { sameDesignPath } from "../lib/designEditor.ts";
 import { findFilePaths } from "../lib/fileKind.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
@@ -257,9 +259,21 @@ function DesignChip({ refd }: { refd: DesignRef }) {
 }
 
 /** Under an answer that saved designs: a card for each, to open it or build it in code. */
+/** Answers that already told the open canvas to re-read its design. */
+const told = new Set<string>();
+
 function DesignCards({ m }: { m: ChatMessage }) {
   const design = useContext(AppContext)?.design;
   const paths = useMemo(() => [...new Set((m.meta.edits ?? []).filter((e) => e.ok && isDesignPath(e.p)).map((e) => e.p))].slice(0, 3), [m.meta.edits]);
+  // A finished answer that saved the open design: make sure the canvas shows it (once per answer).
+  const open = design?.path ?? null;
+  useEffect(() => {
+    if (!open || m.status !== "done" || told.has(m.id)) return;
+    const hit = paths.find((p) => sameDesignPath(p, open));
+    if (!hit) return;
+    told.add(m.id);
+    designChanged(hit);
+  }, [open, paths, m.id, m.status]);
   if (!paths.length || !design?.available) return null;
   return (
     <div className="design-cards">

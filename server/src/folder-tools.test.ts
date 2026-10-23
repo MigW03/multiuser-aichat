@@ -436,6 +436,30 @@ describe("design tools", () => {
     assert.deepEqual(events, ["start", "done"]);
     assert.equal(use.edits[0]?.ok, false);
   });
+  test("edit and write on a design file save it at once instead of asking for approval", async () => {
+    const use: FolderUse = { files: new Set(["app/designs/a.design.html"]), offline: false, edits: [], mcp: new Set() };
+    const sent: { op: string }[] = [];
+    const events: string[] = [];
+    const call = async (req: unknown) => {
+      sent.push(req as { op: string });
+      return { path: "app/designs/a.design.html", sha: "c".repeat(64), created: false };
+    };
+    const design = designTools(call, use, { event: (path, state) => events.push(`${state} ${path}`) });
+    const previews: string[] = [];
+    const tools = folderTools(call, use, { askedBy: "Ana", signal: new AbortController().signal, preview: (c: { id: string }) => previews.push(c.id), done: () => undefined }, { edit: true, git: false, exec: false }, design) as unknown as Record<"edit" | "write", unknown>;
+    assert.match(await exec(tools.edit, { path: "app/designs/a.design.html", oldString: "a", newString: "b" }), /Saved/);
+    assert.match(await exec(tools.write, { path: "app/designs/a.design.html", content: "<section></section>" }), /Saved/);
+    assert.deepEqual(sent.map((r) => r.op), ["design_edit", "design_write"]);
+    assert.equal(previews.length, 0);
+    assert.deepEqual(events, ["start app/designs/a.design.html", "done app/designs/a.design.html", "start app/designs/a.design.html", "done app/designs/a.design.html"]);
+  });
+  test("the canvas hears the host's spelling of the path when the save is done", async () => {
+    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: new Set() };
+    const events: string[] = [];
+    const tools = designTools(async () => ({ path: "app/designs/a.design.html", sha: "d".repeat(64), created: true }), use, { event: (path, state) => events.push(`${state} ${path}`) });
+    await exec(tools.design_write, { path: "designs/a.design.html", content: "<section></section>" });
+    assert.deepEqual(events, ["start designs/a.design.html", "done app/designs/a.design.html"]);
+  });
   test("the instructions describe the format and the marker", () => {
     const text = designInstructions();
     assert.match(text, /data-board/);

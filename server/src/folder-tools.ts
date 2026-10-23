@@ -146,7 +146,7 @@ export function fitFiles(use: FolderUse): { files?: string[]; edits?: { p: strin
 /** What this run's tools may do. `edit` and `git` writes need `changes` (the hooks that show proposals to the chat). */
 export type ToolCaps = { edit: boolean; git: boolean; exec?: boolean };
 
-export function folderTools(call: FolderCaller, use: FolderUse, changes?: ChangeHooks, capsIn?: ToolCaps) {
+export function folderTools(call: FolderCaller, use: FolderUse, changes?: ChangeHooks, capsIn?: ToolCaps, designs?: DesignToolSet) {
   const caps: ToolCaps = capsIn ?? { edit: !!changes, git: false, exec: false };
   const run = async <T>(req: RelayRequest, format: (r: T) => string): Promise<string> => {
     try {
@@ -222,8 +222,10 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
             newString: z.string().max(L.editChars).describe("The text to replace it with (must be different from oldString)."),
             replaceAll: z.boolean().optional().describe("Replace every occurrence of oldString (default: false)."),
           }),
-          execute: async ({ path: p, oldString, newString, replaceAll }) => {
+          execute: async ({ path: p, oldString, newString, replaceAll }, opts) => {
             const clean = normalize(p);
+            // A design file never goes through approval: it is saved at once and the canvas reloads (see designTools).
+            if (designs && isDesignPath(clean)) return designs.design_edit.execute!({ path: clean, oldString, newString, replaceAll }, opts);
             if (!use.files.has(clean)) return `Error: you have not read ${quoted(clean)} in this answer. Read it with the read tool first, then edit it.`;
             return propose(clean, { op: "edit", path: clean, oldString, newString, replaceAll, askedBy: changes!.askedBy, readFiles: use.files.size });
           },
@@ -236,8 +238,9 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
             path: path.min(1).describe('File to write, relative to the shared folder, like "src/new.ts".'),
             content: z.string().max(L.writeChars).describe("The complete content of the file."),
           }),
-          execute: ({ path: p, content }) => {
+          execute: ({ path: p, content }, opts) => {
             const clean = normalize(p);
+            if (designs && isDesignPath(clean)) return designs.design_write.execute!({ path: clean, content }, opts);
             return propose(clean, { op: "write", path: clean, content, hadRead: use.files.has(clean), askedBy: changes!.askedBy, readFiles: use.files.size });
           },
         }),
@@ -415,6 +418,8 @@ export type DesignHooks = { event: (path: string, state: "start" | "done", sha?:
  * The AI's tools for design files (`*.design.html`). Unlike edit and write they need no approval: the host agreed that
  * design files are saved at once, and the host's app refuses anything but inert HTML in them (shared/src/design.ts).
  */
+export type DesignToolSet = ReturnType<typeof designTools>;
+
 export function designTools(call: FolderCaller, use: FolderUse, hooks: DesignHooks) {
   const path = z.string().max(L.pathChars);
   let last: Promise<unknown> = Promise.resolve();
@@ -422,9 +427,11 @@ export function designTools(call: FolderCaller, use: FolderUse, hooks: DesignHoo
     const turn = last.then(async () => {
       hooks.event(clean, "start");
       let sha: string | undefined;
+      let saved: string | undefined;
       try {
         const r = (await call(req, { timeoutMs: 60_000 })) as DesignWriteResult;
         sha = r.sha;
+        saved = r.path;
         use.files.add(r.path);
         use.edits.push({ p: r.path, ok: true });
         return `${r.created ? "Created" : "Saved"} ${r.path}. It is on the canvas now.`;
@@ -433,7 +440,8 @@ export function designTools(call: FolderCaller, use: FolderUse, hooks: DesignHoo
         use.edits.push({ p: clean.slice(0, 120), ok: false });
         return failure(e);
       } finally {
-        hooks.event(clean, "done", sha);
+        // The host's spelling of the path (with the shared folder's name), which is what open canvases use.
+        hooks.event(saved ?? clean, "done", sha);
       }
     });
     last = turn.catch(() => undefined);

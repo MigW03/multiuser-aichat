@@ -338,7 +338,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         const design = designTools(call, use, {
           event: (path, state, sha) => void designAi(projectId, { path, state, by: authorId, chatId, ...(sha ? { sha } : {}) }),
         });
-        folder = { tools: { ...folderTools(call, use, changes, caps), ...design }, use, caps, editState };
+        folder = { tools: { ...folderTools(call, use, changes, caps, design), ...design }, use, caps, editState };
         runSeconds = LOCK_SECONDS_EDIT;
         await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
       }

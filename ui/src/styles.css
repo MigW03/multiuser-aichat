@@ -1033,7 +1033,8 @@ h1, h2, h3, p { margin: 0; }
 .dz-name .dz-input { width: 100%; font: var(--text-row); }
 .dz-in { padding: 0 2px 4px; }
 .dz-section { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 8px; border-top: 1px solid var(--border); }
-.dz-section-title { margin: 0 0 2px; font: var(--text-label); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-fg); }
+.dz-section-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 22px; }
+.dz-section-title { margin: 0; font: var(--text-label); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-fg); }
 .dz-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dz-row.two > * { flex: 1; min-width: 0; }
 .dz-label { flex: none; width: 46px; font: var(--text-small); color: var(--muted-fg); }
@@ -1077,3 +1078,25 @@ h1, h2, h3, p { margin: 0; }
 .design-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); max-width: 460px; }
 .design-card > svg { flex: none; color: var(--muted-fg); }
 .design-card-text { display: flex; flex-direction: column; min-width: 0; }
+
+/* Figma-like layout and stroke controls */
+.dz-icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-fg); }
+.dz-icon-btn:hover:not(:disabled) { background: var(--muted); color: var(--fg); }
+.dz-icon-btn.on { background: var(--muted); color: var(--fg); }
+.dz-iconchoice { display: flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--muted); }
+.dz-iconchoice button { flex: 1; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-fg); }
+.dz-iconchoice button:hover:not(:disabled) { color: var(--fg); }
+.dz-iconchoice button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.dz-auto { display: flex; gap: 10px; align-items: flex-start; }
+.dz-auto-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.dz-alignbox { flex: none; display: flex; flex-direction: column; padding: 3px; border-radius: 8px; background: var(--muted); }
+.dz-alignrow { display: flex; }
+.dz-alignbox button { width: 20px; height: 20px; padding: 0; border: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; }
+.dz-alignbox button span { width: 4px; height: 4px; border-radius: 50%; background: var(--t12, rgb(0 0 0 / 0.25)); }
+.dz-alignbox button:hover:not(:disabled) span { background: var(--muted-fg); }
+.dz-alignbox button.on span { width: 10px; height: 4px; border-radius: 2px; background: var(--p); }
+.dz-toggle { flex: none; height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted-fg); font: var(--text-small); }
+.dz-toggle.on { border-color: var(--p); color: var(--p); }
+.dz-padding { align-items: center; }
+.dz-pad4 { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dz-num .dz-label svg { display: block; }

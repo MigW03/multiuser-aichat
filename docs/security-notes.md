@@ -73,6 +73,19 @@ A register of the places where the app shows or runs content it does not trust, 
 
 ---
 
+## 6. Stored copy of shared files (Cloudflare R2, server, every member)
+
+- **Whose content:** the files of an approved shared item, uploaded by that item's owner. Every project member can list and download them.
+- **The wall:** every route checks the signed-in person belongs to the project and that the item is approved (`activeShareFor`); only the item's owner writes or removes. Keys are `projects/<project uuid>/<item uuid>/<path>` built only by `file-paths.ts` from UUID-checked ids and a validated path (no `..`, `.`, empty parts, backslash, `:`, control or direction characters, Windows device names, hidden names such as `.env`, `.git`, `node_modules`, `*.pem`).
+- **What the content can do:** nothing on our origin. Objects are stored as `application/octet-stream` with `Content-Disposition: attachment`, and the download address (valid 60 s, `no-store`) forces both again, so a stored HTML file is saved, not run, and R2 is a different origin from the app.
+- **Secrets:** text files that contain a key or token are refused (422, `file-scan.ts`, same patterns as `redactSecrets`), because a download would otherwise skip the masking that reads of a shared folder get. Binary files are not scanned.
+- **Limits:** 25 MB a file, 1 GB and 20,000 files a project, 3 uploads in memory at once, `Content-Length` required, rate limits per person.
+- **Kept afterwards:** the object, until the owner removes it, the item stops being shared, or the project is deleted (best effort; an orphan can't be read because reads need an approved item).
+- **Never:** build a key from anything but `file-paths.ts`; serve an object through our own origin with its stored type; return the R2 credentials, endpoint or bucket in an answer or a log line; let a non-owner write.
+- **Re-audit when:** the AI reads stored files, the desktop app uploads automatically, files are served inline for preview, or items can be renamed (a one-file item is stored under its name).
+
+---
+
 ## Questions an audit should ask of every new surface like these
 
 1. Whose content is it, and who decides to look at it or run it? Is there a confirmation the page cannot click?

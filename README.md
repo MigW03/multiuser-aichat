@@ -108,6 +108,7 @@ in the database and picked up again at boot, but two machines would both run the
 | `APP_URL` | The web app's public address (https), used in invite links |
 | `SERVER_URL` | Optional. This server's own public address (https), the redirect for OAuth sign-in to remote MCP servers. Unset: OAuth sign-in is off |
 | `RESEND_API_KEY`, `MAIL_FROM` | Optional, to email invites |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET` | Optional, all four together: Cloudflare R2 (S3 API) where a project's shared files are stored, so they work when their owner's computer is off. Set only some and the server refuses to start. None: file storage answers 503 `storage_off` |
 
 `PORT`, `HOST` and `TRUST_PROXY` are already set in `fly.toml`. The web app gets the server's address at build time
 as `VITE_SERVER_URL` (for example `https://multiuser-chat-server.fly.dev`; see the Vercel section).

@@ -181,8 +181,6 @@ export function Shell({ userId }: { userId: string }) {
   const design = useDesignMode({
     projectId,
     userId,
-    available: hasShares,
-    folders: shareFolders,
     onOpening: () => {
       setPreview(null);
       setFileReq(null);
@@ -302,7 +300,7 @@ export function Shell({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow, collapsed, userId, designOpen]);
 
-  // Cmd+K (Ctrl+K off a Mac) in a project that shares a folder: the designs, and "New design".
+  // Cmd+K (Ctrl+K off a Mac) in a project: the designs, and "New design".
   const pickDesign = design.ctx.available ? design.ctx.pick : null;
   useEffect(() => {
     if (!pickDesign) return;
@@ -481,6 +479,8 @@ export function Shell({ userId }: { userId: string }) {
                 }}
                 onEdit={(d) => design.logEdit(designShown.path, d)}
                 onOpenFile={(p) => filesCtx.open(p, true)}
+                onOpenDesign={(p) => design.ctx.open(p)}
+                buildFolder={shareFolders[0] ?? ""}
               />
               {!narrow && !designShown.full && (
                 <PreviewResizer

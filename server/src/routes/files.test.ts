@@ -41,6 +41,9 @@ const fakeStore = (): ObjectStore => ({
     const o = objects.get(key);
     return o ? { key, bytes: o.body.length, modified: o.modified } : null;
   },
+  async get(key) {
+    return objects.get(key)?.body ?? null;
+  },
   async list(prefix) {
     const files: StoredObject[] = [];
     const dirs = new Set<string>();

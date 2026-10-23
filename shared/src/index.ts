@@ -475,10 +475,8 @@ export type FolderRequest =
   | { id: string; op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
   | { id: string; op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number }
   | { id: string; op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number }
-  // Design files (*.design.html): read whole, and saved at once without the host's approval (see shared/src/design.ts).
-  | { id: string; op: "design_read"; path: string }
-  | { id: string; op: "design_write"; path: string; content: string; baseSha?: string | null; hadRead?: boolean }
-  | { id: string; op: "design_edit"; path: string; oldString: string; newString: string; replaceAll?: boolean };
+  // An older design file (*.design.html) in a shared folder, read whole (read-only) to show it and copy it into the project.
+  | { id: string; op: "design_read"; path: string };
 
 export type GitStatusFile = { path: string; /** index column of `git status --porcelain` */ index: string; /** worktree column */ worktree: string };
 export type GitStatusResult = { branch: string | null; files: GitStatusFile[]; truncated: boolean };
@@ -632,4 +630,5 @@ export * from "./supabase.ts";
 export * from "./vercel.ts";
 export * from "./mcp-presets.ts";
 export * from "./design.ts";
+export * from "./edit-match.ts";
 export * from "./files.ts";

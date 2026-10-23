@@ -1,9 +1,8 @@
-import { DESIGN_LIMITS, DESIGN_SUFFIX, FOLDER_LIMITS as L, isDesignPath, type DesignWriteResult, type FolderGlobResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, isDesignPath } from "@mc/shared";
 import { Hono, type Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
-import { designSaved } from "../design-events.ts";
 import { dbError } from "../errors.ts";
 import { RelayError } from "../folder-relay.ts";
 import { folderAccess, hub, pushOwnerItems } from "../folders.ts";
@@ -119,35 +118,8 @@ folder.get("/:id/folder/git/status", async (c) => {
   }
 });
 
-folder.get("/:id/folder/git/diff", async (c) => {
-  const q = gitQuery.safeParse(c.req.query());
-  if (!q.success) return c.json({ error: "Invalid request" }, 400);
-  try {
-    return c.json(await hub.call(c.req.param("id"), { op: "git", sub: "diff", ...(q.data.target ? { target: q.data.target } : {}), ...(q.data.path ? { path: q.data.path } : {}) }));
-  } catch (e) {
-    return relayFailure(c, e);
-  }
-});
-
-// Design files (*.design.html): every member may open and save them from the canvas, without the host approving each save
-// (the host's app still checks the path and refuses active content). A save names the version it was made from.
+// An older design file in a shared folder, read whole (read-only): the canvas shows it and can copy it into the project.
 const designQuery = z.object({ path: z.string().min(1).max(L.pathChars).refine(isDesignPath) });
-const designBody = z.object({
-  path: z.string().min(1).max(L.pathChars).refine(isDesignPath),
-  content: z.string().max(DESIGN_LIMITS.chars),
-  baseSha: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
-});
-
-// The design files in the shared folders, for the "Design" menu and Cmd+K.
-folder.get("/:id/folder/designs", async (c) => {
-  try {
-    const r = (await hub.call(c.req.param("id"), { op: "glob", pattern: `**/*${DESIGN_SUFFIX}`, limit: 100 })) as FolderGlobResult;
-    return c.json({ paths: r.paths.filter(isDesignPath), truncated: r.truncated });
-  } catch (e) {
-    return relayFailure(c, e);
-  }
-});
-
 folder.get("/:id/folder/design", async (c) => {
   const q = designQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
@@ -158,15 +130,13 @@ folder.get("/:id/folder/design", async (c) => {
   }
 });
 
-folder.put("/:id/folder/design", rateLimit("design-save", 120, 60_000), async (c) => {
-  const body = designBody.safeParse(await c.req.json().catch(() => null));
-  if (!body.success) return c.json({ error: "Invalid request" }, 400);
-  const projectId = c.req.param("id");
+folder.get("/:id/folder/git/diff", async (c) => {
+  const q = gitQuery.safeParse(c.req.query());
+  if (!q.success) return c.json({ error: "Invalid request" }, 400);
   try {
-    const r = (await hub.call(projectId, { op: "design_write", path: body.data.path, content: body.data.content, baseSha: body.data.baseSha })) as DesignWriteResult;
-    void designSaved(projectId, { path: r.path, sha: r.sha, by: c.get("userId") });
-    return c.json(r);
+    return c.json(await hub.call(c.req.param("id"), { op: "git", sub: "diff", ...(q.data.target ? { target: q.data.target } : {}), ...(q.data.path ? { path: q.data.path } : {}) }));
   } catch (e) {
     return relayFailure(c, e);
   }
 });
+

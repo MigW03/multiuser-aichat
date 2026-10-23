@@ -1,4 +1,4 @@
-import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isPlanProvider, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
+import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
 import { Code2, Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Shapes, Sparkles } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
@@ -290,7 +290,7 @@ function DesignCards({ m }: { m: ChatMessage }) {
           <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden />
           <span className="grow design-card-text">
             <b className="truncate">{designName(p)}</b>
-            <span className="small muted truncate">{p}</span>
+            <span className="small muted truncate">{isProjectDesignPath(p) ? "Design in this project" : p}</span>
           </span>
           <Button size="sm" onClick={() => design.open(p)}>
             {design.path === p ? "Open now" : "Open"}

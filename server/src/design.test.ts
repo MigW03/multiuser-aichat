@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { designChipLabel, designMarker, designName, designSlug, isDesignPath, parseDesignMarker, stripDesignMarker } from "@mc/shared";
+import { designChipLabel, designMarker, designName, designSlug, designUnsafe, emptyDesign, isDesignPath, isProjectDesignPath, parseDesignMarker, projectDesignPath, projectDesignSlug, stripDesignMarker } from "@mc/shared";
 
 describe("design paths", () => {
   test("only names ending in .design.html, without characters the chat marker uses", () => {
@@ -42,5 +42,55 @@ describe("the chat marker", () => {
     assert.equal(designChipLabel({ action: "new" }), "New design");
     assert.equal(designChipLabel({ path: "a/b/landing.design.html", action: "build", boards: ["Home", "Pricing"] }), "Build in code · Home, Pricing");
     assert.equal(designChipLabel({ path: "a/b/landing.design.html" }), "landing");
+  });
+});
+
+describe("project design addresses", () => {
+  test("project:<slug>.design.html, slug in lower case words", () => {
+    assert.equal(projectDesignPath("landing-page"), "project:landing-page.design.html");
+    assert.equal(projectDesignSlug("project:landing-page.design.html"), "landing-page");
+    assert.equal(isDesignPath("project:landing-page.design.html"), true);
+    assert.equal(designName("project:landing-page.design.html"), "landing-page");
+    for (const bad of ["project:Landing.design.html", "project:../x.design.html", "project:a/b.design.html", "project:-a.design.html", "project:.design.html", "app/a.design.html", `project:${"a".repeat(61)}.design.html`, 3]) assert.equal(isProjectDesignPath(bad), false, String(bad));
+  });
+  test("a slug is never longer than a name and never ends in -", () => {
+    assert.equal(designSlug(`${"ab ".repeat(30)}`).length <= 60, true);
+    assert.doesNotMatch(designSlug(`${"a".repeat(59)} b`), /-$/);
+  });
+});
+
+describe("designUnsafe", () => {
+  test("refuses what can run or load from outside, however it is spelled", () => {
+    for (const html of [
+      "<script>x</script>",
+      "<SCRIPT >x</SCRIPT>",
+      "<svg><foreignObject></foreignObject></svg>",
+      '<div data-name=">" onclick="alert(1)">x</div>',
+      '<img/onerror=alert(1) src="data:image/png;base64,A">',
+      '<a href="java\tscript:alert(1)">x</a>',
+      '<a href="data:text/html,<b>hi</b>">x</a>',
+      '<div style="background: url&#40;http://x)"></div>',
+      '<div style="background: \\75 rl(http://x)"></div>',
+      '<div style="width: expression(alert(1))"></div>',
+      '<img srcset="a.png 1x">',
+      '<form action="/x"></form>',
+    ]) {
+      assert.ok(designUnsafe(html), html);
+    }
+  });
+
+  test("lets plain designs through: inline styles, inline pictures, code shown as text", () => {
+    for (const html of [
+      emptyDesign(),
+      '<img alt="dot" src="data:image/png;base64,AAAA">',
+      `<div style='background: url("data:image/webp;base64,AA") center / cover'></div>`,
+      "<h1>JavaScript: the good parts</h1>",
+      "<p>&lt;script&gt; is shown as code</p>",
+      '<p data-name="on fire">Hot</p>',
+      '<a href="#pricing" style="color: #3d63a0">See pricing</a>',
+      "<p>C:\\Users\\me</p>",
+    ]) {
+      assert.equal(designUnsafe(html), null, html);
+    }
   });
 });

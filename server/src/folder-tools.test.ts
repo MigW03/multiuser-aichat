@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { ChangePreview } from "@mc/shared";
-import { designInstructions, designTools, fenced, fitFiles, formatExec, formatGitStatus, formatGitText, folderInstructions, folderTools, formatGlob, formatGrep, formatList, formatRead, type FolderUse } from "./folder-tools.ts";
+import { fenced, fitFiles, formatExec, formatGitStatus, formatGitText, folderInstructions, folderTools, formatGlob, formatGrep, formatList, formatRead, type FolderUse } from "./folder-tools.ts";
 import { RelayError } from "./folder-relay.ts";
 
 const exec = async (t: unknown, input: unknown) => (t as { execute: (i: unknown, o: unknown) => Promise<string> }).execute(input, { toolCallId: "t", messages: [] });
@@ -394,76 +394,3 @@ describe("bash tool", () => {
   });
 });
 
-describe("design tools", () => {
-  test("save at once, only design files, and tell the canvas when they start and finish", async () => {
-    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: new Set() };
-    const events: string[] = [];
-    const sent: unknown[] = [];
-    const tools = designTools(
-      async (req) => {
-        sent.push(req);
-        return { path: (req as { path: string }).path, sha: "a".repeat(64), created: true };
-      },
-      use,
-      { event: (path, state, sha) => events.push(`${state} ${path}${sha ? " sha" : ""}`) },
-    );
-    assert.deepEqual(Object.keys(tools).sort(), ["design_edit", "design_write"]);
-    assert.match(await exec(tools.design_write, { path: "app/src/page.tsx", content: "x" }), /not a design file/);
-    assert.equal(sent.length, 0);
-    assert.match(await exec(tools.design_write, { path: "app/designs/a.design.html", content: "<section></section>" }), /Created app\/designs\/a.design.html/);
-    assert.deepEqual(events, ["start app/designs/a.design.html", "done app/designs/a.design.html sha"]);
-    assert.deepEqual(use.edits, [{ p: "app/designs/a.design.html", ok: true }]);
-    assert.equal((sent[0] as { hadRead: boolean }).hadRead, false);
-  });
-  test("an edit needs a read first in the same answer", async () => {
-    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: new Set() };
-    const tools = designTools(async (req) => ({ path: (req as { path: string }).path, sha: "b".repeat(64), created: false }), use, { event: () => undefined });
-    assert.match(await exec(tools.design_edit, { path: "app/designs/a.design.html", oldString: "a", newString: "b" }), /have not read/);
-    use.files.add("app/designs/a.design.html");
-    assert.match(await exec(tools.design_edit, { path: "app/designs/a.design.html", oldString: "a", newString: "b" }), /Saved/);
-  });
-  test("a refused save is reported to the model and still ends the canvas lock", async () => {
-    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: new Set() };
-    const events: string[] = [];
-    const tools = designTools(
-      async () => {
-        throw new RelayError("host", "Design files cannot contain a <script> element.", "bad_request");
-      },
-      use,
-      { event: (_p, state) => events.push(state) },
-    );
-    assert.match(await exec(tools.design_write, { path: "app/a.design.html", content: "<script></script>" }), /cannot contain/);
-    assert.deepEqual(events, ["start", "done"]);
-    assert.equal(use.edits[0]?.ok, false);
-  });
-  test("edit and write on a design file save it at once instead of asking for approval", async () => {
-    const use: FolderUse = { files: new Set(["app/designs/a.design.html"]), offline: false, edits: [], mcp: new Set() };
-    const sent: { op: string }[] = [];
-    const events: string[] = [];
-    const call = async (req: unknown) => {
-      sent.push(req as { op: string });
-      return { path: "app/designs/a.design.html", sha: "c".repeat(64), created: false };
-    };
-    const design = designTools(call, use, { event: (path, state) => events.push(`${state} ${path}`) });
-    const previews: string[] = [];
-    const tools = folderTools(call, use, { askedBy: "Ana", signal: new AbortController().signal, preview: (c: { id: string }) => previews.push(c.id), done: () => undefined }, { edit: true, git: false, exec: false }, design) as unknown as Record<"edit" | "write", unknown>;
-    assert.match(await exec(tools.edit, { path: "app/designs/a.design.html", oldString: "a", newString: "b" }), /Saved/);
-    assert.match(await exec(tools.write, { path: "app/designs/a.design.html", content: "<section></section>" }), /Saved/);
-    assert.deepEqual(sent.map((r) => r.op), ["design_edit", "design_write"]);
-    assert.equal(previews.length, 0);
-    assert.deepEqual(events, ["start app/designs/a.design.html", "done app/designs/a.design.html", "start app/designs/a.design.html", "done app/designs/a.design.html"]);
-  });
-  test("the canvas hears the host's spelling of the path when the save is done", async () => {
-    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: new Set() };
-    const events: string[] = [];
-    const tools = designTools(async () => ({ path: "app/designs/a.design.html", sha: "d".repeat(64), created: true }), use, { event: (path, state) => events.push(`${state} ${path}`) });
-    await exec(tools.design_write, { path: "designs/a.design.html", content: "<section></section>" });
-    assert.deepEqual(events, ["start designs/a.design.html", "done app/designs/a.design.html"]);
-  });
-  test("the instructions describe the format and the marker", () => {
-    const text = designInstructions();
-    assert.match(text, /data-board/);
-    assert.match(text, /data-nid/);
-    assert.match(text, /⟦design/);
-  });
-});

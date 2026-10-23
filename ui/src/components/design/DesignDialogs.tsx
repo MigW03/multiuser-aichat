@@ -1,4 +1,4 @@
-import { designName, designSlug, DESIGN_SUFFIX, emptyDesign } from "@mc/shared";
+import { DESIGN_LIMITS, type ProjectDesign } from "@mc/shared";
 import { Plus, Shapes } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api.ts";
@@ -6,14 +6,12 @@ import { Button, Dialog, ErrorLine, Field, ICON_SM, Spinner, STROKE, TextInput }
 
 const messageOf = (e: unknown, fallback = "Something went wrong.") => (e instanceof Error ? e.message : fallback);
 
-/** A new, empty design: a name, the first board's size, and the shared folder it goes in (under designs/). */
-export function NewDesignDialog({ projectId, folders, onCreated, onClose }: { projectId: string; folders: string[]; onCreated: (path: string) => void; onClose: () => void }) {
+/** A new, empty design: a name and the first board's size. It belongs to the project: everyone in it can open it. */
+export function NewDesignDialog({ projectId, onCreated, onClose }: { projectId: string; onCreated: (path: string) => void; onClose: () => void }) {
   const [name, setName] = useState("");
   const [board, setBoard] = useState<"desktop" | "phone">("desktop");
-  const [folder, setFolder] = useState(folders[0] ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const path = `${folder}/designs/${designSlug(name || "design")}${DESIGN_SUFFIX}`;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -21,7 +19,7 @@ export function NewDesignDialog({ projectId, folders, onCreated, onClose }: { pr
     setBusy(true);
     setError(null);
     try {
-      const r = await api.designSave(projectId, path, emptyDesign(board), null);
+      const r = await api.designCreate(projectId, { name: name.trim(), board });
       onCreated(r.path);
     } catch (err) {
       setError(messageOf(err));
@@ -29,26 +27,11 @@ export function NewDesignDialog({ projectId, folders, onCreated, onClose }: { pr
     }
   }
 
-  if (folders.length === 0) {
-    return (
-      <Dialog title="New design" onClose={onClose}>
-        <div className="col" style={{ gap: 16 }}>
-          <p className="small muted">A design is saved as a file in a shared folder. Share a folder in this project first (from the desktop app), then make the design there.</p>
-          <div className="dialog-actions">
-            <Button variant="primary" onClick={onClose}>
-              OK
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog title="New design" onClose={onClose}>
       <form className="col" style={{ gap: 16 }} onSubmit={submit}>
-        <Field label="Name" htmlFor="design-name" hint={<span className="truncate block">{path}</span>}>
-          <TextInput id="design-name" value={name} maxLength={60} placeholder="Landing page" onChange={(e) => setName(e.target.value)} data-autofocus />
+        <Field label="Name" htmlFor="design-name" hint="Everyone in the project can see and edit it.">
+          <TextInput id="design-name" value={name} maxLength={DESIGN_LIMITS.nameChars} placeholder="Landing page" onChange={(e) => setName(e.target.value)} data-autofocus />
         </Field>
         <Field label="First board">
           <span className="segmented" role="radiogroup" aria-label="First board">
@@ -59,17 +42,6 @@ export function NewDesignDialog({ projectId, folders, onCreated, onClose }: { pr
             ))}
           </span>
         </Field>
-        {folders.length > 1 && (
-          <Field label="Folder" htmlFor="design-folder">
-            <select id="design-folder" className="input" value={folder} onChange={(e) => setFolder(e.target.value)}>
-              {folders.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
         <ErrorLine>{error}</ErrorLine>
         <div className="dialog-actions">
           <Button onClick={onClose}>Cancel</Button>
@@ -82,9 +54,9 @@ export function NewDesignDialog({ projectId, folders, onCreated, onClose }: { pr
   );
 }
 
-/** Cmd+K and the chat's "Design" button: the designs in the shared folders, and "New design". Type to filter, arrows and Enter to pick. */
+/** Cmd+K and the chat's "Design" button: the project's designs, and "New design". Type to filter, arrows and Enter to pick. */
 export function DesignPicker({ projectId, current, onOpen, onNew, onClose }: { projectId: string; current: string | null; onOpen: (path: string) => void; onNew: () => void; onClose: () => void }) {
-  const [paths, setPaths] = useState<string[] | null>(null);
+  const [designs, setDesigns] = useState<ProjectDesign[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
@@ -93,10 +65,10 @@ export function DesignPicker({ projectId, current, onOpen, onNew, onClose }: { p
   useEffect(() => {
     let live = true;
     api.designList(projectId).then(
-      (r) => live && setPaths(r.paths),
+      (r) => live && setDesigns(r.designs),
       (e: unknown) => {
         if (!live) return;
-        setPaths([]);
+        setDesigns([]);
         setError(messageOf(e));
       },
     );
@@ -107,9 +79,9 @@ export function DesignPicker({ projectId, current, onOpen, onNew, onClose }: { p
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const found = (paths ?? []).filter((p) => !needle || p.toLowerCase().includes(needle));
-    return [{ kind: "new" as const, path: "" }, ...found.map((path) => ({ kind: "open" as const, path }))];
-  }, [paths, q]);
+    const found = (designs ?? []).filter((d) => !needle || d.name.toLowerCase().includes(needle));
+    return [{ kind: "new" as const, path: "", name: "New design" }, ...found.map((d) => ({ kind: "open" as const, path: d.path, name: d.name }))];
+  }, [designs, q]);
   useEffect(() => setAt(0), [q]);
   useEffect(() => list.current?.querySelector(`[data-i="${at}"]`)?.scrollIntoView({ block: "nearest" }), [at]);
 
@@ -144,17 +116,17 @@ export function DesignPicker({ projectId, current, onOpen, onNew, onClose }: { p
             <li key={r.kind + r.path}>
               <button type="button" role="option" data-i={i} aria-selected={i === at} className={`dz-picker-row ${i === at ? "on" : ""}`} onMouseEnter={() => setAt(i)} onClick={() => choose(i)}>
                 {r.kind === "new" ? <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
-                <span className="grow truncate">{r.kind === "new" ? "New design" : designName(r.path)}</span>
-                {r.kind === "open" && <span className="small muted truncate dz-picker-path">{r.path === current ? "Open now" : r.path}</span>}
+                <span className="grow truncate">{r.name}</span>
+                {r.kind === "open" && r.path === current && <span className="small muted truncate dz-picker-path">Open now</span>}
               </button>
             </li>
           ))}
-          {paths === null && (
+          {designs === null && (
             <li className="small muted row pad">
               <Spinner /> Looking for designs…
             </li>
           )}
-          {paths && paths.length === 0 && !error && <li className="small muted pad">No designs yet in the shared folders.</li>}
+          {designs && designs.length === 0 && !error && <li className="small muted pad">No designs in this project yet.</li>}
         </ul>
         <ErrorLine>{error}</ErrorLine>
       </div>

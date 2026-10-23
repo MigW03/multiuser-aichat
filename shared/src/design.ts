@@ -1,18 +1,43 @@
-// Design mode: a design is one HTML file in a shared folder, named `<something>.design.html`. Each top-level element with
-// `data-board` is an artboard on the canvas; every layer carries a stable `data-nid`. The file is plain HTML with inline
+// Design mode: a design is one HTML document that belongs to a project (not to anyone's folder). Each top-level element
+// with `data-board` is an artboard on the canvas; every layer carries a stable `data-nid`. It is plain HTML with inline
 // styles, so people edit it on the canvas, the AI edits it with its design tools, and code is built from it.
 //
-// Design files come from anyone in a project, so they never run code: the host's app refuses to write one that holds
-// scripts or other active content (designUnsafe), and the page cleans what it shows again before drawing it.
+// The server keeps a project's designs: the list and versions in the database, the HTML in the object store (R2). A design
+// is addressed as `project:<slug>.design.html`. Older designs may still be files in a shared folder (`*.design.html`);
+// those open read-only, with a button that copies them into the project.
+//
+// Designs come from anyone in a project, so they never run code: the server refuses to save one that holds scripts or
+// other active content (designUnsafe), and the page cleans what it shows again before drawing it.
 
 export const DESIGN_LIMITS = {
   /** Longest design file, in characters. Room for many boards; well inside the relay's 1 MB frames. */
   chars: 400_000,
   /** Longest edit summary or board list carried in a chat marker. */
   markerChars: 600,
+  /** Longest design name. */
+  nameChars: 60,
+  /** Designs in one project. */
+  perProject: 200,
+  /** Saved versions kept for each design (older ones are dropped). */
+  versions: 50,
 } as const;
 
 export const DESIGN_SUFFIX = ".design.html";
+/** How a project's own designs are addressed: `project:landing-page.design.html`. A shared folder's paths never hold ":". */
+export const PROJECT_DESIGN_PREFIX = "project:";
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** The address of a project design. */
+export const projectDesignPath = (slug: string) => `${PROJECT_DESIGN_PREFIX}${slug}${DESIGN_SUFFIX}`;
+
+/** The slug of a project design's address, or null when it is not one (a shared folder's file, or not valid). */
+export function projectDesignSlug(path: unknown): string | null {
+  if (typeof path !== "string" || !path.startsWith(PROJECT_DESIGN_PREFIX) || !path.endsWith(DESIGN_SUFFIX)) return null;
+  const slug = path.slice(PROJECT_DESIGN_PREFIX.length, path.length - DESIGN_SUFFIX.length);
+  return slug.length <= DESIGN_LIMITS.nameChars && SLUG.test(slug) ? slug : null;
+}
+
+export const isProjectDesignPath = (path: unknown): boolean => projectDesignSlug(path) !== null;
 
 /** Whether a path names a design file. Paths with characters the chat marker uses are not allowed. */
 export function isDesignPath(path: unknown): path is string {
@@ -22,9 +47,10 @@ export function isDesignPath(path: unknown): path is string {
   return last.length > DESIGN_SUFFIX.length && last.toLowerCase().endsWith(DESIGN_SUFFIX);
 }
 
-/** "designs/landing-page.design.html" -> "landing-page". */
+/** "designs/landing-page.design.html" and "project:landing-page.design.html" -> "landing-page". */
 export function designName(path: string): string {
-  const last = path.split("/").filter(Boolean).at(-1) ?? path;
+  const unprefixed = path.startsWith(PROJECT_DESIGN_PREFIX) ? path.slice(PROJECT_DESIGN_PREFIX.length) : path;
+  const last = unprefixed.split("/").filter(Boolean).at(-1) ?? unprefixed;
   return last.slice(0, Math.max(0, last.length - DESIGN_SUFFIX.length)) || last;
 }
 
@@ -36,12 +62,13 @@ export function designSlug(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .slice(0, DESIGN_LIMITS.nameChars)
+    .replace(/-+$/g, "");
   return slug || "design";
 }
 
-// Active content a design must never hold. Checked as text by the host's app before anything is written, so a design
-// file stays harmless even when someone opens it straight in a browser. Attribute values are read the way a browser
+// Active content a design must never hold. Checked as text by the server before anything is saved, so a design stays
+// harmless even when someone opens it straight in a browser. Attribute values are read the way a browser
 // reads them (character references decoded, tabs and line breaks in a URL scheme ignored).
 const BAD_TAG: [RegExp, string][] = [
   [/<\s*\/?\s*(script|iframe|frame|frameset|object|embed|applet|link|meta|base|form|style|template|noscript|portal)\b/i, "a <$1> element"],
@@ -110,7 +137,7 @@ export function emptyDesign(board: "desktop" | "phone" = "desktop"): string {
 }
 
 // ---- The chat marker: a design reference at the start of a message, drawn as a chip. The AI reads it as text.
-// ⟦design path="designs/a.design.html" sel="n6,n4" names="Hero › Button" edits="..." action="build" boards="Home"⟧
+// ⟦design path="project:a.design.html" sel="n6,n4" names="Hero › Button" edits="..." action="build" boards="Home"⟧
 
 export type DesignAction = "new" | "build" | "update-code";
 export type DesignRef = {
@@ -165,18 +192,28 @@ export function parseDesignMarker(text: string): { ref: DesignRef; rest: string 
   return { ref, rest: text.slice(end + 1).replace(/^\s*\n/, "") };
 }
 
-/** Realtime broadcasts on `project:<id>` about design files. Hints only: the canvas re-reads the file to know. */
-export type DesignSavedEvent = { path: string; sha: string; by: string };
+/** Realtime broadcasts on `project:<id>` about designs. Hints only: the canvas re-reads the design to know. */
+export type DesignSavedEvent = { path: string; version: number; by: string };
+/** The list of designs changed (one was made or deleted). */
+export type DesignListEvent = { by: string };
 /** The AI is writing a design (`start`) or finished one write (`done`). `chatId`: where its answer is, for Stop. */
 /** `seq` grows with every hint the server sends, so a canvas can drop one that arrives after a newer one. */
-export type DesignAiEvent = { path: string; state: "start" | "done"; by: string; chatId: string; sha?: string; seq?: number };
+export type DesignAiEvent = { path: string; state: "start" | "done"; by: string; chatId: string; version?: number; seq?: number };
 /** Someone asks the current editor of a design to hand it over, and the editor's answer. */
 export type DesignAskEvent = { path: string; from: string; name: string };
 export type DesignHandoverEvent = { path: string; from: string; to: string };
 
-/** What the host's app answers for design files. `sha` is the SHA-256 of the file as stored. */
-export type DesignReadResult = { path: string; text: string; sha: string };
-export type DesignWriteResult = { path: string; sha: string; created: boolean };
+/** A project design in the list. `version` grows by one with every save. People are profile ids (null once gone). */
+export type ProjectDesign = { path: string; name: string; version: number; bytes: number; createdBy: string | null; updatedBy: string | null; createdAt: string; updatedAt: string };
+export type DesignList = { designs: ProjectDesign[] };
+/** A design's text, and the version it is, for the next save. */
+export type DesignReadResult = { path: string; name: string; text: string; version: number };
+export type DesignWriteResult = { path: string; version: number; created: boolean };
+/** An older design file in a shared folder, read whole. It opens read-only and can be copied into the project. */
+export type FolderDesignResult = { path: string; text: string };
+/** One saved version, newest first in a list. */
+export type DesignVersion = { version: number; by: string | null; at: string; bytes: number };
+export type DesignVersionList = { versions: DesignVersion[]; current: number };
 
 /** A message without its leading design marker, for previews and titles. */
 export function stripDesignMarker(text: string): string {

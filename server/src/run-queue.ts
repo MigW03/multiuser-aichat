@@ -20,7 +20,8 @@ import {
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
 import { designAi } from "./design-events.ts";
-import { designInstructions, designTools, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { designInstructions, designTools } from "./design-tools.ts";
+import { FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
@@ -35,6 +36,8 @@ import { getUserKey } from "./keys.ts";
 import { newestPictureIds, promptName, toModelMessages, transcriptText, withinBudget, type Row } from "./model-messages.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
 import { getSmart, smartModelInfo } from "./smart.ts";
+import { createDesigns } from "./project-designs.ts";
+import { storageOn } from "./r2.ts";
 import { pickSmartModel } from "./smart-pick.ts";
 import type { PickInput } from "./smart-rules.ts";
 import { admin, type Admin } from "./supabase.ts";
@@ -49,6 +52,8 @@ const ROW_COLUMNS = "id, role, author_id, kind, content, mentions, reply_to, ski
 
 /** The run that is answering in each chat right now, so its asker can stop it. One server instance. */
 const active = new Map<string, { askerId: string; controller: AbortController }>();
+/** The projects' designs (database and R2), for the AI's design tools. */
+const projectDesigns = createDesigns();
 
 /** Stops the answer in progress in a chat if `userId` is the person it is answering. */
 export function stopRun(chatId: string, userId: string): boolean {
@@ -271,6 +276,10 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     const mcpUsed = new Set<string>();
     /** The AI can add a note in a project chat; notes are the asker's own, and shared with the project. */
     let noting: ToolSet | null = null;
+    /** The project's designs, in any project chat (they belong to the project, not to a folder). */
+    let designing: ReturnType<typeof designTools> | null = null;
+    /** What this answer read and changed, for the note under it. Shared by the folder and the design tools. */
+    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -317,11 +326,23 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       const projectId = (chatRow?.project_id as string | null | undefined) ?? null;
       if (projectId) {
         noting = noteTools(notesFor(db, chatId, projectId, authorId));
+        // Designs are saved without approval (the server accepts only inert HTML in them). Drafting one takes several
+        // steps, so these runs get the longer lock too.
+        if (storageOn()) {
+          designs.projectId = projectId;
+          designing = designTools(projectDesigns, { userId: authorId, projectId }, use, {
+            event: (path, state, version) => {
+              if (state === "start") designs.paths.add(path);
+              void designAi(projectId, { path, state, by: authorId, chatId, ...(version ? { version } : {}) });
+            },
+          });
+          runSeconds = LOCK_SECONDS_EDIT;
+          await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
+        }
       }
       const access = projectId ? await folderAccess(authorId, projectId) : null;
       if (projectId && access?.ok) {
         folderName = access.name;
-        const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
         // AI changes and git are on only when the host switched them on in their app. Every change still needs the host's approval there.
         const caps = await hub.caps(projectId);
         const editState: AiEditState = caps.edit ? "edit" : await hub.editState(projectId);
@@ -335,16 +356,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
             }
           : undefined;
         const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
-        // Design files are saved without approval (the host's app accepts only inert HTML in them), so any run with shared
-        // files can draft and change designs. Drafting a design takes several steps, so these runs get the longer lock too.
-        designs.projectId = projectId;
-        const design = designTools(call, use, {
-          event: (path, state, sha) => {
-            if (state === "start") designs.paths.add(path);
-            void designAi(projectId, { path, state, by: authorId, chatId, ...(sha ? { sha } : {}) });
-          },
-        });
-        folder = { tools: { ...folderTools(call, use, changes, caps, design), ...design }, use, caps, editState };
+        folder = { tools: folderTools(call, use, changes, caps, designing ?? undefined), use, caps, editState };
         runSeconds = LOCK_SECONDS_EDIT;
         await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
       }
@@ -357,7 +369,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         return { servers: [] } as McpState;
       });
       if (localState.servers.length || remoteState.servers.length) {
-        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(noting ?? {})];
+        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {})];
         const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
         const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
         connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
@@ -387,11 +399,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}${withTools ? `\n\n${designInstructions()}` : ""}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected || noting) ? { tools: { ...connected?.tools, ...folder?.tools, ...noting }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
+        ...(withTools && (folder || connected || noting || designing) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
@@ -418,18 +430,18 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let streamError = await attempt(true);
     // Some connections refuse tools (a model without tool support, or a ChatGPT plan backend that changed). Rather than
     // fail the answer, answer once more without the folder, and say why.
-    if (streamError && (folder || connected || noting) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
+    if (streamError && (folder || connected || noting || designing) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
       console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder and connected tools (${streamError.statusCode})`);
       streamError = await attempt(false);
       if (!streamError) {
-        folder?.use.files.clear();
+        use.files.clear();
         mcpUsed.clear();
       }
     }
     if (controller.signal.aborted) throw new UserFacing("stopped", "Stopped.");
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
-    if (folder || mcpUsed.size) meta = { ...meta, ...fitFiles(folder?.use ?? { files: new Set(), offline: false, edits: [], mcp: mcpUsed }) };
+    if (folder || designing || mcpUsed.size) meta = { ...meta, ...fitFiles(use) };
     if (auto.chosen) meta = { ...meta, smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);

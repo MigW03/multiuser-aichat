@@ -16,6 +16,8 @@ export interface ObjectStore {
   /** Writes one object. It is always stored (and later served) as a download, never as a page. */
   put(key: string, body: Uint8Array, meta?: Record<string, string>): Promise<void>;
   head(key: string): Promise<StoredObject | null>;
+  /** One object's bytes, or null when there is none. For small objects only (designs): the whole body is held in memory. */
+  get(key: string, maxBytes: number): Promise<Uint8Array | null>;
   /** The files and sub-folders directly under `prefix` (which ends in "/"). */
   list(prefix: string, max: number): Promise<Listing>;
   /** Everything under `prefix`, counted. `null` when there are more than `maxFiles`. */
@@ -70,6 +72,21 @@ export function createR2Store(config: R2Config): ObjectStore {
         return { key, bytes: r.ContentLength ?? 0, modified: iso(r.LastModified) };
       } catch (e) {
         if ((e as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null;
+        throw e;
+      }
+    },
+
+    async get(key, maxBytes) {
+      try {
+        const r = await client.send(new GetObjectCommand({ Bucket, Key: key }));
+        if ((r.ContentLength ?? 0) > maxBytes) throw new Error("object larger than allowed");
+        const body = await r.Body?.transformToByteArray();
+        if (!body) return null;
+        if (body.byteLength > maxBytes) throw new Error("object larger than allowed");
+        return body;
+      } catch (e) {
+        const status = (e as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+        if (status === 404 || (e as { name?: string }).name === "NoSuchKey") return null;
         throw e;
       }
     },

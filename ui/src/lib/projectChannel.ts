@@ -2,13 +2,13 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../supabase.ts";
 
 // One realtime channel per open project (`project:<id>`, members only): presence for the green dots and for who has which
-// design open, and broadcasts about design files. Several parts of the page use it, so it is shared and counted.
+// design open, and broadcasts about designs. Several parts of the page use it, so it is shared and counted.
 
 /** What each person's page says about itself. `design`: the design file it has open; `editing`: it is the one editing it. */
 export type ProjectPresence = { at: number; design?: string | null; editing?: boolean; since?: number; name?: string };
 
 type Listener = (payload: Record<string, unknown>) => void;
-const EVENTS = ["design_saved", "design_ai", "design_ask", "design_handover"] as const;
+const EVENTS = ["design_saved", "design_list", "design_ai", "design_ask", "design_handover"] as const;
 export type ProjectEvent = (typeof EVENTS)[number];
 
 type Entry = {

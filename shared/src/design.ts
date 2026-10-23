@@ -168,7 +168,8 @@ export function parseDesignMarker(text: string): { ref: DesignRef; rest: string 
 /** Realtime broadcasts on `project:<id>` about design files. Hints only: the canvas re-reads the file to know. */
 export type DesignSavedEvent = { path: string; sha: string; by: string };
 /** The AI is writing a design (`start`) or finished one write (`done`). `chatId`: where its answer is, for Stop. */
-export type DesignAiEvent = { path: string; state: "start" | "done"; by: string; chatId: string; sha?: string };
+/** `seq` grows with every hint the server sends, so a canvas can drop one that arrives after a newer one. */
+export type DesignAiEvent = { path: string; state: "start" | "done"; by: string; chatId: string; sha?: string; seq?: number };
 /** Someone asks the current editor of a design to hand it over, and the editor's answer. */
 export type DesignAskEvent = { path: string; from: string; name: string };
 export type DesignHandoverEvent = { path: string; from: string; to: string };

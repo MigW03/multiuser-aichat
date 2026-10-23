@@ -242,6 +242,13 @@ h1, h2, h3, p { margin: 0; }
 .segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--muted); border-radius: 10px; align-self: flex-start; }
 .seg { height: 30px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; font: var(--text-row); color: var(--muted-fg); }
 .seg.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.board-tiles { display: flex; gap: 12px; }
+.board-tile { width: 132px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); color: var(--muted-fg); text-align: center; }
+.board-tile:hover { color: var(--fg); border-color: var(--muted-fg); }
+.board-tile.on { border-color: var(--p); box-shadow: 0 0 0 1px var(--p); color: var(--fg); background: var(--card); }
+.board-tile svg { margin-bottom: 8px; }
+.board-tile-name { font: var(--text-row); font-weight: 600; color: var(--fg); }
+.board-tile-size { font: var(--text-small); }
 
 .link-box { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--border); border-radius: var(--r-control); background: var(--muted); }
 .link-box code { flex: 1; min-width: 0; font: 12.5px var(--mono); }
@@ -870,10 +877,10 @@ h1, h2, h3, p { margin: 0; }
 .file-card .file-bar { gap: 6px; }
 .file-title { flex: 1; min-width: 0; padding: 0 4px; }
 .file-title .mono { font: 600 13px var(--mono); }
-.seg { display: inline-flex; flex: none; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--muted); }
-.seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; font: var(--text-small); font-weight: 600; color: var(--muted-fg); }
-.seg button:hover { color: var(--fg); }
-.seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.view-seg { display: inline-flex; flex: none; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--muted); }
+.view-seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; font: var(--text-small); font-weight: 600; color: var(--muted-fg); }
+.view-seg button:hover { color: var(--fg); }
+.view-seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
 .file-body { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--card); }
 .file-body.is-frame { overflow: hidden; background: #fff; }
 .file-markdown { max-width: var(--message-column); margin: 0 auto; padding: 20px 22px 32px; }

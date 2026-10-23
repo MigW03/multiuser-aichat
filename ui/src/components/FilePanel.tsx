@@ -120,7 +120,7 @@ export function FilePanel({ projectId, request, folders, onClose }: { projectId:
           </Button>
         )}
         {kind !== "text" && loaded && (
-          <div className="seg" role="group" aria-label="View">
+          <div className="view-seg" role="group" aria-label="View">
             <button type="button" aria-pressed={showing === "preview"} className={showing === "preview" ? "on" : ""} onClick={() => flip("preview")}>
               Preview
             </button>

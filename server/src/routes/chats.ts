@@ -264,8 +264,8 @@ messages.post("/:id/retry", rateLimit("retry", 20, 60_000), async (c) => {
   if (!answer.run_id) return c.json({ error: "This answer can't be retried." }, 400);
   if (!(await listKeyHints(userId)).length) return c.json({ error: "Add an AI key in Settings first." }, 400);
 
-  await admin.from("messages").update({ status: "pending", run_id: null }).eq("run_id", answer.run_id).eq("role", "user");
-  await admin.from("messages").delete().eq("id", id);
+  // The questions keep their run_id: the run that follows finds this answer through it and writes the new attempt into the same message.
+  await admin.from("messages").update({ status: "pending" }).eq("run_id", answer.run_id).eq("role", "user");
   void processChatQueue(answer.chat_id as string).catch((e) => console.error(`[run] chat ${answer.chat_id}:`, e));
   return c.json({ ok: true });
 });

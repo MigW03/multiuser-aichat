@@ -19,6 +19,7 @@ import {
 } from "@mc/shared";
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
+import { answerSlot } from "./answer-slot.ts";
 import { designAi } from "./design-events.ts";
 import { designInstructions, designsOffInstructions, designTools } from "./design-tools.ts";
 import { FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
@@ -171,6 +172,8 @@ type Pending = {
   provider: string | null;
   model: string | null;
   reasoning: string | null;
+  /** Set only on a question that is being retried: the run whose answer the new attempt replaces. */
+  run_id: string | null;
   meta: MessageMeta;
 };
 
@@ -178,7 +181,7 @@ type Pending = {
 async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   const { data } = await db
     .from("messages")
-    .select("id, author_id, kind, provider, model, reasoning, meta")
+    .select("id, author_id, kind, provider, model, reasoning, run_id, meta")
     .eq("chat_id", chatId)
     .eq("role", "user")
     .eq("status", "pending")
@@ -199,24 +202,19 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   const runId = randomUUID();
 
   await db.from("messages").update({ status: "processing", run_id: runId }).in("id", batchIds);
-  const { data: assistant, error: insertErr } = await db
-    .from("messages")
-    .insert({
-      chat_id: chatId,
-      role: "assistant",
-      kind: summary ? "summary" : "message",
-      status: "streaming",
-      content: "",
-      provider,
-      model: modelId,
-      reasoning,
-      for_user_id: authorId,
-      key_user_id: authorId,
-      run_id: runId,
-      meta: summary ? { scope: first.meta.scope, from_seq: first.meta.from_seq } : {},
-    })
-    .select("id")
-    .single();
+  const answerRow = {
+    kind: summary ? "summary" : "message",
+    status: "streaming",
+    content: "",
+    provider,
+    model: modelId,
+    reasoning,
+    for_user_id: authorId,
+    key_user_id: authorId,
+    run_id: runId,
+    meta: summary ? { scope: first.meta.scope, from_seq: first.meta.from_seq } : {},
+  };
+  const { data: assistant, error: insertErr } = await answerSlot(db, chatId, authorId, batch, answerRow);
   if (insertErr || !assistant) {
     await db.from("messages").update({ status: "error" }).in("id", batchIds);
     return false;

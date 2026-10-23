@@ -23,6 +23,7 @@ import { smart } from "./routes/smart.ts";
 import { supabase } from "./routes/supabase.ts";
 import { vercel } from "./routes/vercel.ts";
 import { recoverRuns } from "./run-queue.ts";
+import { missingR2, storageOn } from "./r2.ts";
 
 const app = new Hono<AuthVars>();
 
@@ -77,6 +78,8 @@ app.onError((err, c) => {
 
 const server = serve({ fetch: app.fetch, port: env.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
   console.log(`server listening on http://${info.address}:${info.port}`);
+  // Names only, never values: without these, project designs (and the AI's design tools) are off.
+  console.log(storageOn() ? "[storage] R2 is set: project designs are on" : `[storage] R2 is not set (${missingR2().join(", ")}): project designs and the AI's design tools are off`);
   void recoverRuns();
   // Pictures uploaded and never sent are removed after an hour.
   const sweep = () => void sweepUnsentImages().catch((e) => console.error("[images] sweep failed:", e));

@@ -39,20 +39,26 @@ export const SMART_INSTRUCTIONS = [
   "Use a cheap, fast option for greetings, short factual questions, casual chat, simple rewrites and short summaries.",
   "Use a stronger, more expensive option only for hard work: multi-step reasoning, math, careful analysis, long or complex code, difficult writing, or many constraints.",
   "If the latest message has pictures, pick an option that can look at pictures.",
+  "If the latest message asks to make or change a design, mockup, wireframe, screen, files or code, or to use connected tools, the answer has to call tools correctly over several steps: pick a capable option that can call tools, not a small or cheap one.",
   "Judge by the latest message. The recent messages are only context.",
 ].join(" ");
 
 /** One model of the person's set, as Jev sees it. `key` is what Jev answers with; it never contains the model id. */
-export type SmartOption = { key: string; id: string; name: string; price: { input: number; output: number } | null; vision: boolean | undefined };
+export type SmartOption = { key: string; id: string; name: string; price: { input: number; output: number } | null; vision: boolean | undefined; tools?: boolean | undefined };
 
-/** The options for a set, in the order the person listed them. With pictures, models known not to see them are left out (unless none can). */
-export function smartOptions(models: string[], info: ModelInfo[], pictures: boolean): SmartOption[] {
+/**
+ * The options for a set, in the order the person listed them. With pictures, models known not to see them are left out; when the
+ * answer is offered tools, models known not to call them are left out (each unless that leaves none).
+ */
+export function smartOptions(models: string[], info: ModelInfo[], pictures: boolean, tools = false): SmartOption[] {
   const all = models.map((id, i): SmartOption => {
     const m = info.find((x) => x.id === id);
-    return { key: `m${i + 1}`, id, name: m?.name ?? id, price: m?.pricing ?? null, vision: m?.vision };
+    return { key: `m${i + 1}`, id, name: m?.name ?? id, price: m?.pricing ?? null, vision: m?.vision, tools: m?.tools };
   });
   const seeing = pictures ? all.filter((o) => o.vision !== false) : all;
-  return seeing.length > 0 ? seeing : all;
+  const usable = seeing.length > 0 ? seeing : all;
+  const calling = tools ? usable.filter((o) => o.tools !== false) : usable;
+  return calling.length > 0 ? calling : usable;
 }
 
 const cost = (o: SmartOption) => (o.price ? o.price.output + o.price.input / 4 : Number.POSITIVE_INFINITY);
@@ -70,10 +76,11 @@ export function describeOption(o: SmartOption, options: SmartOption[]): string {
   const rank = priced.indexOf(o);
   const tier = !o.price || priced.length < 2 ? "price unknown" : rank === 0 ? "the cheapest option" : rank === priced.length - 1 ? "the most expensive option" : "a middle option on price";
   const price = o.price ? `$${usd(o.price.input)} input and $${usd(o.price.output)} output per million tokens` : "price unknown";
-  return `${o.name} (${o.id}). ${price}; ${tier}. ${o.vision === true ? "Can look at pictures." : o.vision === false ? "Cannot look at pictures." : "Picture support unknown."}`;
+  return `${o.name} (${o.id}). ${price}; ${tier}. ${o.vision === true ? "Can look at pictures." : o.vision === false ? "Cannot look at pictures." : "Picture support unknown."}${o.tools === true ? " Can call tools." : o.tools === false ? " Cannot call tools." : ""}`;
 }
 
-export type PickInput = { latest: string; context: { from: "person" | "ai"; text: string }[]; pictures: boolean };
+/** `tools`: the answer is offered tools (a project chat's notes and designs, a shared folder, connected tools). */
+export type PickInput = { latest: string; context: { from: "person" | "ai"; text: string }[]; pictures: boolean; tools?: boolean };
 
 const LATEST_CHARS = 4000;
 const CONTEXT_MESSAGES = 6;
@@ -86,6 +93,7 @@ export function decisionRequest(options: SmartOption[], input: PickInput) {
     state: {
       latest_message: input.latest.slice(0, LATEST_CHARS),
       latest_message_has_pictures: input.pictures,
+      answer_can_use_tools: input.tools === true,
       recent_messages: input.context.slice(-CONTEXT_MESSAGES).map((m) => ({ from: m.from, text: m.text.slice(0, CONTEXT_CHARS) })),
     },
     questions: {

@@ -37,6 +37,13 @@ export const env = {
   mailFrom: process.env.MAIL_FROM?.trim() || null,
   /** Set to 1 only when the server runs behind a proxy that sets X-Forwarded-For (Fly.io does). */
   trustProxy: process.env.TRUST_PROXY === "1",
+  /** Optional: Cloudflare R2, where a project's shared files are stored. All four are set together, or file storage is off. */
+  r2: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim() || null,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim() || null,
+    endpoint: process.env.R2_ENDPOINT?.trim().replace(/\/$/, "") || null,
+    bucket: process.env.R2_BUCKET?.trim() || null,
+  },
 };
 
 if (!env.supabaseUrl.startsWith("https://") && !env.supabaseUrl.startsWith("http://localhost")) {
@@ -49,3 +56,11 @@ if (env.serverUrl && !/^https:\/\//.test(env.serverUrl) && !/^http:\/\/(localhos
   throw new Error("SERVER_URL must use https:// (http://localhost is allowed for development)");
 }
 if (env.resendApiKey && !env.mailFrom) throw new Error("MAIL_FROM is required when RESEND_API_KEY is set");
+{
+  const set = Object.entries({ R2_ACCESS_KEY_ID: env.r2.accessKeyId, R2_SECRET_ACCESS_KEY: env.r2.secretAccessKey, R2_ENDPOINT: env.r2.endpoint, R2_BUCKET: env.r2.bucket });
+  const missing = set.filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length > 0 && missing.length < set.length) throw new Error(`File storage needs all of R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT and R2_BUCKET. Missing: ${missing.join(", ")}`);
+  if (env.r2.endpoint && !/^https:\/\//.test(env.r2.endpoint) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(env.r2.endpoint)) {
+    throw new Error("R2_ENDPOINT must use https:// (http://localhost is allowed for development)");
+  }
+}

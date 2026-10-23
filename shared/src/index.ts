@@ -632,3 +632,4 @@ export * from "./supabase.ts";
 export * from "./vercel.ts";
 export * from "./mcp-presets.ts";
 export * from "./design.ts";
+export * from "./files.ts";

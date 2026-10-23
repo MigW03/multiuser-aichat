@@ -4,6 +4,7 @@ import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
 import { imagePathsOfChats, removeImageFiles } from "../images.ts";
+import { dropProjectFiles } from "../stored-files.ts";
 import { admin } from "../supabase.ts";
 import { createInviteFor, listInvitesFor } from "./invites.ts";
 
@@ -46,6 +47,7 @@ projects.delete("/:id", async (c) => {
   const { error } = await admin.rpc("app_delete_project", { p_user: c.get("userId"), p_project: c.req.param("id") });
   if (error) return dbError(c, error);
   void removeImageFiles(paths);
+  void dropProjectFiles(c.req.param("id"));
   return c.json({ ok: true });
 });
 

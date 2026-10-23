@@ -1,4 +1,4 @@
-import { redactSecrets } from "@mc/shared";
+import { isHiddenName, redactSecrets } from "@mc/shared";
 import { FOLDER_LIMITS as L, type FolderEntry, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderMatch, type FolderReadResult, type FolderSearchResult } from "@mc/shared";
 import ignore, { type Ignore } from "ignore";
 import picomatch from "picomatch";
@@ -23,35 +23,7 @@ export class FolderError extends Error {
 
 // ------------------------------------------------------------------ what is hidden
 
-/** Folders that hold secrets, other people's code or build output. Matched case-insensitively on the folder name. */
-const HIDDEN_DIRS = new Set([
-  ".git", ".hg", ".svn", "node_modules", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".terraform", ".venv", "venv", "__pycache__",
-  ".cache", ".next", ".nuxt", ".turbo", ".parcel-cache", "dist", "build", "target", "coverage", ".idea", "pods", ".gradle", ".yarn", ".pnpm-store",
-]);
-
-/** File names that usually hold secrets. Matched case-insensitively on the file name. */
-const HIDDEN_FILES: RegExp[] = [
-  /^\.env($|\.)/, // .env, .env.local, .env.production, ...
-  /\.(pem|key|p12|pfx|jks|keystore|kdbx|ppk|gpg|tfstate|tfvars)$/,
-  /^id_(rsa|dsa|ecdsa|ed25519)/,
-  /^\.(npmrc|netrc|pypirc|htpasswd|dockercfg|git-credentials|pgpass|my\.cnf)$/,
-  /^(secrets?|credentials?)(\.|$)/,
-  /^service[-_]?account.*\.json$/,
-  /^\.ds_store$/,
-  /^thumbs\.db$/,
-];
-
-/** Windows ignores trailing dots and spaces in names, so ".env." opens ".env". Match on the cleaned name everywhere. */
-const comparable = (name: string) => name.replace(/[. ]+$/, "").toLowerCase();
-
-export function isHiddenName(name: string, isDir: boolean): boolean {
-  const n = comparable(name);
-  if (n === "") return true;
-  if (isDir && HIDDEN_DIRS.has(n)) return true;
-  return HIDDEN_FILES.some((re) => re.test(n));
-}
-
-export { redactSecrets } from "@mc/shared";
+export { isHiddenName, redactSecrets };
 
 // ------------------------------------------------------------------ paths
 

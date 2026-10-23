@@ -63,3 +63,17 @@ export async function pushOwnerItems(projectId: string, ownerId: string): Promis
   hub.invalidate(projectId);
   relay.pushItems(projectId, ownerId, await hub.itemsOf(projectId, ownerId));
 }
+
+export type ShareAccess = { ok: true; share: Share } | { ok: false };
+
+/** Whether `userId` belongs to the project, and the approved item `shareId` of it. This is the permission check for stored files. */
+export async function activeShareFor(userId: string, projectId: string, shareId: string): Promise<ShareAccess> {
+  const { error } = await admin.rpc("app_share_member_check", { p_user: userId, p_project: projectId });
+  if (error) {
+    const code = error.message.trim();
+    if (code !== "not_found" && code !== "not_linked") console.error("[files] access check failed:", error.message);
+    return { ok: false };
+  }
+  const share = (await loadShares(projectId).catch(() => [])).find((s) => s.id === shareId && s.status === "active");
+  return share ? { ok: true, share } : { ok: false };
+}

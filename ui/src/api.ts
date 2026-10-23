@@ -3,6 +3,8 @@ import type {
   ApiError,
   AssignableRole,
   AiEditState,
+  DesignReadResult,
+  DesignWriteResult,
   ChatGptPollResponse,
   ChatGptStartResponse,
   ChatGptUsage,
@@ -132,6 +134,10 @@ export const api = {
   folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
   /** Whether the AI can propose file edits in this project right now. */
   folderAi: (projectId: string) => call<{ edit: AiEditState }>("GET", `/api/projects/${projectId}/folder/ai`),
+  designList: (projectId: string) => call<{ paths: string[]; truncated: boolean }>("GET", `/api/projects/${projectId}/folder/designs`),
+  designRead: (projectId: string, path: string) => call<DesignReadResult>("GET", `/api/projects/${projectId}/folder/design?${new URLSearchParams({ path })}`),
+  /** Saves a whole design. `baseSha`: the version it was made from, or null for a new file. */
+  designSave: (projectId: string, path: string, content: string, baseSha: string | null) => call<DesignWriteResult>("PUT", `/api/projects/${projectId}/folder/design`, { path, content, baseSha }),
   folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
 
   /** Read-only git for the project (404 with code git_off when no owner has switched git on). */

@@ -959,3 +959,121 @@ h1, h2, h3, p { margin: 0; }
 .vcl-team { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .vcl-team .input { width: auto; }
 .link-button { padding: 0; border: 0; background: none; color: var(--p-text); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ------------------------------------------------------------------ design mode */
+/* The canvas card sits beside the chat like the localhost preview. The canvas itself is a shadow root (the design, cleaned,
+   never run); everything drawn over it (selection, guides, handles, labels) is this page's own UI. */
+.design-slot { min-width: 0; }
+.dz-card { flex: 1; }
+.dz-bar { gap: 6px; }
+.dz-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-left: 6px; flex: 0 1 auto; }
+.dz-status { flex: none; }
+.dz-banner { display: flex; align-items: center; gap: 8px; flex: none; padding: 6px 10px 6px 14px; border-bottom: 1px solid var(--border); font: var(--text-small); background: var(--t4); }
+.dz-banner.ai { background: var(--t8); }
+.dz-banner.danger { background: var(--danger-tint); }
+.dz-body { position: relative; flex: 1; min-height: 0; display: flex; }
+
+.dz-viewport {
+  position: relative; flex: 1; min-width: 0; overflow: hidden; outline: none; touch-action: none; user-select: none;
+  background-color: var(--muted);
+  background-image: radial-gradient(circle, var(--t12) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.dz-viewport:focus-visible { box-shadow: inset 0 0 0 2px var(--p); }
+.dz-host { position: absolute; inset: 0; }
+.dz-overlay { position: absolute; inset: 0; pointer-events: none; }
+.dz-overlay .dz-ui { pointer-events: auto; }
+.dz-hover { position: absolute; border: 1px solid var(--p); }
+.dz-sel { position: absolute; border: 1.5px solid var(--p); }
+.dz-flash { position: absolute; border: 2px dashed var(--p); border-radius: 2px; animation: dz-flash 2.2s ease-out forwards; }
+@keyframes dz-flash { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+.dz-handle { position: absolute; width: 8px; height: 8px; background: #fff; border: 1.5px solid var(--p); border-radius: 2px; }
+.dz-handle.h-nw, .dz-handle.h-se { cursor: nwse-resize; }
+.dz-handle.h-ne, .dz-handle.h-sw { cursor: nesw-resize; }
+.dz-handle.h-n, .dz-handle.h-s { cursor: ns-resize; }
+.dz-handle.h-e, .dz-handle.h-w { cursor: ew-resize; }
+.dz-size, .dz-guide-label {
+  position: absolute; transform: translateX(-50%); padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+  background: var(--p); color: var(--p-fg); font: 500 11px/16px var(--font);
+}
+.dz-guide-label { transform: translate(-50%, -50%); background: #e5484d; color: #fff; }
+.dz-guide { position: absolute; background: #e5484d; }
+.dz-drop-line { position: absolute; background: var(--p); box-shadow: 0 0 0 1px var(--p); }
+.dz-marquee { position: absolute; border: 1px solid var(--p); background: var(--t8); }
+.dz-draw { position: absolute; border: 1px dashed var(--p); }
+.dz-board-name {
+  position: absolute; height: 18px; padding: 0 2px; border: 0; background: none; text-align: left; cursor: default;
+  font: 500 11.5px/18px var(--font); color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dz-board-name.on { color: var(--p-text); }
+.dz-code-tag { position: absolute; display: inline-flex; gap: 4px; }
+.dz-code-tag button { height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--card); font: 500 11px/1 var(--font); color: var(--muted-fg); white-space: nowrap; }
+.dz-code-tag.changed button { border-color: var(--warning); background: var(--warning-tint); color: var(--fg); }
+.dz-code-tag button.strong { background: var(--fg); border-color: var(--fg); color: var(--card); }
+.dz-mini { position: absolute; z-index: 5; display: inline-flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
+.dz-mini button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: none; font: var(--text-small); }
+.dz-mini button:hover { background: var(--hover-row); }
+.dz-mini .dz-mini-ai { background: var(--p); color: var(--p-fg); font-weight: 500; }
+.dz-mini .dz-mini-ai:hover { background: var(--p); filter: brightness(1.08); }
+.dz-menu { z-index: 6; }
+.dz-tools { position: absolute; top: 10px; left: 10px; z-index: 4; display: inline-flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); }
+.dz-tool { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: none; color: var(--fg); }
+.dz-tool:hover { background: var(--hover-row); }
+.dz-tool.on { background: var(--p); color: var(--p-fg); }
+.dz-zoom { position: absolute; right: 10px; bottom: 10px; z-index: 4; display: inline-flex; align-items: center; padding: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+.dz-zoom button { display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 26px; padding: 0 6px; border: 0; border-radius: 6px; background: none; font: var(--text-small); }
+.dz-zoom button:hover { background: var(--hover-row); }
+.dz-zoom-val { min-width: 48px; }
+
+.dz-insp { width: 248px; flex: none; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--card); }
+.dz-insp-tabs { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.dz-insp-body { flex: 1; min-height: 0; overflow-y: auto; }
+.dz-insp-note { padding: 12px; }
+.dz-fields { display: flex; flex-direction: column; padding: 8px 10px 16px; gap: 2px; }
+.dz-name .dz-input { width: 100%; font: var(--text-row); }
+.dz-in { padding: 0 2px 4px; }
+.dz-section { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 8px; border-top: 1px solid var(--border); }
+.dz-section-title { margin: 0 0 2px; font: var(--text-label); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-fg); }
+.dz-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dz-row.two > * { flex: 1; min-width: 0; }
+.dz-label { flex: none; width: 46px; font: var(--text-small); color: var(--muted-fg); }
+.dz-label.scrub { width: auto; min-width: 18px; cursor: ew-resize; user-select: none; }
+.dz-num { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dz-num .dz-input { flex: 1; min-width: 0; width: 100%; }
+.dz-input, .dz-select { height: 28px; min-width: 0; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: var(--text-small); outline: none; }
+.dz-input:focus-visible, .dz-select:focus-visible { border-color: var(--p); }
+.dz-input:disabled, .dz-select:disabled { opacity: 0.6; }
+.dz-color { flex: none; width: 28px; height: 28px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.dz-seg { flex: 1; }
+.dz-seg .seg { flex: 1; height: 24px; padding: 0 6px; font: var(--text-small); }
+.dz-layers { display: flex; flex-direction: column; padding: 6px; }
+.dz-layer { display: flex; align-items: center; gap: 4px; height: 28px; padding-right: 6px; border-radius: 6px; font: var(--text-small); cursor: default; color: var(--fg); }
+.dz-layer > svg { flex: none; color: var(--muted-fg); }
+.dz-layer:hover { background: var(--hover-row); }
+.dz-layer.on { background: var(--t12); }
+.dz-layer.board { font-weight: 600; }
+.dz-layer.over { box-shadow: inset 0 2px 0 var(--p); }
+.dz-caret { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; background: none; color: var(--muted-fg); }
+.dz-check-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
+.dz-sheet { display: flex; flex-direction: column; gap: 14px; max-height: 60vh; overflow-y: auto; }
+.dz-sheet table { width: 100%; border-collapse: collapse; }
+.dz-sheet td { padding: 4px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.dz-keys { text-align: right; white-space: nowrap; padding-left: 12px; }
+.dz-picker { gap: 10px; }
+.dz-picker-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.dz-picker-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: none; text-align: left; font: var(--text-row); }
+.dz-picker-row.on { background: var(--hover-row); }
+.dz-picker-path { max-width: 50%; }
+
+/* The design chip: in the message box (what the next message is about) and at the top of a sent message. */
+.design-strip { display: flex; align-items: center; gap: 8px; margin: 8px 8px 0 12px; }
+.design-strip .truncate { flex: 1; }
+.design-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 70%; height: 24px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--muted); color: var(--fg); font: 500 12px/1 var(--font); flex: none; }
+.design-chip.picked { border-color: var(--warning); background: var(--warning-tint); }
+.design-chip:disabled { cursor: default; }
+.design-chip.in-msg { max-width: 100%; margin-bottom: 6px; }
+.design-chip-note { color: var(--muted-fg); font-weight: 400; }
+.design-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.design-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); max-width: 460px; }
+.design-card > svg { flex: none; color: var(--muted-fg); }
+.design-card-text { display: flex; flex-direction: column; min-width: 0; }

@@ -244,3 +244,23 @@ describe("caps and the cache", () => {
     assert.deepEqual(await hub.itemsOf(P, "cat"), [{ key: "key-secret-plans", name: "secret-plans", status: "pending" }]);
   });
 });
+
+describe("design files", () => {
+  test("go to the owner of the item, saved without an approval card", async () => {
+    const r = await call({ op: "design_write", path: "my-app/designs/a.design.html", content: "<section data-board=\"A\"></section>", baseSha: null });
+    assert.equal(r.path, "my-app/designs/a.design.html");
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]!.owner, "ana");
+    assert.equal(sent[0]!.req.op, "design_write");
+  });
+  test("only paths ending in .design.html, and only in approved items", async () => {
+    await refused(call({ op: "design_write", path: "my-app/src/a.ts", content: "x", baseSha: null }), "bad_request");
+    await refused(call({ op: "design_read", path: "my-app/a.html" }), "bad_request");
+    await refused(call({ op: "design_edit", path: "secret-plans/a.design.html", oldString: "a", newString: "b" }), "not_found");
+    assert.equal(sent.length, 0);
+  });
+  test("an answer about another item is not trusted", async () => {
+    answers.ana = () => ({ path: "notes/a.design.html", sha: "0".repeat(64), created: false });
+    await assert.rejects(call({ op: "design_write", path: "my-app/a.design.html", content: "x", baseSha: null }), (e: unknown) => e instanceof RelayError && e.kind === "bad_answer");
+  });
+});

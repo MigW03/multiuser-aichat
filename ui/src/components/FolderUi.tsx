@@ -1,5 +1,5 @@
-import { FOLDER_LIMITS, showSupabaseTab, showVercelTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
-import { Check, Database, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, Triangle, TriangleAlert, Upload, X } from "lucide-react";
+import { FOLDER_LIMITS, isDesignPath, showSupabaseTab, showVercelTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { Check, Database, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, Shapes, Triangle, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
@@ -76,7 +76,7 @@ export function RightColumn({ project, onClose }: { project: ProjectSummary; onC
 const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
 function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
-  const { me } = useApp();
+  const { me, design } = useApp();
   const shares = useProjectShares(project.id);
   const bridge = folderBridge();
   const canShare = !!bridge && typeof bridge.pick === "function" && typeof bridge.remove === "function";
@@ -213,6 +213,11 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
               <FolderInfo />
             </span>
           </>
+        )}
+        {tab === "files" && design.available && (
+          <IconButton label="New design" onClick={design.create} className="sm">
+            <Shapes size={ICON_SM} strokeWidth={STROKE} />
+          </IconButton>
         )}
         {canShare && tab === "files" && <ShareMenu share={share} />}
         <IconButton label="Hide files" onClick={onClose} className="sm">
@@ -476,7 +481,9 @@ function ItemIcon({ row, mine }: { row: ShareRow; mine: boolean }) {
 
 /** Browse the shared files, one level at a time, and read a file. The top level is the list of items; below it all of it goes through the server to the owner's app. */
 function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { projectId: string; rows: ShareRow[]; meId: string; canRemoveOthers: boolean; onRemove: (row: ShareRow) => void }) {
-  const { files } = useApp();
+  const { files, design } = useApp();
+  // A design file opens on the design canvas; everything else in the file panel.
+  const openFile = (p: string) => (isDesignPath(p) && design.available ? design.open(p) : files.open(p));
   const [path, setPath] = useState("");
   const [dir, setDir] = useState<FolderListResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -525,7 +532,7 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
             const removable = mine || canRemoveOthers;
             return (
               <li key={row.id} className={removable ? "has-menu" : undefined}>
-                <button type="button" disabled={waiting} aria-current={row.kind === "file" && files.path === row.name ? "true" : undefined} onClick={() => (row.kind === "dir" ? setPath(row.name) : files.open(row.name))}>
+                <button type="button" disabled={waiting} aria-current={row.kind === "file" && files.path === row.name ? "true" : undefined} onClick={() => (row.kind === "dir" ? setPath(row.name) : openFile(row.name))}>
                   <ItemIcon row={row} mine={mine} />
                   <span className="grow truncate">{row.name}</span>
                   {waiting ? <span className="small muted">Waiting for approval</span> : !mine && <span className="small muted truncate owner">{row.owner_name}</span>}
@@ -540,8 +547,8 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
           {dir.entries.length === 0 && <li className="small muted pad">This folder is empty.</li>}
           {dir.entries.map((e) => (
             <li key={e.name}>
-              <button type="button" aria-current={e.type === "file" && files.path === join(e.name) ? "true" : undefined} onClick={() => (e.type === "dir" ? setPath(join(e.name)) : files.open(join(e.name)))}>
-                {e.type === "dir" ? <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+              <button type="button" aria-current={e.type === "file" && files.path === join(e.name) ? "true" : undefined} onClick={() => (e.type === "dir" ? setPath(join(e.name)) : openFile(join(e.name)))}>
+                {e.type === "dir" ? <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : isDesignPath(e.name) ? <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
                 <span className="grow truncate">{e.name}</span>
                 {e.type === "file" && e.size !== undefined && <span className="small muted">{sizeLabel(e.size)}</span>}
               </button>

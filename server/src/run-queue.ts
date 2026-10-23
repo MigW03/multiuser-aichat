@@ -19,7 +19,8 @@ import {
 } from "@mc/shared";
 import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { randomUUID } from "node:crypto";
-import { FOLDER_MAX_STEPS, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { designAi } from "./design-events.ts";
+import { designInstructions, designTools, FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
@@ -332,11 +333,14 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
             }
           : undefined;
         const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
-        folder = { tools: folderTools(call, use, changes, caps), use, caps, editState };
-        if (canChange) {
-          runSeconds = LOCK_SECONDS_EDIT;
-          await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
-        }
+        // Design files are saved without approval (the host's app accepts only inert HTML in them), so any run with shared
+        // files can draft and change designs. Drafting a design takes several steps, so these runs get the longer lock too.
+        const design = designTools(call, use, {
+          event: (path, state, sha) => void designAi(projectId, { path, state, by: authorId, chatId, ...(sha ? { sha } : {}) }),
+        });
+        folder = { tools: { ...folderTools(call, use, changes, caps), ...design }, use, caps, editState };
+        runSeconds = LOCK_SECONDS_EDIT;
+        await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
       }
 
       // The asker's own connected tools (MCP), in any chat: nobody else's tools are ever offered for this answer. Local servers
@@ -377,11 +381,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}${withTools ? `\n\n${designInstructions()}` : ""}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected || noting) ? { tools: { ...connected?.tools, ...folder?.tools, ...noting }, stopWhen: stepCountIs(folder?.caps.edit || folder?.caps.git || folder?.caps.exec || connected ? FOLDER_MAX_STEPS_EDIT : FOLDER_MAX_STEPS) } : {}),
+        ...(withTools && (folder || connected || noting) ? { tools: { ...connected?.tools, ...folder?.tools, ...noting }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });

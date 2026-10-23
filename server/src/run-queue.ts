@@ -226,6 +226,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
   let text = "";
   /** With Auto: what was chosen. `model` is the one that answers (the message shows it as soon as it is known). */
   const auto: { chosen: boolean; fallback: string | null } = { chosen: false, fallback: null };
+  /** Designs this answer started saving, so open canvases are unlocked when it ends, however it ends. */
+  const designs = { projectId: "", paths: new Set<string>() };
   try {
     const { data: members } = await db.rpc("app_chat_people", { p_chat_id: chatId });
     const names = new Map<string, string>(((members ?? []) as { id: string; display_name: string }[]).map((m) => [m.id, promptName(m.display_name)]));
@@ -335,8 +337,12 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
         // Design files are saved without approval (the host's app accepts only inert HTML in them), so any run with shared
         // files can draft and change designs. Drafting a design takes several steps, so these runs get the longer lock too.
+        designs.projectId = projectId;
         const design = designTools(call, use, {
-          event: (path, state, sha) => void designAi(projectId, { path, state, by: authorId, chatId, ...(sha ? { sha } : {}) }),
+          event: (path, state, sha) => {
+            if (state === "start") designs.paths.add(path);
+            void designAi(projectId, { path, state, by: authorId, chatId, ...(sha ? { sha } : {}) });
+          },
         });
         folder = { tools: { ...folderTools(call, use, changes, caps, design), ...design }, use, caps, editState };
         runSeconds = LOCK_SECONDS_EDIT;
@@ -442,6 +448,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     }
   } finally {
     active.delete(chatId);
+    for (const path of designs.paths) void designAi(designs.projectId, { path, state: "done", by: authorId ?? "", chatId });
     await db.removeChannel(channel);
   }
   return true;

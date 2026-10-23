@@ -2,7 +2,7 @@ import { designMarker, designName, type DesignAiEvent, type DesignAskEvent, type
 import { Code2, Keyboard, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Redo2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError } from "../../api.ts";
-import { focusComposer, hasOpenChat, onDesignChanged, sendInOpenChat } from "../../lib/designBus.ts";
+import { focusComposer, hasOpenChat, onDesignChanged, onDesignRunEnded, sendInOpenChat } from "../../lib/designBus.ts";
 import { claimWins, editorOf, sameDesignPath, viewersOf } from "../../lib/designEditor.ts";
 import { boardHash, boardsOf, byNid, changedLayers, layerPath, nidOf, parseDesign, serializeDesign } from "../../lib/designModel.ts";
 import { joinProject, onPresence, onProjectEvent, sendProjectEvent, setPresence, type ProjectPresence } from "../../lib/projectChannel.ts";
@@ -68,6 +68,10 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   const again = useRef(false);
   const flashTimer = useRef<number | undefined>(undefined);
   const aiTimer = useRef<number | undefined>(undefined);
+  /** The newest AI hint seen: one that arrives late cannot lock the canvas again. */
+  const aiSeq = useRef(0);
+  const aiRef = useRef(ai);
+  aiRef.current = ai;
   const handedAt = useRef(0);
   const gotHandover = useRef(0);
   const pending = useRef<{ select?: string[]; build?: boolean } | null>(null);
@@ -293,6 +297,10 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       onProjectEvent(projectId, "design_ai", (p) => {
         const e = p as Partial<DesignAiEvent>;
         if (!sameDesignPath(e.path, path) || typeof e.chatId !== "string" || typeof e.by !== "string") return;
+        if (typeof e.seq === "number") {
+          if (e.seq <= aiSeq.current) return;
+          aiSeq.current = e.seq;
+        }
         window.clearTimeout(aiTimer.current);
         if (e.state === "start") {
           void flush();
@@ -304,8 +312,14 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
           }, AI_LOCK_MS);
         } else {
           setAi(null);
-          if (e.sha !== sha.current) void load({ flash: true, pushUndo: true });
+          if (e.sha !== sha.current) void load({ flash: true, pushUndo: true, ifChanged: true });
         }
+      }),
+      onDesignRunEnded((chatId) => {
+        if (aiRef.current?.chatId !== chatId) return;
+        window.clearTimeout(aiTimer.current);
+        setAi(null);
+        void load({ flash: true, pushUndo: true, ifChanged: true });
       }),
       onDesignChanged((changed) => {
         if (sameDesignPath(changed, path) && !saving.current) void load({ flash: true, pushUndo: true, ifChanged: true });

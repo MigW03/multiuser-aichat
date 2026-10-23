@@ -2,7 +2,7 @@ import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY
 import { Code2, Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Shapes, Sparkles } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
-import { designChanged } from "../lib/designBus.ts";
+import { designChanged, designRunEnded } from "../lib/designBus.ts";
 import { sameDesignPath } from "../lib/designEditor.ts";
 import { findFilePaths } from "../lib/fileKind.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
@@ -61,6 +61,14 @@ export function MessageList(props: MessageListProps) {
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const streaming = messages.find((m) => m.role === "assistant" && m.status === "streaming");
   const latestAnswerId = useMemo(() => [...messages].reverse().find((m) => m.role === "assistant" && m.kind !== "summary_request" && (m.status === "done" || m.status === "error"))?.id, [messages]);
+  // A new finished answer (done, failed or stopped) unlocks a design the AI locked for this chat.
+  const seenAnswer = useRef(latestAnswerId);
+  useEffect(() => {
+    if (!latestAnswerId || latestAnswerId === seenAnswer.current) return;
+    seenAnswer.current = latestAnswerId;
+    const m = byId.get(latestAnswerId);
+    if (m) designRunEnded(m.chat_id);
+  }, [latestAnswerId, byId]);
   const lastKeylessOwn = useMemo(() => [...messages].reverse().find((m) => m.author_id === meId && m.skip_reason === "no_key")?.id, [messages, meId]);
   const firstUnread = useMemo(() => {
     if (readSeq === null) return null;

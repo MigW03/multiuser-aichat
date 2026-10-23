@@ -36,3 +36,16 @@ export function onDesignChanged(fn: Listener): () => void {
 export function designChanged(path: string) {
   for (const fn of listeners) fn(path);
 }
+
+// An answer in the open chat finished (done, failed or stopped): a canvas the AI locked for it unlocks.
+type RunListener = (chatId: string) => void;
+const runListeners = new Set<RunListener>();
+
+export function onDesignRunEnded(fn: RunListener): () => void {
+  runListeners.add(fn);
+  return () => void runListeners.delete(fn);
+}
+
+export function designRunEnded(chatId: string) {
+  for (const fn of runListeners) fn(chatId);
+}

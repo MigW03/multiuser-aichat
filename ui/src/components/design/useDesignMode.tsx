@@ -13,7 +13,7 @@ export type DesignOpen = { path: string; full: boolean; n: number; select?: stri
  * Design mode's state for the whole page: which design is open, what the next chat message is about (the chip), and the
  * canvas edits not yet told to the AI. The panel, the chat, the files column and Cmd+K all go through it.
  */
-export function useDesignMode({ projectId, userId, available, folders, onOpening }: { projectId: string | null; userId: string; available: boolean; folders: string[]; onOpening: () => void }) {
+export function useDesignMode({ projectId, userId, onOpening }: { projectId: string | null; userId: string; onOpening: () => void }) {
   const [open, setOpen] = useState<DesignOpen | null>(null);
   const [chip, setChip] = useState<DesignRef | null>(null);
   const [dialog, setDialog] = useState<"pick" | "new" | null>(null);
@@ -78,7 +78,7 @@ export function useDesignMode({ projectId, userId, available, folders, onOpening
 
   const ctx = useMemo<DesignCtx>(
     () => ({
-      available: available && !!projectId,
+      available: !!projectId,
       path: open?.path ?? null,
       open: show,
       pick: () => setDialog("pick"),
@@ -91,14 +91,14 @@ export function useDesignMode({ projectId, userId, available, folders, onOpening
       },
       take,
     }),
-    [available, projectId, open?.path, show, close, chip, take],
+    [projectId, open?.path, show, close, chip, take],
   );
 
   const dialogs =
     projectId && dialog === "pick" ? (
       <DesignPicker projectId={projectId} current={open?.path ?? null} onOpen={(p) => show(p)} onNew={() => setDialog("new")} onClose={() => setDialog(null)} />
     ) : projectId && dialog === "new" ? (
-      <NewDesignDialog projectId={projectId} folders={folders} onCreated={(p) => show(p)} onClose={() => setDialog(null)} />
+      <NewDesignDialog projectId={projectId} onCreated={(p) => show(p)} onClose={() => setDialog(null)} />
     ) : null;
 
   return { ctx, open, setOpen, logEdit, dialogs };

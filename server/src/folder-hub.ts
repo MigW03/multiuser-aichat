@@ -141,13 +141,11 @@ export function createHub(relay: Relay, deps: HubDeps) {
       }
       case "exec":
         return relay.callOwner(projectId, target(shares, req.workdir).owner_id, req, opts);
-      case "design_read":
-      case "design_write":
-      case "design_edit": {
-        // Design files only: the owner's app checks again, and answers about the item asked about only.
-        if (!isDesignPath(req.path)) throw new RelayError("host", "Only design files (ending in .design.html) can be opened or saved this way.", "bad_request");
+      case "design_read": {
+        // Read-only, design files only: the owner's app checks again, and answers about the item asked about only.
+        if (!isDesignPath(req.path)) throw new RelayError("host", "Only design files (ending in .design.html) can be read this way.", "bad_request");
         const item = itemFor(shares, req.path);
-        return asked(item, relay.callOwner(projectId, item.owner_id, req as never, opts) as Promise<{ path: string }>);
+        return asked(item, relay.callOwner(projectId, item.owner_id, req, opts));
       }
     }
   }

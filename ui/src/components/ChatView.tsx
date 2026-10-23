@@ -233,7 +233,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
           </IconButton>
         )}
         {project && design.available && (
-          <button type="button" className={`btn sm ${design.path ? "active" : ""}`} aria-pressed={!!design.path} onClick={() => (design.path ? design.close() : design.pick())} title="Designs in the shared folder (⌘K)">
+          <button type="button" className={`btn sm ${design.path ? "active" : ""}`} aria-pressed={!!design.path} onClick={() => (design.path ? design.close() : design.pick())} title="Designs (⌘K)">
             <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Design
           </button>
         )}

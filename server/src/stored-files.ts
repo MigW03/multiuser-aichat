@@ -1,4 +1,5 @@
 import { projectPrefix, sharePrefix } from "./file-paths.ts";
+import { designPrefix } from "./project-designs.ts";
 import { objectStore, storageOn } from "./r2.ts";
 
 // Removes stored copies of files when what they belong to goes away. Best effort: the database change has already
@@ -15,3 +16,5 @@ async function drop(prefix: () => string, what: string): Promise<void> {
 
 export const dropShareFiles = (projectId: string, shareId: string) => drop(() => sharePrefix(projectId, shareId), "a shared item");
 export const dropProjectFiles = (projectId: string) => drop(() => projectPrefix(projectId), "a project");
+/** A project's designs (designs/<project>/, see project-designs.ts). */
+export const dropProjectDesigns = (projectId: string) => drop(() => designPrefix(projectId), "a project's designs");

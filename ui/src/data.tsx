@@ -158,12 +158,12 @@ export type AppContextValue = {
     /** Runs it: the app asks first, then the page opens in the preview beside the chat. */
     run: (path: string) => void;
   };
-  /** Design mode: a design file (`*.design.html` in a shared folder) open on the canvas beside the chat. */
+  /** Design mode: one of the project's designs (or an older design file in a shared folder) on the canvas beside the chat. */
   design: DesignCtx;
 };
 
 export type DesignCtx = {
-  /** A project that shares something is open, so designs can be made and opened. */
+  /** A project is open, so designs can be made and opened. */
   available: boolean;
   /** The design open on the canvas, if any. */
   path: string | null;

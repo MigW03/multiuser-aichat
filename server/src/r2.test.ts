@@ -113,6 +113,13 @@ describe("R2 store", () => {
     assert.equal(await store().head("projects/p/s/none.txt"), null);
   });
 
+  test("get: the bytes, null when missing, refused above the limit", async () => {
+    const got = await store().get("projects/p/s/a.txt", 100);
+    assert.equal(new TextDecoder().decode(got!), "hello");
+    assert.equal(await store().get("projects/p/s/none.txt", 100), null);
+    await assert.rejects(store().get("projects/p/s/a.txt", 3), /larger than allowed/);
+  });
+
   test("list: files and folders directly under a prefix", async () => {
     objects.clear();
     const s = store();

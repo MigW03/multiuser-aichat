@@ -1,18 +1,21 @@
-import { designMarker, designName, type DesignAiEvent, type DesignAskEvent, type DesignHandoverEvent, type DesignRef, type DesignSavedEvent } from "@mc/shared";
-import { Code2, Keyboard, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Redo2, Undo2, X } from "lucide-react";
+import { designMarker, designName, isProjectDesignPath, type DesignAiEvent, type DesignAskEvent, type DesignHandoverEvent, type DesignRef, type DesignSavedEvent, type DesignVersion, type ProjectMember } from "@mc/shared";
+import { Code2, History, Keyboard, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Redo2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError } from "../../api.ts";
+import { fetchProjectMembers } from "../../data.tsx";
 import { focusComposer, hasOpenChat, onDesignChanged, onDesignRunEnded, sendInOpenChat } from "../../lib/designBus.ts";
 import { claimWins, editorOf, sameDesignPath, viewersOf } from "../../lib/designEditor.ts";
 import { boardHash, boardsOf, byNid, changedLayers, layerPath, nidOf, parseDesign, serializeDesign } from "../../lib/designModel.ts";
 import { joinProject, onPresence, onProjectEvent, sendProjectEvent, setPresence, type ProjectPresence } from "../../lib/projectChannel.ts";
+import { ago } from "../../lib/vercelFormat.ts";
 import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, IconButton, Spinner, STROKE, TextInput, useToast } from "../kit.tsx";
 import { Canvas, codeLink, type CanvasHandle, type Commit } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
 
-// Design mode's card: the top bar, the canvas and the inspector for one design file. It loads the file through the shared
-// folder, keeps every change as one undo step, saves (naming the version it started from, so nobody's work is overwritten),
-// follows what the AI and other people change, and lets one person edit at a time while the others watch.
+// Design mode's card: the top bar, the canvas and the inspector for one design. It loads the project's design from the
+// server, keeps every change as one undo step, saves (naming the version it started from, so nobody's work is overwritten),
+// follows what the AI and other people change, and lets one person edit at a time while the others watch. An older design
+// file in a shared folder opens read-only, with a bar that copies it into the project.
 
 const SAVE_DELAY_MS = 350;
 const UNDO_MAX = 100;
@@ -33,11 +36,17 @@ type Props = {
   /** A change made on this canvas, for the next message to the AI. */
   onEdit: (desc: string) => void;
   onOpenFile: (path: string) => void;
+  /** Opens another design (the project's copy after "Move to project"). */
+  onOpenDesign: (path: string) => void;
+  /** Where "Build in code" puts the code unless changed: the shared folder. */
+  buildFolder: string;
 };
 
 type Loaded = { root: HTMLElement; removed: string[] };
 
-export function DesignPanel({ projectId, path, me, request, full, narrow, onFull, onClose, onAskAI, onEdit, onOpenFile }: Props) {
+export function DesignPanel({ projectId, path, me, request, full, narrow, onFull, onClose, onAskAI, onEdit, onOpenFile, onOpenDesign, buildFolder }: Props) {
+  /** A design of the project. Anything else is an older file in a shared folder: shown read-only, to be moved. */
+  const own = isProjectDesignPath(path);
   const toast = useToast();
   const canvas = useRef<CanvasHandle>(null);
   const [doc, setDoc] = useState<Loaded | null>(null);
@@ -56,10 +65,15 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   const [claim, setClaim] = useState<number | null>(null);
   const [asking, setAsking] = useState<{ from: string; name: string } | null>(null);
   const [asked, setAsked] = useState(false);
+  const [history, setHistory] = useState(false);
+  /** The design's name as people gave it (a folder file goes by its file name). */
+  const [title, setTitle] = useState(() => designName(path));
+  const [moving, setMoving] = useState(false);
 
   const docRef = useRef(doc);
   docRef.current = doc;
-  const sha = useRef<string | null>(null);
+  /** The version on screen, which the next save names. */
+  const rev = useRef<number | null>(null);
   const savedText = useRef("");
   const undo = useRef<string[]>([]);
   const redo = useRef<string[]>([]);
@@ -79,7 +93,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   const syncHist = () => setHist({ undo: undo.current.length, redo: redo.current.length });
 
   // ---- loading
-  const show = useCallback((text: string, fileSha: string, opts: { flashFrom?: HTMLElement; keepHistory?: boolean } = {}) => {
+  const show = useCallback((text: string, at: number, opts: { flashFrom?: HTMLElement; keepHistory?: boolean } = {}) => {
     const parsed = parseDesign(text);
     if (opts.flashFrom) {
       const changed = changedLayers(opts.flashFrom, parsed.root);
@@ -87,7 +101,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       window.clearTimeout(flashTimer.current);
       flashTimer.current = window.setTimeout(() => setFlash([]), 2200);
     }
-    sha.current = fileSha;
+    rev.current = at;
     savedText.current = serializeDesign(parsed.root);
     setDoc({ root: parsed.root, removed: parsed.removed });
     setVersion((v) => v + 1);
@@ -103,8 +117,9 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   const load = useCallback(
     async (opts: { flash?: boolean; keepHistory?: boolean; pushUndo?: boolean; ifChanged?: boolean } = {}) => {
       try {
-        const r = await api.designRead(projectId, path);
-        if (opts.ifChanged && r.sha === sha.current) return;
+        const r = own ? await api.designRead(projectId, path) : { ...(await api.folderDesignRead(projectId, path)), name: designName(path), version: 0 };
+        setTitle(r.name);
+        if (opts.ifChanged && r.version === rev.current) return;
         const before = docRef.current?.root;
         if (opts.pushUndo && before) {
           const text = serializeDesign(before);
@@ -113,7 +128,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
             redo.current = [];
           }
         }
-        show(r.text, r.sha, { ...(opts.flash && before ? { flashFrom: before } : {}), keepHistory: opts.keepHistory || opts.pushUndo });
+        show(r.text, r.version, { ...(opts.flash && before ? { flashFrom: before } : {}), keepHistory: opts.keepHistory || opts.pushUndo });
         setStatus("saved");
         setSaveError(null);
       } catch (e) {
@@ -121,7 +136,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         else toast.push(e instanceof Error ? e.message : "The design could not be reloaded.", "error");
       }
     },
-    [projectId, path, show, toast],
+    [projectId, path, own, show, toast],
   );
 
   useEffect(() => {
@@ -172,7 +187,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   }, [projectId, path, claim, me.name]);
   // Nobody else editing for a moment: this person takes the pen. Someone who started first wins it back.
   useEffect(() => {
-    if (!doc) return;
+    if (!doc || !own) return;
     if (claim !== null) {
       if (!editing && Date.now() - gotHandover.current > 4000) setClaim(null);
       return;
@@ -181,7 +196,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
     const wait = Math.max(CLAIM_DELAY_MS, handedAt.current + 6000 - Date.now());
     const t = window.setTimeout(() => setClaim(Date.now()), wait);
     return () => window.clearTimeout(t);
-  }, [doc, claim, editing, other]);
+  }, [doc, own, claim, editing, other]);
   useEffect(() => {
     if (editing) setAsked(false);
   }, [editing]);
@@ -195,12 +210,12 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       return;
     }
     const text = serializeDesign(d.root);
-    if (text === savedText.current) return setStatus("saved");
+    if (text === savedText.current || !own || rev.current === null) return setStatus("saved");
     saving.current = true;
     setStatus("saving");
     try {
-      const r = await api.designSave(projectId, path, text, sha.current);
-      sha.current = r.sha;
+      const r = await api.designSave(projectId, path, text, rev.current);
+      rev.current = r.version;
       savedText.current = text;
       setSaveError(null);
       setStatus(serializeDesign(d.root) === text ? "saved" : "unsaved");
@@ -219,7 +234,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         void save();
       }
     }
-  }, [projectId, path, load, toast]);
+  }, [projectId, path, own, load, toast]);
 
   const queueSave = useCallback(() => {
     setStatus("unsaved");
@@ -234,13 +249,13 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   // Unsaved changes are written before the panel goes away.
   useEffect(() => () => void flush(), [flush]);
 
-  const readOnly = !doc || !editing || !!ai;
+  const readOnly = !doc || !own || !editing || !!ai;
 
   const commit: Commit = useCallback(
     (desc, mutate, select) => {
       const d = docRef.current;
       if (!d || readOnly) {
-        if (d) toast.push(ai ? "The AI is changing this design. You can edit again when it is done." : "Someone else is editing this design. Ask to edit first.");
+        if (d) toast.push(!own ? "This design is a file in a shared folder. Move it to the project to edit it." : ai ? "The AI is changing this design. You can edit again when it is done." : "Someone else is editing this design. Ask to edit first.");
         return false;
       }
       const before = serializeDesign(d.root);
@@ -256,7 +271,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       queueSave();
       return true;
     },
-    [readOnly, ai, toast, onEdit, queueSave],
+    [readOnly, own, ai, toast, onEdit, queueSave],
   );
 
   const step = useCallback(
@@ -291,7 +306,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
     const offs = [
       onProjectEvent(projectId, "design_saved", (p) => {
         const e = p as Partial<DesignSavedEvent>;
-        if (!sameDesignPath(e.path, path) || e.sha === sha.current || e.by === me.id || saving.current) return;
+        if (!sameDesignPath(e.path, path) || e.version === rev.current || e.by === me.id || saving.current) return;
         void load({ flash: true, keepHistory: true });
       }),
       onProjectEvent(projectId, "design_ai", (p) => {
@@ -312,7 +327,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
           }, AI_LOCK_MS);
         } else {
           setAi(null);
-          if (e.sha !== sha.current) void load({ flash: true, pushUndo: true, ifChanged: true });
+          if (e.version !== rev.current) void load({ flash: true, pushUndo: true, ifChanged: true });
         }
       }),
       onDesignRunEnded((chatId) => {
@@ -418,17 +433,29 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
 
   const viewers = useMemo(() => viewersOf(presence, path).filter((v) => v.id !== me.id), [presence, path, me.id]);
   const boardNames = doc ? boardsOf(doc.root).map((b) => b.getAttribute("data-board") ?? "") : [];
-  const folder = path.split("/")[0] ?? "";
+  const moveToProject = async () => {
+    const d = docRef.current;
+    if (!d) return;
+    setMoving(true);
+    try {
+      const r = await api.designCreate(projectId, { name: title.replace(/-/g, " "), content: serializeDesign(d.root) });
+      toast.push("Moved to the project. Everyone in it can edit it now; the file in the folder stays as it was.");
+      onOpenDesign(r.path);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "The design could not be moved.", "error");
+      setMoving(false);
+    }
+  };
 
   return (
-    <section className={`chat-card dz-card ${full ? "full" : ""}`} aria-label={`Design ${designName(path)}`}>
+    <section className={`chat-card dz-card ${full ? "full" : ""}`} aria-label={`Design ${title}`}>
       <header className="preview-bar dz-bar">
         <span className="dz-title truncate">
-          <b className="truncate">{designName(path)}</b>
-          <span className="small muted truncate">{path.split("/").slice(0, -1).join("/")}</span>
+          <b className="truncate">{title}</b>
+          {!own && <span className="small muted truncate">{path.split("/").slice(0, -1).join("/")}</span>}
         </span>
         <span className="small muted dz-status" role="status">
-          {saveError ? <span className="danger-text">Not saved</span> : status === "saving" ? "Saving…" : status === "unsaved" ? "Unsaved" : doc ? "Saved" : ""}
+          {!own ? "Read-only" : saveError ? <span className="danger-text">Not saved</span> : status === "saving" ? "Saving…" : status === "unsaved" ? "Unsaved" : doc ? "Saved" : ""}
         </span>
         <span className="grow" />
         {viewers.length > 0 && (
@@ -444,6 +471,11 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         <IconButton label="Redo" disabled={readOnly || hist.redo === 0} onClick={() => step(false)} className="sm">
           <Redo2 size={ICON} strokeWidth={STROKE} />
         </IconButton>
+        {own && (
+          <IconButton label="Versions" onClick={() => setHistory(true)} className="sm">
+            <History size={ICON} strokeWidth={STROKE} />
+          </IconButton>
+        )}
         <IconButton label="Shortcuts" onClick={() => setSheet(true)} className="sm">
           <Keyboard size={ICON} strokeWidth={STROKE} />
         </IconButton>
@@ -463,7 +495,14 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         </IconButton>
       </header>
 
-      {ai ? (
+      {!own ? (
+        <div className="dz-banner" role="status">
+          <span className="grow">This design is a file in {path.split("/")[0]}. Move it to the project so everyone can edit it.</span>
+          <Button size="sm" variant="primary" busy={moving} disabled={!doc} onClick={() => void moveToProject()}>
+            Move to project
+          </Button>
+        </div>
+      ) : ai ? (
         <div className="dz-banner ai" role="status">
           <span className="grow">The AI is changing this design. You can look and select; editing waits until it is done.</span>
           <Button size="sm" variant="ghost" onClick={() => void api.stop(ai.chatId).catch(() => undefined)}>
@@ -543,11 +582,25 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       </div>
 
       {sheet && <ShortcutSheet onClose={() => setSheet(false)} />}
+      {history && (
+        <VersionsDialog
+          projectId={projectId}
+          path={path}
+          onClose={() => setHistory(false)}
+          onRestore={async (v) => {
+            await flush();
+            const r = await api.designRestore(projectId, path, v, rev.current ?? 0);
+            setHistory(false);
+            await load({ flash: true, pushUndo: true });
+            toast.push(`Version ${v} is back, saved as version ${r.version}.`);
+          }}
+        />
+      )}
       {build && doc && (
         <BuildDialog
           boards={boardNames}
           initial={build}
-          folder={folder}
+          folder={buildFolder}
           onClose={() => setBuild(null)}
           onBuild={async (boards, where, note) => {
             const ok = await send({ path, action: "build", boards, ...(where ? { where } : {}) }, `Build ${boards.join(", ")} in code${where ? ` in ${where}` : ""}.${note ? `\n${note}` : ""}`);
@@ -556,6 +609,77 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         />
       )}
     </section>
+  );
+}
+
+/** Who saved each version and when, newest first. Restore saves that version again as the newest one. */
+function VersionsDialog({ projectId, path, onClose, onRestore }: { projectId: string; path: string; onClose: () => void; onRestore: (version: number) => Promise<void> }) {
+  const [list, setList] = useState<{ versions: DesignVersion[]; current: number } | null>(null);
+  const [people, setPeople] = useState<Map<string, ProjectMember>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.designVersions(projectId, path).then(
+      (r) => live && setList(r),
+      (e: unknown) => live && setError(e instanceof Error ? e.message : "The versions could not be loaded."),
+    );
+    fetchProjectMembers(projectId).then(
+      (m) => live && setPeople(new Map(m.map((p) => [p.id, p]))),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [projectId, path]);
+  return (
+    <Dialog title="Versions" onClose={onClose} width={440}>
+      <div className="col" style={{ gap: 12 }}>
+        <p className="small muted">The last 50 saves are kept. Restoring saves that version again as the newest one, so nothing is lost.</p>
+        {!list && !error && (
+          <div className="row small muted">
+            <Spinner /> Loading…
+          </div>
+        )}
+        {list && (
+          <ul className="dz-versions">
+            {list.versions.map((v) => {
+              const who = v.by ? people.get(v.by) : undefined;
+              return (
+                <li key={v.version} className="row">
+                  {who ? <Avatar id={who.id} name={who.display_name} src={who.avatar_url} size={22} /> : <span className="dz-versions-dot" aria-hidden />}
+                  <span className="grow col dz-versions-text">
+                    <span className="small truncate">
+                      <b>Version {v.version}</b> · {who?.display_name ?? "Someone"}
+                    </span>
+                    <span className="small muted">{ago(v.at)}</span>
+                  </span>
+                  {v.version === list.current ? (
+                    <span className="small muted">Current</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      busy={busy === v.version}
+                      disabled={busy !== null}
+                      onClick={() => {
+                        setBusy(v.version);
+                        onRestore(v.version).catch((e: unknown) => {
+                          setError(e instanceof Error ? e.message : "That version could not be restored.");
+                          setBusy(null);
+                        });
+                      }}
+                    >
+                      Restore
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <ErrorLine>{error}</ErrorLine>
+      </div>
+    </Dialog>
   );
 }
 

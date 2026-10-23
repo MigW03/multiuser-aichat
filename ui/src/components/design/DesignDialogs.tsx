@@ -1,8 +1,13 @@
 import { DESIGN_LIMITS, type ProjectDesign } from "@mc/shared";
-import { Plus, Shapes } from "lucide-react";
+import { Monitor, Plus, Shapes, Smartphone } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api.ts";
 import { Button, Dialog, ErrorLine, Field, ICON_SM, Spinner, STROKE, TextInput } from "../kit.tsx";
+
+const BOARDS = [
+  { id: "desktop", name: "Desktop", size: "1440 × 900", Icon: Monitor },
+  { id: "phone", name: "Phone", size: "390 × 844", Icon: Smartphone },
+] as const;
 
 const messageOf = (e: unknown, fallback = "Something went wrong.") => (e instanceof Error ? e.message : fallback);
 
@@ -34,13 +39,15 @@ export function NewDesignDialog({ projectId, onCreated, onClose }: { projectId: 
           <TextInput id="design-name" value={name} maxLength={DESIGN_LIMITS.nameChars} placeholder="Landing page" onChange={(e) => setName(e.target.value)} data-autofocus />
         </Field>
         <Field label="First board">
-          <span className="segmented" role="radiogroup" aria-label="First board">
-            {(["desktop", "phone"] as const).map((b) => (
-              <button key={b} type="button" role="radio" aria-checked={board === b} className={`seg ${board === b ? "on" : ""}`} onClick={() => setBoard(b)}>
-                {b === "desktop" ? "Desktop · 1440" : "Phone · 390"}
+          <div className="board-tiles" role="radiogroup" aria-label="First board">
+            {BOARDS.map(({ id, name, size, Icon }) => (
+              <button key={id} type="button" role="radio" aria-checked={board === id} className={`board-tile ${board === id ? "on" : ""}`} onClick={() => setBoard(id)}>
+                <Icon size={40} strokeWidth={1.25} aria-hidden />
+                <span className="board-tile-name">{name}</span>
+                <span className="board-tile-size">{size}</span>
               </button>
             ))}
-          </span>
+          </div>
         </Field>
         <ErrorLine>{error}</ErrorLine>
         <div className="dialog-actions">

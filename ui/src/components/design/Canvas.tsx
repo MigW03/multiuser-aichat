@@ -301,6 +301,19 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
     const sel = props.current.selection.includes(g.target) ? props.current.selection : [g.target];
     const els = sel.map(model).filter((x): x is HTMLElement => !!x);
     if (els.length && els.every((x) => isBoard(x))) {
+      if (g.alt) {
+        // Alt-drag on frames, as in Figma: a copy of each stays where it was and the frames themselves move.
+        props.current.commit(`duplicated ${els.map(layerName).join(", ")}`, (root) => {
+          for (const b of els) {
+            const t = byNid(root, nidOf(b)!)!;
+            const copy = t.cloneNode(true) as HTMLElement;
+            renumber(root, copy);
+            t.parentElement!.insertBefore(copy, t);
+            t.parentElement!.insertBefore(root.ownerDocument.createTextNode("\n"), t);
+          }
+        });
+        drawWorld(world, props.current.root);
+      }
       const items = els.map((b) => ({ nid: nidOf(b)!, frame: frameOf(world, nidOf(b)!)!, bx: boardBox(b).x, by: boardBox(b).y })).filter((i) => i.frame);
       const moving = items.map((i) => toDesign(i.frame.getBoundingClientRect(), vp, v)).reduce(union);
       return { kind: "boards", x: e.clientX, y: e.clientY, items, targets: targetsFor(world, vp, v, null, items.map((i) => i.nid), moving) } satisfies Gesture;
@@ -1196,7 +1209,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
               vpRef.current?.focus();
               if (!props.current.selection.includes(b.nid)) select(e.shiftKey ? [...props.current.selection, b.nid] : [b.nid]);
               vpRef.current?.setPointerCapture(e.pointerId);
-              gesture.current = { kind: "press", x: e.clientX, y: e.clientY, target: b.nid, alt: false, shift: false };
+              gesture.current = { kind: "press", x: e.clientX, y: e.clientY, target: b.nid, alt: e.altKey, shift: false };
             }}
             tabIndex={-1}
           >

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "../supabase.ts";
+import { joinProject, onPresence } from "./projectChannel.ts";
 
 /** True while the window is narrower than `max` px. */
 export function useNarrow(max = 820): boolean {
@@ -33,14 +33,12 @@ export function useProjectPresence(projectId: string | null, userId: string): Se
   useEffect(() => {
     setOnline(new Set());
     if (!projectId) return;
-    const channel = supabase.channel(`project:${projectId}`, { config: { private: true, presence: { key: userId } } });
-    const sync = () => setOnline(new Set(Object.keys(channel.presenceState())));
-    channel
-      .on("presence", { event: "sync" }, sync)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") void channel.track({ at: Date.now() });
-      });
-    return () => void supabase.removeChannel(channel);
+    const leave = joinProject(projectId, userId);
+    const off = onPresence(projectId, (state) => setOnline(new Set(Object.keys(state))));
+    return () => {
+      off();
+      leave();
+    };
   }, [projectId, userId]);
   return online;
 }

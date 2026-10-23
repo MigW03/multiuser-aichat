@@ -44,5 +44,6 @@ export const PREF = {
   folderOpen: (userId: string) => `mc.folderOpen.${userId}`,
   /** The preview's width beside the chat (px) and the last address opened in it, per project ("home" for chats outside projects). */
   previewWidth: (userId: string) => `mc.previewWidth.${userId}`,
+  designWidth: (userId: string) => `mc.designWidth.${userId}`,
   previewUrl: (userId: string, projectId: string | null) => `mc.previewUrl.${userId}.${projectId ?? "home"}`,
 } as const;

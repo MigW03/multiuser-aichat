@@ -1,4 +1,4 @@
-import type { ChatSummary, ModelChoice, Person, ProjectMember, ProjectSummary, ProviderId, Reasoning } from "@mc/shared";
+import type { ChatSummary, DesignRef, ModelChoice, Person, ProjectMember, ProjectSummary, ProviderId, Reasoning } from "@mc/shared";
 import { isProvider, isReasoning } from "@mc/shared";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type DependencyList } from "react";
 import { supabase } from "./supabase.ts";
@@ -158,6 +158,26 @@ export type AppContextValue = {
     /** Runs it: the app asks first, then the page opens in the preview beside the chat. */
     run: (path: string) => void;
   };
+  /** Design mode: a design file (`*.design.html` in a shared folder) open on the canvas beside the chat. */
+  design: DesignCtx;
+};
+
+export type DesignCtx = {
+  /** A project that shares something is open, so designs can be made and opened. */
+  available: boolean;
+  /** The design open on the canvas, if any. */
+  path: string | null;
+  /** `select`: layers to select once it is drawn; `build`: open the "Build in code" dialog. */
+  open: (path: string, opts?: { select?: string[]; build?: boolean }) => void;
+  /** The list of designs, with "New design". */
+  pick: () => void;
+  create: () => void;
+  close: () => void;
+  /** What the next message is about: the open design and the layers picked with "Ask AI", or a request for a new design. */
+  chip: DesignRef | null;
+  setChip: (ref: DesignRef | null) => void;
+  /** The marker for a message being sent: the chip and the canvas edits since the last message. Uses them up. */
+  take: () => string | null;
 };
 
 export const AppContext = createContext<AppContextValue | null>(null);

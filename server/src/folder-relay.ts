@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type ChangePreview, type FolderCaps, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
+import { DESIGN_LIMITS, FOLDER_LIMITS as L, type ChangePreview, type DesignReadResult, type DesignWriteResult, type FolderCaps, type FolderErrorCode, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -57,7 +57,10 @@ export type RelayRequest =
   | { op: "git_change"; action: "add" | "restore"; paths: string[]; askedBy: string; readFiles: number }
   | { op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
   | { op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number }
-  | { op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number };
+  | { op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number }
+  | { op: "design_read"; path: string }
+  | { op: "design_write"; path: string; content: string; baseSha?: string | null; hadRead?: boolean }
+  | { op: "design_edit"; path: string; oldString: string; newString: string; replaceAll?: boolean };
 
 /** The host's answer once a proposed change was approved and written. */
 export type ChangeResult = { path: string; created: boolean; added: number; removed: number };
@@ -103,7 +106,13 @@ const changePreview = z.object({
 const previewMsg = z.object({ type: z.literal("event"), id: z.string().max(64), event: z.literal("pending"), change: changePreview });
 const changeDone = z.object({ path: clean(L.pathChars), created: z.boolean(), added: z.number().int().nonnegative(), removed: z.number().int().nonnegative() });
 
+const sha = z.string().regex(/^[0-9a-f]{64}$/);
+const designDone = z.object({ path: clean(L.pathChars), sha, created: z.boolean() });
+
 const results = {
+  design_read: z.object({ path: clean(L.pathChars), text: cleanText(DESIGN_LIMITS.chars), sha }),
+  design_write: designDone,
+  design_edit: designDone,
   edit: changeDone,
   write: changeDone,
   git_change: z.object({ command: z.string().max(1200), output: z.string().max(600) }),
@@ -399,7 +408,11 @@ export function createRelay(deps: RelayDeps, opts: { requestMs?: number; tokenMa
                   ? GitChangeResult
                   : K extends "exec"
                     ? ExecResult
-                    : ChangeResult
+                    : K extends "design_read"
+                      ? DesignReadResult
+                      : K extends "design_write" | "design_edit"
+                        ? DesignWriteResult
+                        : ChangeResult
     > {
       const conn = hosts.get(keyOf(projectId, ownerId));
       if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "The desktop app of the person who shares this is offline."));

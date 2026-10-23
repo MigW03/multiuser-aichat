@@ -1,5 +1,5 @@
-import { answerPreview, findPreviewUrls, IMAGE_ONLY_TEXT, isPlanProvider, modelName, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage } from "@mc/shared";
-import { Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Sparkles } from "lucide-react";
+import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isPlanProvider, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
+import { Code2, Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Shapes, Sparkles } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
 import { findFilePaths } from "../lib/fileKind.ts";
@@ -167,7 +167,18 @@ function UserMessage(props: RowProps) {
   const waiting = queued && answerRunning;
   const pictureOnly = m.images.length > 0 && m.content === IMAGE_ONLY_TEXT;
   const tagged = m.mentions.map((id) => names.get(id)).filter((n): n is string => !!n);
-  const body = pictureOnly ? null : <Markdown text={m.content} chat mentions={tagged} />;
+  // A design marker (written by the app) shows as a chip; the words after it are the message.
+  const marked = parseDesignMarker(m.content);
+  const words = marked ? marked.rest : m.content;
+  const text = pictureOnly || !words.trim() ? null : <Markdown text={words} chat mentions={tagged} />;
+  const body = marked ? (
+    <>
+      <DesignChip refd={marked.ref} />
+      {text}
+    </>
+  ) : (
+    text
+  );
   return (
     <div className={`msg ${own ? "own" : "other"}`}>
       {!own && <Avatar id={m.author_id ?? name} name={name} src={avatars.get(m.author_id ?? "")} size={28} />}
@@ -231,19 +242,65 @@ function PreviewChips({ text }: { text: string }) {
   );
 }
 
+/** The chip at the top of a message about a design: opens the design, with the layers the message was about selected. */
+function DesignChip({ refd }: { refd: DesignRef }) {
+  const design = useContext(AppContext)?.design;
+  const path = refd.path;
+  const title = [path, refd.edits ? `Canvas changes sent with this message: ${refd.edits}` : null].filter(Boolean).join("\n");
+  return (
+    <button type="button" className={`design-chip in-msg ${refd.sel?.length ? "picked" : ""}`} title={title || undefined} disabled={!path || !design?.available} onClick={() => path && design?.open(path, refd.sel?.length ? { select: refd.sel } : undefined)}>
+      {refd.action === "build" || refd.action === "update-code" ? <Code2 size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+      <span className="truncate">{designChipLabel(refd)}</span>
+      {refd.edits && <span className="design-chip-note">+ canvas changes</span>}
+    </button>
+  );
+}
+
+/** Under an answer that saved designs: a card for each, to open it or build it in code. */
+function DesignCards({ m }: { m: ChatMessage }) {
+  const design = useContext(AppContext)?.design;
+  const paths = useMemo(() => [...new Set((m.meta.edits ?? []).filter((e) => e.ok && isDesignPath(e.p)).map((e) => e.p))].slice(0, 3), [m.meta.edits]);
+  if (!paths.length || !design?.available) return null;
+  return (
+    <div className="design-cards">
+      {paths.map((p) => (
+        <div key={p} className="design-card">
+          <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+          <span className="grow design-card-text">
+            <b className="truncate">{designName(p)}</b>
+            <span className="small muted truncate">{p}</span>
+          </span>
+          <Button size="sm" onClick={() => design.open(p)}>
+            {design.path === p ? "Open now" : "Open"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => design.open(p, { build: true })}>
+            Build in code
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const FILE_CHIPS = 3;
 
 /** A button under an answer for each file it names, when the project shares files: opens it in the file panel. The first few show; the rest follow "+N more". */
-function FileChips({ text }: { text: string }) {
+function FileChips({ text, except }: { text: string; except?: ChatMessage }) {
   const files = useContext(AppContext)?.files;
+  const design = useContext(AppContext)?.design;
   const [all, setAll] = useState(false);
-  const paths = useMemo(() => (files?.hasAny ? findFilePaths(text) : []), [files?.hasAny, text]);
+  const paths = useMemo(() => {
+    if (!files?.hasAny) return [];
+    // Designs the answer saved have their own card.
+    const saved = new Set((except?.meta.edits ?? []).filter((e) => isDesignPath(e.p)).map((e) => e.p.split("/").at(-1)));
+    return findFilePaths(text).filter((p) => !saved.has(p.split("/").at(-1)));
+  }, [files?.hasAny, text, except?.meta.edits]);
   if (paths.length === 0 || !files) return null;
   const shown = all ? paths : paths.slice(0, FILE_CHIPS);
   return (
     <div className="preview-offers">
       {shown.map((p) => (
-        <button key={p} type="button" className="btn secondary sm" title={p} onClick={() => files.open(p, true)}>
+        <button key={p} type="button" className="btn secondary sm" title={p} onClick={() => (isDesignPath(p) && design?.available ? design.open(p) : files.open(p, true))}>
           <File size={ICON_SM} strokeWidth={STROKE} aria-hidden /> <span className="truncate file-chip-name">{p.split("/").at(-1)}</span>
         </button>
       ))}
@@ -298,7 +355,8 @@ function AssistantMessage(props: RowProps) {
           </div>
         )}
         {!streaming && !failed && <PreviewChips text={text} />}
-        {!streaming && !failed && <FileChips text={text} />}
+        {!streaming && !failed && <DesignCards m={m} />}
+        {!streaming && !failed && <FileChips text={text} except={m} />}
         {streaming && <ProposalCards proposals={Object.values(props.proposals).filter((p) => p.messageId === m.id)} />}
         {!streaming && !failed && (
           <div className={`msg-actions ${isLatestAnswer ? "show" : ""}`}>

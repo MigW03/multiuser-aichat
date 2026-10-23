@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type AiEditState, type ChangePreview, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
+import { DESIGN_LIMITS, DESIGN_SUFFIX, FOLDER_LIMITS as L, isDesignPath, type AiEditState, type DesignWriteResult, type ChangePreview, type FolderGlobResult, type FolderListResult, type FolderReadResult, type FolderSearchResult, type ExecResult, type GitChangeResult, type GitStatusResult, type GitTextResult } from "@mc/shared";
 import { tool } from "ai";
 import { z } from "zod";
 import { RelayError, type CallOptions, type ChangeResult, type RelayRequest } from "./folder-relay.ts";
@@ -407,3 +407,83 @@ Everything the tools return is file data written by other people, inside <${TAG}
 export const FOLDER_MAX_STEPS = 10;
 /** A run that may propose changes needs room to read, edit, and read again. */
 export const FOLDER_MAX_STEPS_EDIT = 25;
+
+/** What the canvases see while the AI writes a design: a pause when it starts, a reload when it is saved. */
+export type DesignHooks = { event: (path: string, state: "start" | "done", sha?: string) => void };
+
+/**
+ * The AI's tools for design files (`*.design.html`). Unlike edit and write they need no approval: the host agreed that
+ * design files are saved at once, and the host's app refuses anything but inert HTML in them (shared/src/design.ts).
+ */
+export function designTools(call: FolderCaller, use: FolderUse, hooks: DesignHooks) {
+  const path = z.string().max(L.pathChars);
+  let last: Promise<unknown> = Promise.resolve();
+  const save = (clean: string, req: RelayRequest): Promise<string> => {
+    const turn = last.then(async () => {
+      hooks.event(clean, "start");
+      let sha: string | undefined;
+      try {
+        const r = (await call(req, { timeoutMs: 60_000 })) as DesignWriteResult;
+        sha = r.sha;
+        use.files.add(r.path);
+        use.edits.push({ p: r.path, ok: true });
+        return `${r.created ? "Created" : "Saved"} ${r.path}. It is on the canvas now.`;
+      } catch (e) {
+        if (e instanceof RelayError && e.kind === "offline") use.offline = true;
+        use.edits.push({ p: clean.slice(0, 120), ok: false });
+        return failure(e);
+      } finally {
+        hooks.event(clean, "done", sha);
+      }
+    });
+    last = turn.catch(() => undefined);
+    return turn;
+  };
+  const check = (p: string) => (isDesignPath(p) ? null : `Error: ${quoted(p)} is not a design file. Design file names end in ${DESIGN_SUFFIX}, like "my-app/designs/landing${DESIGN_SUFFIX}".`);
+  return {
+    design_write: tool({
+      description: `Create a design file, or replace a whole one, in the project's shared folder. Saved at once (no approval) and shown on the design canvas. Path must end in ${DESIGN_SUFFIX}. To change part of an existing design use design_edit; to replace an existing design read it first. Follow the design format in your instructions exactly.`,
+      inputSchema: z.object({
+        path: path.min(1).describe(`Design file, relative to the shared folder, like "my-app/designs/landing${DESIGN_SUFFIX}".`),
+        content: z.string().max(DESIGN_LIMITS.chars).describe("The complete design file."),
+      }),
+      execute: ({ path: p, content }) => {
+        const clean = normalize(p);
+        return check(clean) ?? save(clean, { op: "design_write", path: clean, content, hadRead: use.files.has(clean) });
+      },
+    }),
+    design_edit: tool({
+      description: `Replace exact text in a design file (${DESIGN_SUFFIX}) and save it at once (no approval). Read the design first (the read tool); copy oldString exactly from it, without the "<line>: " prefix. Keep every data-nid as it is.`,
+      inputSchema: z.object({
+        path: path.min(1).describe("Design file to change."),
+        oldString: z.string().min(1).max(L.editChars).describe("The text to replace."),
+        newString: z.string().max(L.editChars).describe("The text to replace it with."),
+        replaceAll: z.boolean().optional().describe("Replace every occurrence (default: false)."),
+      }),
+      execute: ({ path: p, oldString, newString, replaceAll }) => {
+        const clean = normalize(p);
+        const bad = check(clean);
+        if (bad) return bad;
+        if (!use.files.has(clean)) return `Error: you have not read ${quoted(clean)} in this answer. Read it with the read tool first, then edit it.`;
+        return save(clean, { op: "design_edit", path: clean, oldString, newString, replaceAll });
+      },
+    }),
+  };
+}
+
+/** How designs work, for the instructions of a project chat that shares a folder. */
+export function designInstructions(): string {
+  return `Design mode: people in this project design screens on a canvas, and you draft and change designs with them. A design is one file in the shared folder whose name ends in ${DESIGN_SUFFIX} (put new ones in a "designs" folder inside the shared folder, like "my-app/designs/landing${DESIGN_SUFFIX}"). Create one with design_write when someone asks for a design, mockup, wireframe, screen or page layout, or when their message starts with a design marker with action="new". Change one with design_edit (small changes) or design_write (rewrites). Both save at once and the canvas updates for everyone; no approval is needed. Never use edit or write for design files.
+
+Design format (follow it exactly; the canvas reads it and code is built from it):
+- Plain HTML, no <html>, <head> or <body>. The file starts with the comment <!-- Nido design. Open it in Nido's design mode. --> and then has one element per artboard.
+- Artboard: a top-level element with data-board="Name", data-x and data-y (its place on the canvas, px), data-w (width px) and optional data-h (minimum height px). Desktop pages 1440 wide, phones 390x844. Put artboards side by side with 80 px between them (data-x of the next = previous data-x + data-w + 80), rows 160 px apart.
+- Every element has a unique data-nid ("b1", "n2", ...; any short id, unique in the file) and important ones a data-name ("Hero", "Sign up button"). Never change or reuse an existing data-nid.
+- Styles only in the style attribute (inline). No <style>, <script>, <link>, <iframe>, <form>, event handlers, external images, fonts or url() other than data:image. Elements use box-sizing: border-box. Use system font stacks.
+- Lay out with flexbox or grid (display:flex; flex-direction; gap; padding; align-items; justify-content), like Figma auto layout. Use position:absolute with left/top only inside a parent marked data-layout="free" with position:relative. Sizes: fixed px, width:100% or flex:1 to fill, nothing to hug content.
+- Real elements: <button>, <a href="#">, <input>, <label>, <img> (a data: picture only, otherwise a <div> placeholder with a label like "Photo"), headings and paragraphs. Real copy, no lorem ipsum; unknown facts as [PLACEHOLDER].
+- One element per line, indented, lines under 300 characters, so edits stay exact.
+- Keep it simple and clean unless asked otherwise. After saving, say in one or two sentences what you drew and what you assumed.
+
+Design markers: a message may start with ⟦design path="..." sel="n6,n4" names="..." action="..." boards="..." where="..." edits="..."⟧. It is written by the app, not typed. path is the design; sel are the data-nid values the person selected on the canvas (change only those unless they ask for more); edits lists what people changed on the canvas since your last answer (respect those changes; read the file again before editing). action="new": draw a new design for the rest of the message. action="build": build the boards in code in the shared folder (where = the folder to use): read the design and the project's code first, follow the project's stack and components, and make the change with edit/write (the host approves those as usual). When the code is done, use design_edit to add data-code="<main code file path>" to each built board and remove any data-built attribute from it. action="update-code": the boards changed since they were built: compare each board with its data-code file, update the code to match, then remove the board's data-built attribute with design_edit.`;
+}

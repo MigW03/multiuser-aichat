@@ -370,7 +370,7 @@ function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: 
             {shared && <Users size={12} strokeWidth={STROKE} className="group-mark" aria-label="Shared chat" />}
             {chat.title}
           </span>
-          <span className="small muted truncate block">{chat.preview ? `${prefix}${chat.preview.replace(/\s+/g, " ")}` : "No messages yet"}</span>
+          <span className="small muted truncate block">{chat.preview ? `${prefix}${previewText(chat.preview)}` : "No messages yet"}</span>
         </span>
         <span className="row-meta">
           <span className="small muted">{listTime(chat.last_message_at)}</span>
@@ -427,4 +427,10 @@ function AccountCard() {
       />
     </div>
   );
+}
+
+/** A chat's last message for the list: a design marker (written by the app, maybe cut off) shows as "Design:". */
+function previewText(text: string): string {
+  const t = text.startsWith("⟦design") ? `Design: ${text.includes("⟧") ? text.slice(text.indexOf("⟧") + 1) : ""}` : text;
+  return t.replace(/\s+/g, " ").trim();
 }

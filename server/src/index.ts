@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { IMAGE_LIMITS } from "@mc/shared";
+import { DESIGN_LIMITS, IMAGE_LIMITS } from "@mc/shared";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
 import { sweepUnsentImages } from "./images.ts";
@@ -30,7 +30,15 @@ app.use("/api/*", cors({ origin: env.allowedOrigins, allowHeaders: ["authorizati
 const smallBody = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request too large" }, 413) });
 // Picture uploads send the file itself as the body; this is the only route allowed a big one.
 const pictureBody = bodyLimit({ maxSize: IMAGE_LIMITS.bytes + 1024, onError: (c) => c.json({ error: "That picture is over 5 MB." }, 413) });
-app.use("/api/*", (c, next) => (c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path) ? pictureBody(c, next) : smallBody(c, next)));
+// A design save sends the whole design file (up to 400,000 characters, a few bytes each at most).
+const designBody = bodyLimit({ maxSize: DESIGN_LIMITS.chars * 3 + 4096, onError: (c) => c.json({ error: "That design is too large." }, 413) });
+app.use("/api/*", (c, next) =>
+  c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path)
+    ? pictureBody(c, next)
+    : c.req.method === "PUT" && /^\/api\/projects\/[^/]+\/folder\/design$/.test(c.req.path)
+      ? designBody(c, next)
+      : smallBody(c, next),
+);
 
 app.get("/health", (c) => c.json({ ok: true }));
 

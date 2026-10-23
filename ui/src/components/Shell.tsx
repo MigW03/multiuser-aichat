@@ -27,6 +27,8 @@ import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
 import { ApprovalDock } from "./Changes.tsx";
+import { DesignPanel } from "./design/DesignPanel.tsx";
+import { useDesignMode } from "./design/useDesignMode.tsx";
 import { FilePanel, type FileRequest } from "./FilePanel.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { RightColumn } from "./FolderUi.tsx";
@@ -161,6 +163,7 @@ export function Shell({ userId }: { userId: string }) {
   const [preview, setPreview] = useState<{ url: string | null; full: boolean; runPath?: string } | null>(null);
   const previewOpen = !!preview;
   const [previewStored, setPreviewStored] = useState<number | null>(() => readPref<number | null>(PREF.previewWidth(userId), null));
+  const [designStored, setDesignStored] = useState<number | null>(() => readPref<number | null>(PREF.designWidth(userId), null));
   const [mainRoom, setMainRoom] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => setPreview(null), [projectId]);
@@ -174,6 +177,24 @@ export function Shell({ userId }: { userId: string }) {
   useEffect(() => setFileReq(null), [projectId, settingsOpen]);
   const closeFile = useCallback(() => setFileReq(null), []);
   const hasShares = activeShares.length > 0;
+  // Design mode: a design file on the canvas beside the chat. Like the preview and a shared file, one of them shows at a time.
+  const design = useDesignMode({
+    projectId,
+    userId,
+    available: hasShares,
+    folders: shareFolders,
+    onOpening: () => {
+      setPreview(null);
+      setFileReq(null);
+      setFolderDrawer(false);
+    },
+  });
+  const closeDesign = design.ctx.close;
+  const designOpen = !!design.open;
+  const [leftWithDesign, setLeftWithDesign] = useState(false);
+  useEffect(() => {
+    if (!designOpen) setLeftWithDesign(false);
+  }, [designOpen]);
   // Run page (desktop app): an HTML file shared from this computer runs with its scripts in the preview beside the chat.
   const local = useLocalFolder(projectId);
   const runApi = folderBridge()?.runPage ? folderBridge() : null;
@@ -193,13 +214,14 @@ export function Shell({ userId }: { userId: string }) {
         (r) => {
           if (r.ok) {
             setFileReq(null);
+            closeDesign();
             setPreview({ url: r.url, full: false, runPath: path });
           } else if (r.code !== "cancelled") toast.push(r.error || "The page could not be run.", "error");
         },
         () => toast.push("The page could not be run.", "error"),
       );
     },
-    [runApi, projectId, toast],
+    [runApi, projectId, toast, closeDesign],
   );
   const filesCtx = useMemo(
     () => ({
@@ -207,6 +229,7 @@ export function Shell({ userId }: { userId: string }) {
       path: fileReq && !fileReq.guess ? fileReq.path : null,
       open: (path: string, guess = false) => {
         setPreview(null);
+        closeDesign();
         setFileReq((cur) => ({ path, guess, n: (cur?.n ?? 0) + 1 }));
         setFolderDrawer(false);
       },
@@ -214,16 +237,16 @@ export function Shell({ userId }: { userId: string }) {
       canRun,
       run: runPage,
     }),
-    [hasShares, fileReq, closeFile, canRun, runPage],
+    [hasShares, fileReq, closeFile, canRun, runPage, closeDesign],
   );
   useEffect(() => {
     const el = mainRef.current;
-    if (!el || !previewOpen || typeof ResizeObserver === "undefined") return;
+    if (!el || !(previewOpen || designOpen) || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => setMainRoom(el.clientWidth));
     observer.observe(el);
     setMainRoom(el.clientWidth);
     return () => observer.disconnect();
-  }, [previewOpen]);
+  }, [previewOpen, designOpen]);
   const previewCtx = useMemo(
     () => ({
       available: !!previewApi,
@@ -231,19 +254,21 @@ export function Shell({ userId }: { userId: string }) {
       show: (url?: string) => {
         if (!previewApi) return;
         setFileReq(null);
+        closeDesign();
         setPreview((cur) => ({ url: url ?? (cur?.runPath ? null : cur?.url) ?? null, full: cur?.full ?? false }));
       },
       close: () => setPreview(null),
     }),
-    [previewApi, previewOpen],
+    [previewApi, previewOpen, closeDesign],
   );
 
-  // The files column steps aside while the preview is open beside the chat, and comes back when it closes.
-  const folderOpen = narrow ? folderDrawer : folderPinned && !previewOpen;
+  // The files column steps aside while the preview or a design is open beside the chat, and comes back when it closes.
+  const folderOpen = narrow ? folderDrawer : folderPinned && !previewOpen && !designOpen;
   const toggleFolder = useCallback(() => {
     if (narrow) return setFolderDrawer((v) => !v);
-    if (previewOpen) {
+    if (previewOpen || designOpen) {
       setPreview(null);
+      closeDesign();
       setFolderPinned(true);
       writePref(PREF.folderOpen(userId), true);
       return;
@@ -252,7 +277,7 @@ export function Shell({ userId }: { userId: string }) {
       writePref(PREF.folderOpen(userId), !v);
       return !v;
     });
-  }, [narrow, previewOpen, userId]);
+  }, [narrow, previewOpen, designOpen, closeDesign, userId]);
 
   const setCollapsedPersisted = (v: boolean) => {
     setCollapsed(v);
@@ -265,13 +290,32 @@ export function Shell({ userId }: { userId: string }) {
       if (!PANEL_SHORTCUT.matches(e) || e.repeat) return;
       e.preventDefault();
       if (narrow) setDrawer((d) => !d);
-      else setCollapsedPersisted(!collapsed);
+      else if (designOpen) {
+        // The left panel steps aside for a design; the key brings it back for as long as the design is open.
+        if (collapsed) setCollapsedPersisted(false);
+        setLeftWithDesign((v) => collapsed || !v);
+      } else setCollapsedPersisted(!collapsed);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // setCollapsedPersisted only closes over userId
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrow, collapsed, userId]);
+  }, [narrow, collapsed, userId, designOpen]);
+
+  // Cmd+K (Ctrl+K off a Mac) in a project that shares a folder: the designs, and "New design".
+  const pickDesign = design.ctx.available ? design.ctx.pick : null;
+  useEffect(() => {
+    if (!pickDesign) return;
+    const onKey = (e: KeyboardEvent) => {
+      const mac = /mac/i.test(navigator.platform);
+      if (e.code !== "KeyK" || e.shiftKey || e.altKey || !(mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) || e.repeat) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      e.preventDefault();
+      pickDesign();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickDesign]);
 
   // Cmd+N in the desktop app, Cmd+Shift+O everywhere: new chat, also while typing. Not under a dialog or menu, and on a
   // fresh chat it only puts the cursor in the message box.
@@ -309,8 +353,9 @@ export function Shell({ userId }: { userId: string }) {
         folderPanel: { open: folderOpen, drawer: narrow, toggle: toggleFolder },
         preview: previewCtx,
         files: filesCtx,
+        design: design.ctx,
       },
-    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder, previewCtx, filesCtx],
+    [me, reloadMe, keys, reloadKeys, choice, setChoice, folderOpen, narrow, toggleFolder, previewCtx, filesCtx, design.ctx],
   );
 
   if (route.name === "reset") return <ResetPassword />;
@@ -342,7 +387,15 @@ export function Shell({ userId }: { userId: string }) {
   const projectMissing = !!projectId && projects.data !== undefined && !project;
   const chat = activeChatId ? chats.data?.find((c) => c.id === activeChatId) ?? null : null;
   const chatMissing = !!activeChatId && chats.data !== undefined && !chat;
-  const showLeft = narrow ? drawer : !collapsed;
+  const leftHidden = !narrow && designOpen && !!project && !leftWithDesign;
+  const showLeft = narrow ? drawer : !collapsed && !leftHidden;
+  const leftOff = narrow || collapsed || leftHidden;
+  const showLeftNow = () => {
+    if (narrow) return setDrawer(true);
+    if (collapsed) setCollapsedPersisted(false);
+    if (leftHidden) setLeftWithDesign(true);
+  };
+  const designShown = designOpen && !!project ? design.open : null;
 
   let main;
   if (projectMissing) {
@@ -350,7 +403,7 @@ export function Shell({ userId }: { userId: string }) {
   } else if (projectId && !project) {
     main = <Loading />;
   } else if (project && settingsOpen) {
-    main = <ProjectSettings key={project.id} project={project} leftCollapsed={narrow || collapsed} onShowLeft={() => (narrow ? setDrawer(true) : setCollapsedPersisted(false))} />;
+    main = <ProjectSettings key={project.id} project={project} leftCollapsed={leftOff} onShowLeft={showLeftNow} />;
   } else if (activeChatId) {
     main = chatMissing ? (
       <NotFound text="This chat doesn't exist anymore, or you don't have access to it." back={project ? { name: "project", projectId: project.id, chatId: null } : { name: "home" }} />
@@ -361,8 +414,8 @@ export function Shell({ userId }: { userId: string }) {
         project={project}
         projectPeople={members.data as Person[] | undefined}
         projectOnline={online}
-        leftCollapsed={narrow || collapsed}
-        onShowLeft={() => (narrow ? setDrawer(true) : setCollapsedPersisted(false))}
+        leftCollapsed={leftOff}
+        onShowLeft={showLeftNow}
       />
     ) : (
       <Loading />
@@ -375,8 +428,8 @@ export function Shell({ userId }: { userId: string }) {
         people={(members.data as Person[] | undefined) ?? []}
         hasChat={(chats.data?.length ?? 0) > 0}
         hasProject={(projects.data?.length ?? 0) > 0}
-        leftCollapsed={narrow || collapsed}
-        onShowLeft={() => (narrow ? setDrawer(true) : setCollapsedPersisted(false))}
+        leftCollapsed={leftOff}
+        onShowLeft={showLeftNow}
       />
     );
   }
@@ -400,12 +453,46 @@ export function Shell({ userId }: { userId: string }) {
             {!narrow && <PanelResizer width={left.width} max={left.max} onChange={left.set} />}
           </div>
         )}
-        <main className={`main ${previewApi && preview && !narrow && !preview.full ? "with-preview" : ""}`} ref={mainRef}>
-          {/* The chat stays mounted behind a full-size preview, so nothing typed or scrolled is lost. */}
-          <div className={`main-slot ${(preview && (narrow || preview.full)) || (fileReq && project) ? "hidden" : ""}`}>{main}</div>
+        <main className={`main ${(previewApi && preview && !narrow && !preview.full) || (designShown && !narrow && !designShown.full) ? "with-preview" : ""}`} ref={mainRef}>
+          {/* The chat stays mounted behind a full-size preview or design, so nothing typed or scrolled is lost. */}
+          <div className={`main-slot ${(preview && (narrow || preview.full)) || (fileReq && project) || (designShown && (narrow || designShown.full)) ? "hidden" : ""}`}>{main}</div>
           {fileReq && project && (
             <div className="file-slot">
               <FilePanel projectId={project.id} request={fileReq} folders={shareFolders} onClose={closeFile} />
+            </div>
+          )}
+          {designShown && project && (
+            <div className={`preview-slot design-slot ${narrow || designShown.full ? "full" : ""}`} style={narrow || designShown.full ? undefined : { width: clampPreviewWidth(designStored ?? Math.round(mainRoom * 0.62), mainRoom) }}>
+              <DesignPanel
+                key={`${project.id}:${designShown.path}`}
+                projectId={project.id}
+                path={designShown.path}
+                me={{ id: userId, name: me.display_name, avatar: me.avatar_url }}
+                request={{ n: designShown.n, ...(designShown.select ? { select: designShown.select } : {}), ...(designShown.build ? { build: true } : {}) }}
+                full={designShown.full}
+                narrow={narrow}
+                onFull={(full) => design.setOpen((cur) => (cur ? { ...cur, full } : cur))}
+                onClose={closeDesign}
+                onAskAI={(ref) => {
+                  // On a small screen the design covers the chat: go back to it, with the chip in the message box.
+                  if (narrow || designShown.full) design.setOpen((cur) => (cur ? { ...cur, full: false } : cur));
+                  if (narrow) closeDesign();
+                  design.ctx.setChip(ref);
+                }}
+                onEdit={(d) => design.logEdit(designShown.path, d)}
+                onOpenFile={(p) => filesCtx.open(p, true)}
+              />
+              {!narrow && !designShown.full && (
+                <PreviewResizer
+                  width={clampPreviewWidth(designStored ?? Math.round(mainRoom * 0.62), mainRoom)}
+                  room={mainRoom}
+                  onChange={(next, remember) => {
+                    const v = clampPreviewWidth(next, mainRoom);
+                    setDesignStored(v);
+                    if (remember) writePref(PREF.designWidth(userId), v);
+                  }}
+                />
+              )}
             </div>
           )}
           {previewApi && preview && (
@@ -454,6 +541,7 @@ export function Shell({ userId }: { userId: string }) {
       {settings && <SettingsDialog initialTab={settings.tab} focus={settings.focus} onClose={() => setSettings(null)} />}
       {addKey && <AddKeyDialog onClose={() => setAddKey(false)} />}
       {inviteReq && <InviteHost req={inviteReq} projects={projects.data} chats={chats.data} meId={userId} onClose={() => setInviteReq(null)} />}
+      {design.dialogs}
       <ApprovalDock projectName={(id) => projects.data?.find((p) => p.id === id)?.name ?? "a project"} />
     </AppContext.Provider>
   );

@@ -437,3 +437,7 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* Mail-merge field in the drafted email, so it reads as the customer's name, not someone in the chat. */
+.var { font: 500 0.86em var(--mono); color: var(--steel-ink); background: oklch(1 0 0 / 0.6); border-radius: 4px; padding: 1px 4px; box-shadow: inset 0 0 0 1px var(--steel-tint-2); }
+.demo.is-live .var:not(:has(.w.is-in)) { display: none; }

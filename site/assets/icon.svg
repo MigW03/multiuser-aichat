@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Nido">
+  <defs>
+    <linearGradient id="f" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f7f9"/>
+      <stop offset="1" stop-color="#dfe1e6"/>
+    </linearGradient>
+  </defs>
+  <path d="M60 0c42 0 60 18 60 60s-18 60-60 60S0 102 0 60 18 0 60 0Z" fill="url(#f)"/>
+  <path d="M60 .5c41.6 0 59.5 17.9 59.5 59.5S101.6 119.5 60 119.5.5 101.6.5 60 18.4.5 60 .5Z" fill="none" stroke="#c9ccd3"/>
+  <g fill="none" stroke="#b8bcc5" stroke-width=".9">
+    <path d="M0 0l120 120M120 0L0 120M60 0v120M0 60h120"/>
+    <circle cx="60" cy="60" r="36"/>
+    <circle cx="60" cy="60" r="18"/>
+    <rect x="24" y="24" width="72" height="72" rx="3"/>
+    <rect x="33" y="14" width="54" height="92" rx="2"/>
+    <rect x="14" y="33" width="92" height="54" rx="2"/>
+  </g>
+</svg>

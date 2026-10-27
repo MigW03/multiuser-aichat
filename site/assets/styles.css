@@ -304,6 +304,12 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
   transition: opacity 0.5s var(--ease);
 }
 .prelude-caption.is-swapping { opacity: 0; }
+.punch {
+  position: absolute; left: 0; right: 0; top: 50%; margin: 0 auto; max-width: 15ch; padding: 0 var(--gutter);
+  text-align: center; text-wrap: balance;
+  font-size: clamp(44px, 8.4vw, 124px); line-height: 0.98; letter-spacing: -0.055em; font-weight: 650;
+  opacity: 0; transform: translateY(-50%) scale(0.9); will-change: transform, opacity;
+}
 .solo {
   position: absolute; top: 34vh; left: 50%; width: min(400px, 40vw); margin-left: calc(min(400px, 40vw) / -2);
   border-radius: 18px; background: var(--surface);

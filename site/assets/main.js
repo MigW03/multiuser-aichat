@@ -206,7 +206,7 @@
     const merge = new URLSearchParams(location.search).get('demo') === 'merge';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
-    demo.style.setProperty('--demo-height', merge ? '760vh' : '560vh');
+    demo.style.setProperty('--demo-height', merge ? '840vh' : '560vh');
 
     const app = demo.querySelector('[data-app]');
     const view = demo.querySelector('.thread-view');
@@ -251,19 +251,19 @@
     ];
     const beatOf = (c) => (c < 0.37 ? 1 : c < 0.67 ? 2 : 3);
     const P = merge
-      ? { pre: [0, 0.24], grow: [0.24, 0.32], chat: [0.32, 0.93], shrink: [0.94, 1] }
+      ? { pre: [0, 0.3], grow: [0.3, 0.38], chat: [0.38, 0.93], shrink: [0.94, 1] }
       : { grow: [0, 0.1], chat: [0.1, 0.92], shrink: [0.93, 1] };
 
     // Prelude parts
     const prelude = demo.querySelector('.prelude');
     const preCaption = demo.querySelector('[data-prelude-caption]');
+    const punch = demo.querySelector('[data-punch]');
     const soloA = demo.querySelector('.solo-a');
     const soloB = demo.querySelector('.solo-b');
     const soloMsgs = [...demo.querySelectorAll('[data-solo-at]')].map((n) => ({ n, at: +n.dataset.soloAt }));
     const PRE_CAPTIONS = [
       'Today, everyone has their own AI chat.',
       'So you copy, paste, and explain it all again.',
-      'Nido puts everyone in the same chat.',
     ];
     let preIndex = 0;
     let swapTimer = 0;
@@ -319,28 +319,35 @@
     const preludeState = (p) => {
       const q = seg(p, P.pre);
       for (const m of soloMsgs) m.n.classList.toggle('is-in', q >= m.at);
-      const idx = q < 0.42 ? 0 : q < 0.7 ? 1 : 2;
+      const idx = q < 0.42 ? 0 : 1;
       if (idx !== preIndex) {
         preIndex = idx;
         clearTimeout(swapTimer);
         preCaption.classList.add('is-swapping');
         swapTimer = setTimeout(() => { preCaption.textContent = PRE_CAPTIONS[preIndex]; preCaption.classList.remove('is-swapping'); }, 220);
       }
+      preCaption.style.opacity = 1 - seg(q, [0.6, 0.68]);
       const w = soloA.offsetWidth;
       const far = w / 2 + Math.min(80, window.innerWidth * 0.04);
       const near = w * 0.16;
-      const drift = easeInOut(seg(q, [0.42, 0.7]));
-      const fuse = easeInOut(seg(q, [0.7, 0.95]));
+      const drift = easeInOut(seg(q, [0.42, 0.6]));
+      const fuse = easeInOut(seg(q, [0.6, 0.76]));
       const x = lerp(lerp(far, near, drift), 0, fuse);
       const rot = lerp(0, 3, drift) * (1 - fuse);
       const scale = lerp(1, 0.92, fuse);
-      const alpha = 1 - seg(q, [0.8, 0.98]);
+      const alpha = 1 - seg(q, [0.66, 0.78]);
       soloA.style.transform = `translateX(${-x}px) rotate(${-rot}deg) scale(${scale})`;
       soloB.style.transform = `translateX(${x}px) rotate(${rot}deg) scale(${scale})`;
       soloA.style.opacity = soloB.style.opacity = alpha;
       prelude.style.opacity = 1 - seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
       captionBox.style.opacity = seg(p, [P.grow[0] + 0.03, P.grow[0] + 0.07]);
-      return seg(q, [0.78, 1]);
+      // The punch line: alone in the frame, centered, growing as you scroll; it gives way when the app arrives.
+      const pIn = seg(q, [0.72, 0.84]);
+      const pOut = seg(p, [P.grow[0], P.grow[0] + 0.035]);
+      const pScale = lerp(0.9, 1.08, easeOut(seg(q, [0.72, 1]))) + 0.06 * pOut;
+      punch.style.opacity = (easeOut(pIn) * (1 - pOut)).toFixed(3);
+      punch.style.transform = `translateY(-50%) scale(${pScale.toFixed(4)})`;
+      return seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
     };
 
     updateDemo = () => {

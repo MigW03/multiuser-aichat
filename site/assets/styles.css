@@ -298,6 +298,7 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 
 /* Prelude (?demo=merge) */
 .demo.is-merge.is-live .prelude { display: block; position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.demo.is-merge.is-live .app { z-index: 3; }
 .prelude-caption {
   position: absolute; left: 0; right: 0; top: 17vh; text-align: center; padding: 0 var(--gutter);
   font-size: clamp(26px, 3.4vw, 44px); line-height: 1.08; letter-spacing: -0.04em; font-weight: 650;
@@ -322,6 +323,10 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 .solo-body { padding: 16px; min-height: 188px; font-size: 14px; line-height: 1.5; }
 .s-msg { margin-bottom: 12px; opacity: 0; transform: translateY(8px); transition: opacity 0.5s var(--ease), transform 0.5s var(--ease); }
 .s-msg.is-in { opacity: 1; transform: none; }
+.solo-merged { opacity: 0; box-shadow: inset 0 0 0 1px var(--line), 0 0 0 6px var(--steel-tint-2), 0 30px 60px -30px oklch(0.3 0.03 var(--hue) / 0.2); }
+.solo-merged .solo-bar span:first-of-type { color: var(--ink); font-weight: 600; }
+.solo-merged .avatars { margin-left: auto; }
+.solo-merged .avatars .av { width: 20px; height: 20px; font-size: 9.5px; }
 .s-msg b { display: block; font-size: 12.5px; margin-bottom: 2px; }
 .s-ai { background: var(--bg-2); border-radius: 12px; padding: 9px 12px; color: var(--ink-2); }
 .pasted { display: block; width: fit-content; margin: 4px 0 6px; padding: 5px 9px; border-radius: 8px; font: 500 11px var(--mono); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }
@@ -416,6 +421,7 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
   .thread-view { padding: 16px 16px 4px; }
   .demo.is-live .rail { right: 14px; }
   .solo { width: 44vw; margin-left: -22vw; top: 36vh; }
+  .solo-merged { width: 74vw; margin-left: -37vw; }
   .solo-body { padding: 12px; font-size: 12.5px; min-height: 170px; }
 }
 @media (max-width: 560px) {

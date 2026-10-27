@@ -206,14 +206,13 @@
     const merge = new URLSearchParams(location.search).get('demo') === 'merge';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
-    demo.style.setProperty('--demo-height', merge ? '960vh' : '560vh');
+    demo.style.setProperty('--demo-height', merge ? '1040vh' : '560vh');
 
     const app = demo.querySelector('[data-app]');
     const view = demo.querySelector('.thread-view');
     const thread = demo.querySelector('[data-thread]');
     const msgs = [...demo.querySelectorAll('.msg')].map((node) => ({ node, at: +node.dataset.at, beat: +node.dataset.beat, on: null, past: null }));
     const captions = [...demo.querySelectorAll('[data-caption]')];
-    const captionBox = demo.querySelector('.captions');
     const dots = [...demo.querySelectorAll('.rail li')];
     const typing = demo.querySelector('[data-typing]');
 
@@ -251,7 +250,7 @@
     ];
     const beatOf = (c) => (c < 0.37 ? 1 : c < 0.67 ? 2 : 3);
     const P = merge
-      ? { story: 0.2625, pre: [0, 0.39], grow: [0.39, 0.46], chat: [0.46, 0.93], shrink: [0.94, 1] }
+      ? { story: 0.28, pre: [0, 0.44], grow: [0.44, 0.52], chat: [0.52, 0.93], shrink: [0.94, 1] }
       : { grow: [0, 0.1], chat: [0.1, 0.92], shrink: [0.93, 1] };
 
     // Prelude parts
@@ -260,6 +259,7 @@
     const punch = demo.querySelector('[data-punch]');
     const soloA = demo.querySelector('.solo-a');
     const soloB = demo.querySelector('.solo-b');
+    const soloM = demo.querySelector('.solo-merged');
     const soloMsgs = [...demo.querySelectorAll('[data-solo-at]')].map((n) => ({ n, at: +n.dataset.soloAt }));
     const PRE_CAPTIONS = [
       'Today, everyone has their own AI chat.',
@@ -327,28 +327,35 @@
         preCaption.classList.add('is-swapping');
         swapTimer = setTimeout(() => { preCaption.textContent = PRE_CAPTIONS[preIndex]; preCaption.classList.remove('is-swapping'); }, 220);
       }
-      preCaption.style.opacity = 1 - seg(q, [0.6, 0.68]);
+      preCaption.style.opacity = 1 - seg(q, [0.56, 0.62]);
+      // The two chats slide together and become one shared chat...
       const w = soloA.offsetWidth;
       const far = w / 2 + Math.min(80, window.innerWidth * 0.04);
       const near = w * 0.16;
-      const drift = easeInOut(seg(q, [0.42, 0.6]));
-      const fuse = easeInOut(seg(q, [0.6, 0.76]));
+      const drift = easeInOut(seg(q, [0.42, 0.56]));
+      const fuse = easeInOut(seg(q, [0.56, 0.66]));
       const x = lerp(lerp(far, near, drift), 0, fuse);
       const rot = lerp(0, 3, drift) * (1 - fuse);
-      const scale = lerp(1, 0.92, fuse);
-      const alpha = 1 - seg(q, [0.66, 0.78]);
+      const scale = lerp(1, 0.94, fuse);
       soloA.style.transform = `translateX(${-x}px) rotate(${-rot}deg) scale(${scale})`;
       soloB.style.transform = `translateX(${x}px) rotate(${rot}deg) scale(${scale})`;
-      soloA.style.opacity = soloB.style.opacity = alpha;
-      prelude.style.opacity = 1 - seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
-      captionBox.style.opacity = seg(p, [P.grow[0] + 0.03, P.grow[0] + 0.07]);
-      // The punch line: alone in the frame, centered, growing as you scroll; it gives way when the app arrives.
-      const pIn = seg(q, [0.76, 0.9]);
-      const pOut = seg(p, [P.grow[0], P.grow[0] + 0.035]);
-      const pScale = lerp(0.9, 1.1, easeOut(seg(p, [0.76 * P.story, P.grow[0]]))) + 0.06 * pOut;
-      punch.style.opacity = (easeOut(pIn) * (1 - pOut)).toFixed(3);
+      soloA.style.opacity = soloB.style.opacity = 1 - seg(q, [0.62, 0.68]);
+      // ...which then shrinks into the middle of the frame, where the app will later zoom out from.
+      const join = easeOut(seg(q, [0.6, 0.68]));
+      const shrink = easeInOut(seg(q, [0.76, 0.9]));
+      const dy = window.innerHeight / 2 - (soloM.offsetTop + soloM.offsetHeight / 2);
+      const ms = lerp(0.94, 1, join) * Math.pow(0.03, shrink);
+      soloM.style.transform = `translateY(${(dy * shrink).toFixed(1)}px) scale(${ms.toFixed(4)})`;
+      soloM.style.opacity = (join * (1 - seg(q, [0.84, 0.9]))).toFixed(3);
+      // Hidden only once the app fully covers it.
+      prelude.style.opacity = p >= P.grow[1] ? 0 : 1;
+      // The punch line: alone in the frame, centered, growing as you scroll; the app then zooms out over it.
+      const pIn = seg(q, [0.84, 0.97]);
+      const pOut = easeOut(seg(p, P.grow));
+      const pScale = lerp(0.9, 1.1, easeOut(seg(p, [0.84 * P.story, P.grow[0]]))) + 0.2 * pOut;
+      punch.style.opacity = easeOut(pIn).toFixed(3);
       punch.style.transform = `translateY(-50%) scale(${pScale.toFixed(4)})`;
-      return seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
+      return p >= P.grow[0];
     };
 
     // The demo eases toward the scroll position instead of jumping with each wheel tick.
@@ -365,18 +372,24 @@
       if (Math.abs(target - eased) < 0.5) eased = target;
       const p = clamp(eased / (r.height - vh));
 
-      let appIn = 1;
-      if (merge) appIn = preludeState(p);
+      const appIn = merge ? preludeState(p) : true;
 
-      const g = easeOut(seg(p, P.grow));
       const sh = easeInOut(seg(p, P.shrink));
-      const start = window.innerWidth < 860 ? 0.9 : 0.8;
-      let s = sh > 0 ? lerp(1, 0.86, sh) : lerp(start, 1, g);
-      if (merge && appIn < 1) s *= lerp(0.88, 1, easeOut(appIn));
+      let g, s;
+      if (merge) {
+        // Zoom out of the middle of the frame: geometric growth reads as steady camera speed.
+        const t = seg(p, P.grow);
+        g = t * t * (3 - 2 * t);
+        s = sh > 0 ? lerp(1, 0.86, sh) : 0.03 * Math.pow(1 / 0.03, g);
+      } else {
+        g = easeOut(seg(p, P.grow));
+        const start = window.innerWidth < 860 ? 0.9 : 0.8;
+        s = sh > 0 ? lerp(1, 0.86, sh) : lerp(start, 1, g);
+      }
       const radius = (26 * Math.max(1 - g, sh)) / s;
       app.style.transform = `scale(${s.toFixed(4)})`;
       app.style.borderRadius = `${radius.toFixed(2)}px`;
-      app.style.opacity = merge ? appIn.toFixed(3) : '';
+      app.style.visibility = appIn ? '' : 'hidden';
 
       navWrap.classList.toggle('is-hidden', g > 0.85 && sh < 0.4);
       chatState(seg(p, P.chat));

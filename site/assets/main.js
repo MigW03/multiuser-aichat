@@ -206,7 +206,7 @@
     const merge = new URLSearchParams(location.search).get('demo') === 'merge';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
-    demo.style.setProperty('--demo-height', merge ? '840vh' : '560vh');
+    demo.style.setProperty('--demo-height', merge ? '960vh' : '560vh');
 
     const app = demo.querySelector('[data-app]');
     const view = demo.querySelector('.thread-view');
@@ -251,7 +251,7 @@
     ];
     const beatOf = (c) => (c < 0.37 ? 1 : c < 0.67 ? 2 : 3);
     const P = merge
-      ? { pre: [0, 0.3], grow: [0.3, 0.38], chat: [0.38, 0.93], shrink: [0.94, 1] }
+      ? { story: 0.2625, pre: [0, 0.39], grow: [0.39, 0.46], chat: [0.46, 0.93], shrink: [0.94, 1] }
       : { grow: [0, 0.1], chat: [0.1, 0.92], shrink: [0.93, 1] };
 
     // Prelude parts
@@ -317,7 +317,8 @@
     };
 
     const preludeState = (p) => {
-      const q = seg(p, P.pre);
+      // q runs the two-chats story; the punch line then holds the frame until the app grows in.
+      const q = seg(p, [0, P.story]);
       for (const m of soloMsgs) m.n.classList.toggle('is-in', q >= m.at);
       const idx = q < 0.42 ? 0 : 1;
       if (idx !== preIndex) {
@@ -342,19 +343,27 @@
       prelude.style.opacity = 1 - seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
       captionBox.style.opacity = seg(p, [P.grow[0] + 0.03, P.grow[0] + 0.07]);
       // The punch line: alone in the frame, centered, growing as you scroll; it gives way when the app arrives.
-      const pIn = seg(q, [0.72, 0.84]);
+      const pIn = seg(q, [0.76, 0.9]);
       const pOut = seg(p, [P.grow[0], P.grow[0] + 0.035]);
-      const pScale = lerp(0.9, 1.08, easeOut(seg(q, [0.72, 1]))) + 0.06 * pOut;
+      const pScale = lerp(0.9, 1.1, easeOut(seg(p, [0.76 * P.story, P.grow[0]]))) + 0.06 * pOut;
       punch.style.opacity = (easeOut(pIn) * (1 - pOut)).toFixed(3);
       punch.style.transform = `translateY(-50%) scale(${pScale.toFixed(4)})`;
       return seg(p, [P.grow[0] + 0.01, P.grow[0] + 0.05]);
     };
 
-    updateDemo = () => {
+    // The demo eases toward the scroll position instead of jumping with each wheel tick.
+    let eased = null;
+    let lastT = 0;
+    updateDemo = (t) => {
       const r = demo.getBoundingClientRect();
       const vh = window.innerHeight;
-      if (r.bottom < 0 || r.top > vh) { navWrap.classList.remove('is-hidden'); return; }
-      const p = clamp(-r.top / (r.height - vh));
+      const target = -r.top;
+      if (r.bottom < 0 || r.top > vh) { navWrap.classList.remove('is-hidden'); eased = null; return false; }
+      const dt = lastT ? Math.min(64, t - lastT) : 16.7;
+      lastT = t;
+      eased = eased == null ? target : eased + (target - eased) * (1 - Math.pow(0.86, dt / 16.7));
+      if (Math.abs(target - eased) < 0.5) eased = target;
+      const p = clamp(eased / (r.height - vh));
 
       let appIn = 1;
       if (merge) appIn = preludeState(p);
@@ -371,15 +380,16 @@
 
       navWrap.classList.toggle('is-hidden', g > 0.85 && sh < 0.4);
       chatState(seg(p, P.chat));
+      return eased !== target;
     };
   }
 
   // One passive scroll listener, batched to animation frames.
   let queued = false;
-  const onFrame = () => {
+  const onFrame = (t) => {
     queued = false;
     nav.classList.toggle('is-scrolled', window.scrollY > 8);
-    updateDemo();
+    if (updateDemo(t || performance.now())) schedule();
   };
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(onFrame); } };
   window.addEventListener('scroll', schedule, { passive: true });

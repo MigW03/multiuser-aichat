@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nido · Coming soon</title>
+  <meta name="description" content="Nido is a group chat where your whole team talks to the same AI. Ask together, read the same answers, keep the work in one place. Coming soon.">
+  <meta name="theme-color" content="#f8f9fb">
+  <meta property="og:title" content="Nido · Your team and the AI, in one chat">
+  <meta property="og:description" content="A group chat where everyone talks to the same AI. Coming soon.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/main.js" defer></script>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="nav-wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="brand" href="#top" aria-label="Nido, back to top">
+        <img src="assets/icon.svg" alt="" width="28" height="28">
+        <span>nido</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="#roadmap">Roadmap</a>
+        <a class="btn btn-small" href="#join">Join the waitlist</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-dots" aria-hidden="true"></div>
+      <div class="hero-inner reveal">
+        <span class="eyebrow"><span class="pulse" aria-hidden="true"></span>Coming soon</span>
+        <h1>Your team and the AI, in&nbsp;one&nbsp;chat.</h1>
+        <p class="lede">Nido is a group chat where everyone talks to the same AI. Ask together, read the same answers, and keep the work in one place.</p>
+        <form class="waitlist" data-form="waitlist" novalidate>
+          <div class="field-shell">
+            <label class="sr-only" for="email-hero">Email</label>
+            <input id="email-hero" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@company.com" maxlength="254" required>
+            <button class="btn" type="submit">
+              <span class="btn-label">Join the waitlist</span>
+              <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></span>
+            </button>
+          </div>
+          <p class="form-note" data-note>One email when we open. That's it.</p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Scroll demo: the page becomes the app, and scrolling plays the conversation -->
+    <section class="demo" id="demo" aria-label="How a conversation in Nido looks">
+      <div class="demo-stage">
+
+        <!-- Experimental prelude (?demo=merge): two people, each alone with an AI, merge into one Nido chat -->
+        <div class="prelude" aria-hidden="true">
+          <p class="prelude-caption" data-prelude-caption>Today, everyone has their own AI chat.</p>
+          <div class="solo solo-a">
+            <div class="solo-bar"><i></i><i></i><i></i><span>Ana · AI chat</span></div>
+            <div class="solo-body">
+              <div class="s-msg s-me" data-solo-at="0.04"><b>Ana</b>Draft our launch email. Short.</div>
+              <div class="s-msg s-ai" data-solo-at="0.14"><b>AI</b>Subject: Our spring line is here. Hi Sam, the new collection is live…</div>
+            </div>
+          </div>
+          <div class="solo solo-b">
+            <div class="solo-bar"><i></i><i></i><i></i><span>Rafael · AI chat</span></div>
+            <div class="solo-body">
+              <div class="s-msg s-me" data-solo-at="0.24"><b>Rafael</b><span class="pasted">Pasted text · 41 words</span>Make this less formal.</div>
+              <div class="s-msg s-ai" data-solo-at="0.33"><b>AI</b>Sure. What is this for, and who is it going to?</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="app" data-app>
+          <aside class="app-side">
+            <p class="side-back">‹ All projects</p>
+            <p class="side-project"><span class="proj-dot" aria-hidden="true"></span>Spring launch</p>
+            <p class="side-label">Chats</p>
+            <ul class="side-list">
+              <li class="is-on"># launch-email</li>
+              <li># photos</li>
+              <li># pricing</li>
+            </ul>
+            <p class="side-label">People · 3</p>
+            <ul class="side-list people">
+              <li><span class="online" aria-hidden="true"></span>Ana</li>
+              <li><span class="online" aria-hidden="true"></span>Rafael</li>
+              <li><span class="online" aria-hidden="true"></span>Leo</li>
+            </ul>
+          </aside>
+
+          <div class="app-chat">
+            <div class="chat-head">
+              <span class="chat-name"># launch-email</span>
+              <span class="avatars" aria-hidden="true"><i class="av av-ana">A</i><i class="av av-raf">R</i><i class="av av-leo">L</i></span>
+            </div>
+
+            <div class="captions" aria-hidden="true">
+              <div class="caption" data-caption="1"><span class="cap-num">01 / 03</span><p>One chat for the whole team.</p><small>Ana asks. Everyone sees the answer.</small></div>
+              <div class="caption" data-caption="2"><span class="cap-num">02 / 03</span><p>Anyone can follow up.</p><small>The AI has read the whole thread, so Rafael doesn't repeat a thing.</small></div>
+              <div class="caption" data-caption="3"><span class="cap-num">03 / 03</span><p>Talking to a person? Use @.</p><small>The AI stays out of it.</small></div>
+            </div>
+
+            <div class="thread-view">
+              <div class="thread" data-thread>
+                <p class="beat-label">One chat for the whole team.</p>
+                <article class="msg" data-at="0.05" data-beat="1">
+                  <i class="av av-ana" aria-hidden="true">A</i>
+                  <div><p class="who">Ana</p><p>Can you draft the email for Thursday's launch? Keep it short.</p></div>
+                </article>
+                <article class="msg msg-ai" data-at="0.10" data-beat="1">
+                  <i class="av av-ai" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z"/></svg></i>
+                  <div><p class="who">Claude Sonnet 4.5</p><p class="ai-text" data-stream="0.13 0.33"><strong>Subject: Our spring line is here.</strong> Hi Sam, the new collection is live. Twelve pieces, made in small batches. Have a look before Sunday.</p></div>
+                </article>
+
+                <p class="beat-label">Anyone can follow up.</p>
+                <article class="msg" data-at="0.42" data-beat="2">
+                  <i class="av av-raf" aria-hidden="true">R</i>
+                  <div><p class="who">Rafael</p><p>Less formal. And say shipping is free this week.</p></div>
+                </article>
+                <article class="msg msg-ai" data-at="0.45" data-beat="2">
+                  <i class="av av-ai" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z"/></svg></i>
+                  <div><p class="who">Claude Sonnet 4.5</p><p class="ai-text" data-stream="0.48 0.62"><strong>Subject: New spring stuff, free shipping.</strong> Hey Sam, the spring line just dropped. Shipping's on us until Sunday.</p></div>
+                </article>
+
+                <p class="beat-label">Talking to a person? Use @.</p>
+                <article class="msg" data-at="0.72" data-beat="3">
+                  <i class="av av-leo" aria-hidden="true">L</i>
+                  <div><p class="who">Leo <span class="skipped">AI skipped</span></p><p><span class="mention">@Rafael</span> do we have a photo for the header?</p></div>
+                </article>
+                <article class="msg" data-at="0.79" data-beat="3">
+                  <i class="av av-raf" aria-hidden="true">R</i>
+                  <div><p class="who">Rafael <span class="skipped">AI skipped</span></p><p><span class="mention">@Leo</span> yes, it's in Files.</p>
+                    <p class="file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.5h6l3 3v10h-9Z M9.5 1.5v3h3"/></svg>spring-header.jpg</p></div>
+                </article>
+                <article class="msg" data-at="0.86" data-beat="3">
+                  <i class="av av-ana" aria-hidden="true">A</i>
+                  <div><p class="who">Ana <span class="skipped">AI skipped</span></p><p><span class="mention">@Rafael</span> <span class="mention">@Leo</span> perfect. Thursday it is.</p></div>
+                </article>
+              </div>
+            </div>
+
+            <div class="composer" aria-hidden="true">
+              <p class="typing" data-typing></p>
+              <div class="composer-box"><span>Message #launch-email</span><i class="send"><svg viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4"/></svg></i></div>
+            </div>
+          </div>
+          <ol class="rail" aria-hidden="true"><li></li><li></li><li></li></ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features" aria-labelledby="features-title">
+      <div class="section-head reveal">
+        <span class="eyebrow">What you get</span>
+        <h2 id="features-title">Built for working together.</h2>
+      </div>
+      <div class="bento">
+        <article class="cell cell-big reveal">
+          <div class="cell-core">
+            <h3>One chat, many people</h3>
+            <p>Invite up to 10 people to a project. Everyone reads the same thread and the same answers, so nobody pastes AI replies into another app.</p>
+            <div class="merge-art" aria-hidden="true">
+              <div class="lanes">
+                <span class="lane"><i class="av av-ana">A</i></span>
+                <span class="lane"><i class="av av-raf">R</i></span>
+                <span class="lane"><i class="av av-leo">L</i></span>
+                <span class="lane"><i class="av av-ai"><svg viewBox="0 0 16 16"><path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z"/></svg></i></span>
+              </div>
+              <svg class="lines" viewBox="0 0 200 160" preserveAspectRatio="none"><path d="M0 20C90 20 90 80 200 80M0 60C90 60 110 80 200 80M0 100C90 100 110 80 200 80M0 140C90 140 90 80 200 80"/></svg>
+              <div class="one-thread"><span># launch-email</span><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </article>
+        <article class="cell reveal">
+          <div class="cell-core">
+            <h3>Your model, your key</h3>
+            <p>Connect your own Anthropic, OpenAI or OpenRouter key and pick the model for each chat. You pay the provider directly.</p>
+            <ul class="picker" aria-hidden="true">
+              <li class="is-on"><span>Claude Sonnet 4.5</span><small>Anthropic</small></li>
+              <li><span>GPT-5</span><small>OpenAI</small></li>
+              <li><span>Any model</span><small>OpenRouter</small></li>
+            </ul>
+          </div>
+        </article>
+        <article class="cell reveal">
+          <div class="cell-core">
+            <h3>Chats, files and notes together</h3>
+            <p>Each project keeps its chats, shared files and notes in one place, on the web and on the desktop app.</p>
+            <ul class="files" aria-hidden="true">
+              <li><span class="ext">JPG</span>spring-header.jpg</li>
+              <li><span class="ext">MD</span>launch-plan.md</li>
+              <li><span class="ext">NOTE</span>Thursday checklist</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Roadmap ideas -->
+    <section class="roadmap" id="roadmap" aria-labelledby="roadmap-title">
+      <div class="roadmap-grid">
+        <div class="section-head reveal">
+          <span class="eyebrow">Roadmap</span>
+          <h2 id="roadmap-title">Help us decide what to build next.</h2>
+          <p class="lede">Nido is still early. Tell us what your team would actually use, and we'll build that first.</p>
+        </div>
+        <form class="idea reveal" data-form="idea" novalidate>
+          <div class="idea-shell">
+            <div class="idea-core">
+              <label class="sr-only" for="idea-body">Your idea</label>
+              <textarea id="idea-body" name="body" rows="4" maxlength="500" placeholder="What should Nido do for your team? A feature, an integration, anything."></textarea>
+              <span class="count" data-count>0 / 500</span>
+            </div>
+          </div>
+          <fieldset class="chips">
+            <legend>Or tap a few</legend>
+            <label><input type="checkbox" name="chips" value="Slack"><span>Slack</span></label>
+            <label><input type="checkbox" name="chips" value="Notion"><span>Notion</span></label>
+            <label><input type="checkbox" name="chips" value="Google Drive"><span>Google Drive</span></label>
+            <label><input type="checkbox" name="chips" value="GitHub"><span>GitHub</span></label>
+            <label><input type="checkbox" name="chips" value="Calendar"><span>Calendar</span></label>
+            <label><input type="checkbox" name="chips" value="Mobile app"><span>Mobile app</span></label>
+            <label><input type="checkbox" name="chips" value="Voice messages"><span>Voice messages</span></label>
+            <label><input type="checkbox" name="chips" value="Linux app"><span>Linux app</span></label>
+            <label><input type="checkbox" name="chips" value="Self-hosting"><span>Self-hosting</span></label>
+          </fieldset>
+          <div class="field-shell">
+            <label class="sr-only" for="idea-email">Email (optional)</label>
+            <input id="idea-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="Email (optional, so we can follow up)">
+            <button class="btn" type="submit">
+              <span class="btn-label">Send idea</span>
+              <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></span>
+            </button>
+          </div>
+          <p class="form-note" data-note>We read every one. Your email is never shown to anyone.</p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Closing signup -->
+    <section class="closing" id="join" aria-labelledby="join-title">
+      <div class="reveal">
+        <h2 id="join-title">Be there when it opens.</h2>
+        <p class="lede">Nido is in the works. Leave your email and you'll hear from us first.</p>
+        <form class="waitlist" data-form="waitlist" novalidate>
+          <div class="field-shell">
+            <label class="sr-only" for="email-join">Email</label>
+            <input id="email-join" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@company.com" maxlength="254" required>
+            <button class="btn" type="submit">
+              <span class="btn-label">Join the waitlist</span>
+              <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></span>
+            </button>
+          </div>
+          <p class="form-note" data-note>One email when we open. That's it.</p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a class="brand brand-small" href="#top" aria-label="Nido, back to top">
+      <img src="assets/icon.svg" alt="" width="20" height="20">
+      <span>nido</span>
+    </a>
+    <p class="copy">© 2026 Nido</p>
+    <!-- Contact links go here (X, GitHub, email) once Miguel has them. -->
+    <ul class="contact" aria-label="Contact"></ul>
+  </footer>
+</body>
+</html>

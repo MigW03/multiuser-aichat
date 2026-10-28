@@ -207,7 +207,7 @@
     const merge = new URLSearchParams(location.search).get('demo') !== 'grow';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
-    demo.style.setProperty('--demo-height', merge ? '1140vh' : '560vh');
+    demo.style.setProperty('--demo-height', merge ? '1350vh' : '560vh');
 
     const app = demo.querySelector('[data-app]');
     const view = demo.querySelector('.thread-view');
@@ -251,7 +251,7 @@
     ];
     const beatOf = (c) => (c < 0.37 ? 1 : c < 0.67 ? 2 : 3);
     const P = merge
-      ? { story: 0.255, pre: [0, 0.4], grow: [0.4, 0.535], chat: [0.535, 0.93], shrink: [0.94, 1] }
+      ? { story: 0.355, pre: [0, 0.477], grow: [0.477, 0.591], chat: [0.591, 0.924], shrink: [0.933, 1] }
       : { grow: [0, 0.1], chat: [0.1, 0.92], shrink: [0.93, 1] };
 
     // Prelude parts
@@ -385,8 +385,8 @@
 
       // The chats drift together, tilting a little, then fade out once the eggs have left.
       const drift = easeInOut(seg(q, [0.42, 0.56]));
-      const fade = seg(q, [0.58, 0.68]);
-      const lift = easeInOut(seg(q, [0.5, 0.66]));
+      const fade = seg(q, [0.6, 0.7]);
+      const lift = easeInOut(seg(q, [0.48, 0.68]));
       const wsc = lerp(1, 0.94, fade);
       const sc0 = 16 / ed;
       const nx = geo.cx;
@@ -418,7 +418,7 @@
       });
 
       // The ring draws itself around the eggs, clockwise.
-      ring.style.strokeDashoffset = (1 - easeInOut(seg(q, [0.66, 0.8]))).toFixed(4);
+      ring.style.strokeDashoffset = (1.004 - 1.004 * easeInOut(seg(q, [0.68, 0.82]))).toFixed(4);
       nest.style.transform = `translate(${(nx - (L * k) / 2).toFixed(1)}px, ${(ny - (L * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
       nest.style.opacity = (1 - seg(p, [P.grow[1] - 0.05, P.grow[1]])).toFixed(3);
 
@@ -426,9 +426,9 @@
       prelude.style.opacity = p >= P.grow[1] ? 0 : 1;
 
       // The punch line sits under the ring and fills in word by word; the app then zooms out over it.
-      const pScale = lerp(0.9, 1.04, easeOut(seg(p, [0.84 * P.story, P.grow[0]])));
-      punch.style.opacity = (easeOut(seg(q, [0.8, 0.9])) * (1 - seg(p, [P.grow[0], P.grow[0] + 0.05]))).toFixed(3);
-      const fill = seg(p, [0.9 * P.story, P.grow[0] - 0.03]);
+      const pScale = lerp(0.9, 1.04, easeOut(seg(p, [0.86 * P.story, P.grow[0]])));
+      punch.style.opacity = (easeOut(seg(q, [0.82, 0.92])) * (1 - seg(p, [P.grow[0], P.grow[0] + 0.05]))).toFixed(3);
+      const fill = seg(p, [0.92 * P.story, P.grow[0] - 0.03]);
       const n = punchWords.length;
       const shown = Math.round(fill * 1000);
       if (shown !== punchShown) {

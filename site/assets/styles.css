@@ -140,7 +140,7 @@ img, svg { display: block; }
 }
 .done-mark { flex: none; width: 34px; height: 34px; }
 .done-mark svg { width: 100%; height: 100%; overflow: visible; }
-.done-mark .mark-ring { stroke-dashoffset: 1; animation: ring-draw 0.7s 0.45s var(--ease) forwards; }
+.done-mark .mark-ring { stroke-dashoffset: 1.004; animation: ring-draw 0.7s 0.45s var(--ease) forwards; }
 .done-mark .egg { fill: var(--ink); animation: egg-drop 0.6s var(--ease) both; }
 .done-mark .e2 { animation-delay: 0.1s; }
 .done-mark .e3 { animation-delay: 0.2s; }
@@ -172,7 +172,7 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 /* ------------------------------------------------------------------ logo mark (flat: sage ring, ink eggs) */
 .mark { flex: none; overflow: visible; }
 .mark-track { fill: none; stroke: var(--sage); stroke-width: 4.5; opacity: 0; }
-.mark-ring { fill: none; stroke: var(--sage); stroke-width: 4.5; stroke-dasharray: 1.004 2; stroke-dashoffset: calc(1 - var(--p, 1)); }
+.mark-ring { fill: none; stroke: var(--sage); stroke-width: 4.5; stroke-dasharray: 1.004 2; stroke-dashoffset: calc(1.004 - 1.004 * var(--p, 1)); }
 .mark .egg { fill: var(--ink); transition: transform 0.4s var(--ease); }
 .js .mark-nav .mark-track { opacity: 0.3; }
 .brand:hover .e1 { transform: translateY(-1.6px); }
@@ -340,7 +340,7 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 .punch .hl { color: var(--accent); }
 .nest { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity; }
 .nest svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.nest circle { fill: none; stroke: var(--sage); stroke-width: 4.5; stroke-dasharray: 1.004 2; stroke-dashoffset: 1; }
+.nest circle { fill: none; stroke: var(--sage); stroke-width: 4.5; stroke-dasharray: 1.004 2; stroke-dashoffset: 1.004; }
 .pegg { position: absolute; left: 0; top: 0; border-radius: 50%; background: var(--ink); will-change: transform, opacity; }
 .solo {
   position: absolute; top: 34vh; left: 50%; width: var(--sw); margin-left: calc(var(--sw) / -2); --sw: clamp(250px, 27vw, 340px);

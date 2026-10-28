@@ -257,6 +257,25 @@
     const prelude = demo.querySelector('.prelude');
     const preCaption = demo.querySelector('[data-prelude-caption]');
     const punch = demo.querySelector('[data-punch]');
+    // Split the punch line into words so scrolling can fill them in one at a time.
+    const punchWords = [];
+    (function split(node) {
+      for (const n of [...node.childNodes]) {
+        if (n.nodeType !== 3) { split(n); continue; }
+        const frag = document.createDocumentFragment();
+        for (const part of n.textContent.split(/(\s+)/)) {
+          if (!part) continue;
+          if (/^\s+$/.test(part)) { frag.append(part); continue; }
+          const w = document.createElement('span');
+          w.className = 'pw';
+          w.textContent = part;
+          frag.append(w);
+          punchWords.push(w);
+        }
+        n.replaceWith(frag);
+      }
+    })(punch);
+    let punchShown = -1;
     const soloA = demo.querySelector('.solo-a');
     const soloB = demo.querySelector('.solo-b');
     const soloM = demo.querySelector('.solo-merged');
@@ -350,10 +369,17 @@
       // Hidden only once the app fully covers it.
       prelude.style.opacity = p >= P.grow[1] ? 0 : 1;
       // The punch line: alone in the frame, centered, growing as you scroll; the app then zooms out over it.
-      const pIn = seg(q, [0.84, 0.97]);
+      // It appears as faint text, then scrolling fills it in word by word.
       const pOut = easeOut(seg(p, P.grow));
       const pScale = lerp(0.9, 1.1, easeOut(seg(p, [0.84 * P.story, P.grow[0]]))) + 0.2 * pOut;
-      punch.style.opacity = easeOut(pIn).toFixed(3);
+      punch.style.opacity = easeOut(seg(q, [0.84, 0.92])).toFixed(3);
+      const fill = seg(p, [0.9 * P.story, P.grow[0] - 0.03]);
+      const n = punchWords.length;
+      const shown = Math.round(fill * 1000);
+      if (shown !== punchShown) {
+        punchShown = shown;
+        punchWords.forEach((w, i) => { w.style.opacity = (0.12 + 0.88 * clamp(fill * (n + 1) - i)).toFixed(3); });
+      }
       punch.style.transform = `translateY(-50%) scale(${pScale.toFixed(4)})`;
       return p >= P.grow[0];
     };
@@ -405,6 +431,19 @@
       chatState(seg(p, P.chat));
       return eased !== target;
     };
+  }
+
+  // Spotlight grid behind the closing waitlist: the dots light up around the pointer.
+  const closing = document.querySelector('.closing');
+  if (closing) {
+    const light = (e) => {
+      const r = closing.getBoundingClientRect();
+      closing.style.setProperty('--x', `${(e.clientX - r.left).toFixed(0)}px`);
+      closing.style.setProperty('--y', `${(e.clientY - r.top).toFixed(0)}px`);
+    };
+    closing.addEventListener('pointermove', light, { passive: true });
+    closing.addEventListener('pointerdown', light, { passive: true });
+    closing.addEventListener('pointerleave', () => closing.style.setProperty('--x', '-999px'));
   }
 
   // One passive scroll listener, batched to animation frames.

@@ -311,6 +311,8 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
   font-size: clamp(44px, 8.4vw, 124px); line-height: 0.98; letter-spacing: -0.055em; font-weight: 650;
   opacity: 0; transform: translateY(-50%) scale(0.9); will-change: transform, opacity;
 }
+.punch .pw { opacity: 0.12; }
+.punch .hl { color: var(--steel); }
 .solo {
   position: absolute; top: 34vh; left: 50%; width: min(400px, 40vw); margin-left: calc(min(400px, 40vw) / -2);
   border-radius: 18px; background: var(--surface);
@@ -389,7 +391,19 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 .chips input:focus-visible + span { outline: 2px solid var(--steel); outline-offset: 2px; }
 
 /* ------------------------------------------------------------------ closing + footer */
-.closing { padding: clamp(96px, 16vh, 180px) var(--gutter); text-align: center; }
+.closing { padding: clamp(96px, 16vh, 180px) var(--gutter); text-align: center; position: relative; overflow: hidden; isolation: isolate; --x: -999px; --y: -999px; }
+/* Spotlight grid: a quiet dot grid, lit in steel around the pointer. A soft halo keeps the dots out from behind the text. */
+.closing::before, .closing::after {
+  content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none;
+  background-image: radial-gradient(var(--line-2) 1.2px, transparent 1.4px); background-size: 22px 22px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+}
+.closing::after {
+  background-image: radial-gradient(var(--steel) 1.6px, transparent 1.8px);
+  -webkit-mask-image: radial-gradient(200px circle at var(--x) var(--y), #000, transparent 70%); mask-image: radial-gradient(200px circle at var(--x) var(--y), #000, transparent 70%);
+}
+.closing > div { position: relative; }
+.closing > div::before { content: ""; position: absolute; inset: -56px -96px; z-index: -1; pointer-events: none; background: radial-gradient(closest-side, var(--bg) 62%, transparent); }
 .closing > div { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; }
 .closing .lede { margin: 18px auto 36px; }
 .closing .waitlist { width: 100%; max-width: 480px; }

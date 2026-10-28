@@ -291,8 +291,7 @@ h1, h2, h3, p { margin: 0; }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 .google-wait { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 38px; font-size: 13.5px; color: var(--muted-fg); }
 .auth-switch { text-align: center; font-size: 13.5px; color: var(--muted-fg); }
-.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: var(--p); color: var(--p-fg); flex: none; }
-.brand-mark.small { width: 26px; height: 26px; border-radius: 8px; }
+.brand-mark { flex: none; }
 .mail-badge { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 16px; background: var(--t12); color: var(--p-text); }
 .project-tile { display: inline-flex; align-items: center; justify-content: center; flex: none; background: var(--t12); color: var(--p-text); font-weight: 600; }
 .invite-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }

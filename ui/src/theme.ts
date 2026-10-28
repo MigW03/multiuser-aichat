@@ -2,6 +2,8 @@
 // Neutrals are fixed (a warm green-grey linen that goes with Sage). Everything that carries the accent (buttons, links, AI tints, own bubbles) is derived from
 // ONE accent colour at runtime, so a future accent picker only has to call applyTheme with another hex.
 
+import { setFavicon } from "./lib/favicon.ts";
+
 export const DEFAULT_ACCENT = "#9db38f"; // Sage
 
 export type ThemePref = "system" | "light" | "dark";
@@ -176,6 +178,7 @@ function paint(root: HTMLElement) {
   for (const [name, value] of Object.entries(buildTokens(accentInUse, mode))) root.style.setProperty(name, value);
   root.dataset.theme = mode;
   root.style.colorScheme = mode;
+  setFavicon(accentInUse, root.ownerDocument);
 }
 
 /** Writes the colour tokens. Call once at start-up; call setThemePref when the person changes it in Settings. */

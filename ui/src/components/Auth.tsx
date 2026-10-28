@@ -1,7 +1,8 @@
 import { LIMITS } from "@mc/shared";
-import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Mail } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { navigate } from "../lib/router.ts";
+import { LOGO_EGG_RADIUS, LOGO_EGGS, LOGO_RING, LOGO_VIEWBOX } from "../lib/logo.ts";
 import { PREF, writePref } from "../lib/prefs.ts";
 import { authErrorMessage, clearAuthError, peekAuthError } from "../lib/authError.ts";
 import { authRedirectUrl, config, googleSignInAvailable, isDesktopApp } from "../config.ts";
@@ -20,11 +21,16 @@ export function AuthLayout({ children, wide }: { children: ReactNode; wide?: boo
   );
 }
 
+/** The Nido mark. The ring follows the accent colour and the eggs follow the text colour, so it updates with the theme. */
 export function BrandMark({ small }: { small?: boolean }) {
+  const size = small ? 26 : 44;
   return (
-    <span className={`brand-mark ${small ? "small" : ""}`} aria-hidden>
-      <Sparkles size={small ? 14 : 20} strokeWidth={2} />
-    </span>
+    <svg className="brand-mark" width={size} height={size} viewBox={LOGO_VIEWBOX} aria-hidden>
+      <circle cx={LOGO_RING.cx} cy={LOGO_RING.cy} r={LOGO_RING.r} fill="none" stroke="var(--p)" strokeWidth={LOGO_RING.stroke} />
+      {LOGO_EGGS.map(([x, y]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r={LOGO_EGG_RADIUS} fill="var(--fg)" />
+      ))}
+    </svg>
   );
 }
 

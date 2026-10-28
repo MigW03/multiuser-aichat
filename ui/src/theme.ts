@@ -1,8 +1,8 @@
 // Every colour the UI uses is built here and written to CSS variables on <html>; styles.css only reads them.
-// Neutrals are fixed. Everything that carries the accent (buttons, links, AI tints, own bubbles) is derived from
+// Neutrals are fixed (a warm green-grey linen that goes with Sage). Everything that carries the accent (buttons, links, AI tints, own bubbles) is derived from
 // ONE accent colour at runtime, so a future accent picker only has to call applyTheme with another hex.
 
-export const DEFAULT_ACCENT = "#3d63a0"; // Steel
+export const DEFAULT_ACCENT = "#9db38f"; // Sage
 
 export type ThemePref = "system" | "light" | "dark";
 export type ThemeMode = "light" | "dark";
@@ -27,25 +27,25 @@ function mix(base: string, top: string, amount: number): string {
   return toHex([0, 1, 2].map((i) => a[i]! + (b[i]! - a[i]!) * amount) as Rgb);
 }
 
-// Tint strengths measured from the approved Steel boards: light tints are the accent over white, dark tints over the
+// Tint strengths measured from the approved boards: light tints are the accent over the card, dark tints over the
 // dark frame at 1.4x strength.
 const TINT_STRENGTH = { t4: 0.052, t8: 0.09, t12: 0.128, t20: 0.22, t40: 0.42 } as const;
 const DARK_TINT_BOOST = 1.4;
 
 const NEUTRALS = {
   light: {
-    bg: "#fafafa",
-    card: "#ffffff",
-    muted: "#f4f4f5",
-    border: "#e6e6e9",
-    fg: "#0f1115",
-    mutedFg: "#6b6f76",
+    bg: "#f1f1e8",
+    card: "#f9f9f3",
+    muted: "#e8e9dd",
+    border: "#dcdecf",
+    fg: "#1f241b",
+    mutedFg: "#656b5a",
     danger: "#dc2626",
     warning: "#d97706",
-    bubbleOther: "#f4f4f5",
-    hoverRow: "#f4f4f5",
-    hoverBtn: "#e6e6e9",
-    unreadPeopleBg: "#3f3f46",
+    bubbleOther: "#e8e9dd",
+    hoverRow: "#e8e9dd",
+    hoverBtn: "#dcdecf",
+    unreadPeopleBg: "#3d4436",
     unreadPeopleFg: "#ffffff",
     avatars: [
       ["#27272a", "#ffffff"],
@@ -57,22 +57,22 @@ const NEUTRALS = {
     overlay: "rgba(15, 17, 21, 0.4)",
     shadowPanel: "0 1px 2px rgba(0, 0, 0, 0.05)",
     shadowMenu: "0 8px 24px rgba(0, 0, 0, 0.12)",
-    placeholder: "#9a9ea6",
+    placeholder: "#8d9383",
   },
   dark: {
-    bg: "#2a2a2e",
-    card: "#323236",
-    muted: "#3a3a3f",
-    border: "#434349",
-    fg: "#ececee",
-    mutedFg: "#a8a9af",
+    bg: "#262925",
+    card: "#2f332d",
+    muted: "#383c35",
+    border: "#444940",
+    fg: "#ebeee6",
+    mutedFg: "#a6ab9b",
     danger: "#dc2626",
     warning: "#f59e0b",
-    bubbleOther: "#3d3d43",
-    hoverRow: "#424248",
-    hoverBtn: "#505057",
-    unreadPeopleBg: "#ececee",
-    unreadPeopleFg: "#2a2a2e",
+    bubbleOther: "#3c4038",
+    hoverRow: "#42473e",
+    hoverBtn: "#4f5549",
+    unreadPeopleBg: "#ebeee6",
+    unreadPeopleFg: "#262925",
     avatars: [
       ["#e4e4e7", "#27272a"],
       ["#71717a", "#ffffff"],
@@ -83,15 +83,28 @@ const NEUTRALS = {
     overlay: "rgba(0, 0, 0, 0.55)",
     shadowPanel: "none",
     shadowMenu: "0 8px 24px rgba(0, 0, 0, 0.35)",
-    placeholder: "#7d7e85",
+    placeholder: "#7b8074",
   },
 } as const;
+
+/** Relative luminance (WCAG), 0 = black, 1 = white. */
+function luminance(hex: string): number {
+  const lin = parse(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * lin[0]! + 0.7152 * lin[1]! + 0.0722 * lin[2]!;
+}
+
+/** Pastel accents need dark text on them; strong ones keep white. */
+const isLightAccent = (accent: string) => luminance(accent) > 0.2;
 
 /** All colour tokens for a mode, as CSS custom property name -> value. */
 export function buildTokens(accent: string, mode: ThemeMode): Record<string, string> {
   const n = NEUTRALS[mode];
   const dark = mode === "dark";
-  const base = dark ? n.bg : "#ffffff";
+  const base = dark ? n.bg : n.card;
+  const lightAccent = isLightAccent(accent);
   const tint = (key: keyof typeof TINT_STRENGTH) => mix(base, accent, TINT_STRENGTH[key] * (dark ? DARK_TINT_BOOST : 1));
   const t: Record<string, string> = {
     "--bg": n.bg,
@@ -105,9 +118,10 @@ export function buildTokens(accent: string, mode: ThemeMode): Record<string, str
     "--warning": n.warning,
     "--warning-tint": mix(n.card, n.warning, dark ? 0.2 : 0.12),
     "--p": accent,
-    "--p-fg": "#ffffff",
-    // Accent-coloured text: darker than the accent on light surfaces, lighter on dark ones.
-    "--p-text": dark ? mix(accent, "#ffffff", 0.5) : mix(accent, "#000000", 0.25),
+    // Text and icons on a filled accent: dark ink for pastel accents, white for strong ones.
+    "--p-fg": lightAccent ? mix(accent, "#000000", 0.82) : "#ffffff",
+    // Accent-coloured text: darker than the accent on light surfaces (more so for pastels), lighter on dark ones.
+    "--p-text": dark ? mix(accent, "#ffffff", 0.5) : mix(accent, "#000000", lightAccent ? 0.4 : 0.25),
     "--t4": tint("t4"),
     "--t8": tint("t8"),
     "--t12": tint("t12"),

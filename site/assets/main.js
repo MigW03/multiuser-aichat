@@ -486,6 +486,63 @@
       chatState(seg(p, P.chat));
       return eased !== target;
     };
+
+    // Scroll assist for the chat: reach the start of a message and the demo plays on by itself, then rests at the end of
+    // that beat (the next egg on the right rail). Scrolling up, touching, or a key press takes over again. ?snap=off disables it.
+    if (new URLSearchParams(location.search).get('snap') !== 'off') {
+      const BEATS = [{ from: 0.05, rest: 0.36 }, { from: 0.42, rest: 0.65 }, { from: 0.72, rest: 0.9 }];
+      const geoY = () => {
+        const top = demo.getBoundingClientRect().top + window.scrollY;
+        const span = demo.offsetHeight - window.innerHeight;
+        const at = (c) => top + (P.chat[0] + c * (P.chat[1] - P.chat[0])) * span;
+        return BEATS.map((b) => ({ from: at(b.from), rest: at(b.rest) }));
+      };
+      let auto = null;
+      let lockUntil = 0;
+      let lockY = 0;
+      let lastY = window.scrollY;
+      let touching = false;
+
+      const stop = () => { auto = null; };
+      const step = (now) => {
+        if (auto) {
+          const t = clamp((now - auto.t0) / auto.dur);
+          const k = t * t * (3 - 2 * t);
+          window.scrollTo({ top: lerp(auto.y0, auto.y1, k), behavior: 'instant' });
+          if (t >= 1) { lockY = auto.y1; lockUntil = now + 700; auto = null; }
+        } else if (now < lockUntil) {
+          // Swallow leftover wheel momentum so one flick cannot skip past the rest point.
+          if (window.scrollY > lockY + 1) window.scrollTo({ top: lockY, behavior: 'instant' });
+        } else {
+          return;
+        }
+        lastY = window.scrollY;
+        requestAnimationFrame(step);
+      };
+      const begin = (y1) => {
+        const y0 = window.scrollY;
+        const dur = clamp(((y1 - y0) / window.innerHeight) * 24, 1800, 4200);
+        auto = { y0, y1, dur, t0: performance.now() };
+        requestAnimationFrame(step);
+      };
+      const check = () => {
+        const y = window.scrollY;
+        const forward = y > lastY;
+        lastY = y;
+        if (auto || touching || performance.now() < lockUntil || !forward) return;
+        for (const b of geoY()) {
+          if (y >= b.from && y < b.rest - 12) { begin(b.rest); return; }
+        }
+      };
+      window.addEventListener('scroll', check, { passive: true });
+      window.addEventListener('wheel', (e) => { if (e.deltaY < 0) stop(); }, { passive: true });
+      window.addEventListener('keydown', (e) => { if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) stop(); });
+      window.addEventListener('mousedown', stop);
+      window.addEventListener('touchstart', () => { touching = true; stop(); }, { passive: true });
+      const touchDone = () => { touching = false; lastY = window.scrollY - 1; check(); };
+      window.addEventListener('touchend', touchDone, { passive: true });
+      window.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
+    }
   }
 
   // Spotlight grid behind the closing waitlist: the dots light up around the pointer.

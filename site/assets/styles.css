@@ -314,9 +314,9 @@ h3 { font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 6
 .demo.is-live .msg-ai.is-thinking .who::after { content: "thinking"; font-weight: 400; color: var(--muted); font-size: 12.5px; }
 .demo.is-live .msg-ai.is-thinking .av-ai { animation: think 1.2s var(--ease) infinite; }
 @keyframes think { 50% { box-shadow: 0 0 0 5px var(--accent-tint); } }
-.demo.is-live .rail { display: flex; flex-direction: column; gap: 8px; position: absolute; right: 26px; top: 50%; transform: translateY(-50%); }
+.demo.is-live .rail { display: flex; flex-direction: column; gap: 16px; position: absolute; right: 26px; top: 50%; transform: translateY(-50%); }
 .rail li { position: relative; width: 11px; height: 11px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-2); background: transparent; transition: background-color 0.3s, box-shadow 0.3s, transform 0.3s var(--ease); }
-.rail li + li::before { content: ""; position: absolute; left: 50%; bottom: 100%; width: 1.5px; height: 8px; margin-left: -0.75px; background: var(--line-2); transition: background-color 0.3s; }
+.rail li + li::before { content: ""; position: absolute; left: 50%; bottom: 100%; width: 1.5px; height: 16px; margin-left: -0.75px; background: var(--line-2); transition: background-color 0.3s; }
 .rail li.is-on { background: var(--ink); box-shadow: none; }
 .rail li.is-on + li.is-on::before { background: var(--ink); }
 .rail li.is-now { transform: scale(1.2); }

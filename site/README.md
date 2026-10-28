@@ -10,8 +10,8 @@ cd site && python3 -m http.server 4321
 
 Open http://localhost:4321. The scroll demo has two versions:
 
-- http://localhost:4321/ grows the app window to full page and plays the chat as you scroll.
-- http://localhost:4321/?demo=merge starts with two separate AI chats that merge into Nido first (experimental).
+- http://localhost:4321/ starts with three separate AI chats (Ana, Rafael, Leo). Their eggs rise out, gather into the nest, the ring closes, and the ring zooms out into the app.
+- http://localhost:4321/?demo=grow skips that story and grows the app window to full page, then plays the chat as you scroll.
 
 With reduced motion turned on (or without JavaScript) the demo is a still window with the whole conversation.
 
@@ -30,5 +30,6 @@ the security headers. If the Supabase project changes, update `SUPABASE_URL` / `
 
 ## Placeholders
 
-- Logo: `assets/icon.svg` is the iOS blank app icon. Replace the file to swap the logo everywhere.
+- Logo: the flat N1C mark (sage ring, ink eggs) is inline SVG in `index.html` and `assets/main.js`. `assets/icon.svg` and `favicon.svg` are the same mark as files. No textured logo styles on the site (Miguel's call).
+- Share image (og:image): not added yet. It needs an absolute URL, so it waits for the domain.
 - Contact links: the empty `<ul class="contact">` in the footer.

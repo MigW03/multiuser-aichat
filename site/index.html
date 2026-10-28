@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Nido · Coming soon</title>
   <meta name="description" content="Nido is a group chat where your whole team talks to the same AI. Ask together, read the same answers, keep the work in one place. Coming soon.">
-  <meta name="theme-color" content="#f8f9fb">
+  <meta name="theme-color" content="#f1f1e8">
   <meta property="og:title" content="Nido · Your team and the AI, in one chat">
   <meta property="og:description" content="A group chat where everyone talks to the same AI. Coming soon.">
   <meta property="og:type" content="website">
@@ -22,7 +22,7 @@
   <header class="nav-wrap">
     <nav class="nav" aria-label="Main">
       <a class="brand" href="#top" aria-label="Nido, back to top">
-        <img src="assets/icon.svg" alt="" width="28" height="28">
+        <svg class="mark mark-nav" viewBox="0 0 64 64" width="28" height="28" aria-hidden="true"><circle class="mark-track" cx="32" cy="32" r="27"/><circle class="mark-ring" cx="32" cy="32" r="27" pathLength="1" transform="rotate(-90 32 32)"/><circle class="egg e1" cx="32" cy="22" r="7"/><circle class="egg e2" cx="40.7" cy="37" r="7"/><circle class="egg e3" cx="23.3" cy="37" r="7"/></svg>
         <span>nido</span>
       </a>
       <div class="nav-links">
@@ -36,6 +36,7 @@
     <!-- Hero -->
     <section class="hero">
       <div class="hero-dots" aria-hidden="true"></div>
+      <svg class="hero-mark" viewBox="0 0 64 64" aria-hidden="true"><circle class="hm-ring" cx="32" cy="32" r="27"/><circle class="hm-egg" cx="32" cy="22" r="7"/><circle class="hm-egg" cx="40.7" cy="37" r="7"/><circle class="hm-egg" cx="23.3" cy="37" r="7"/></svg>
       <div class="hero-inner reveal">
         <span class="eyebrow"><span class="pulse" aria-hidden="true"></span>Coming soon</span>
         <h1>Your team and the AI, in&nbsp;one&nbsp;chat.</h1>
@@ -58,33 +59,34 @@
     <section class="demo" id="demo" aria-label="How a conversation in Nido looks">
       <div class="demo-stage">
 
-        <!-- Experimental prelude (?demo=merge): two people, each alone with an AI, merge into one Nido chat -->
+        <!-- Prelude: Ana, Rafael and Leo are the three eggs. Each starts alone in their own AI chat; the eggs rise out,
+             gather into the nest, the ring closes around them, and the ring zooms out into the app. -->
         <div class="prelude" aria-hidden="true">
           <p class="prelude-caption" data-prelude-caption>Today, everyone has their own AI chat.</p>
+          <div class="nest" data-nest><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" pathLength="1" transform="rotate(-90 32 32)"/></svg></div>
           <p class="punch" data-punch>Nido puts <span class="hl">everyone</span> in the same chat.</p>
           <div class="solo solo-a">
-            <div class="solo-bar"><i></i><i></i><i></i><span>Ana · AI chat</span></div>
+            <div class="solo-bar"><span class="slot"></span><span>Ana · AI chat</span></div>
             <div class="solo-body">
-              <div class="s-msg s-me" data-solo-at="0.04"><b>Ana</b>Draft our launch email to customers. Short.</div>
-              <div class="s-msg s-ai" data-solo-at="0.14"><b>AI</b>Subject: Our spring line is here. Hi everyone, the new collection is live…</div>
+              <div class="s-msg s-me" data-solo-at="0.03"><b>Ana</b>Draft our launch email to customers. Short.</div>
+              <div class="s-msg s-ai" data-solo-at="0.10"><b>AI</b>Subject: Our spring line is here. Hi everyone, the new collection is live…</div>
             </div>
           </div>
           <div class="solo solo-b">
-            <div class="solo-bar"><i></i><i></i><i></i><span>Rafael · AI chat</span></div>
+            <div class="solo-bar"><span class="slot"></span><span>Rafael · AI chat</span></div>
             <div class="solo-body">
-              <div class="s-msg s-me" data-solo-at="0.24"><b>Rafael</b><span class="pasted">Pasted text · 41 words</span>Make this less formal.</div>
-              <div class="s-msg s-ai" data-solo-at="0.33"><b>AI</b>Sure. What is this for, and who is it going to?</div>
+              <div class="s-msg s-me" data-solo-at="0.17"><b>Rafael</b><span class="pasted">Pasted text · 41 words</span>Make this less formal.</div>
+              <div class="s-msg s-ai" data-solo-at="0.24"><b>AI</b>Sure. What is this for, and who is it going to?</div>
             </div>
           </div>
-          <!-- The two chats become one -->
-          <div class="solo solo-merged">
-            <div class="solo-bar"><i></i><i></i><i></i><span>#launch-email · Nido</span><span class="avatars"><i class="av av-ana">A</i><i class="av av-raf">R</i></span></div>
+          <div class="solo solo-c">
+            <div class="solo-bar"><span class="slot"></span><span>Leo · AI chat</span></div>
             <div class="solo-body">
-              <div class="s-msg is-in"><b>Ana</b>Draft our launch email to customers. Short.</div>
-              <div class="s-msg s-ai is-in"><b>AI</b>Subject: Our spring line is here. Hi everyone, the new collection is live…</div>
-              <div class="s-msg is-in"><b>Rafael</b>Make it less formal.</div>
+              <div class="s-msg s-me" data-solo-at="0.31"><b>Leo</b>Is the spring email going out Thursday?</div>
+              <div class="s-msg s-ai" data-solo-at="0.38"><b>AI</b>I don't see an email. Can you paste it?</div>
             </div>
           </div>
+          <i class="pegg" data-egg></i><i class="pegg" data-egg></i><i class="pegg" data-egg></i>
         </div>
 
         <div class="app" data-app>
@@ -99,9 +101,9 @@
             </ul>
             <p class="side-label">People · 3</p>
             <ul class="side-list people">
-              <li><span class="online" aria-hidden="true"></span>Ana</li>
-              <li><span class="online" aria-hidden="true"></span>Rafael</li>
-              <li><span class="online" aria-hidden="true"></span>Leo</li>
+              <li><span class="egg-dot" aria-hidden="true"></span>Ana</li>
+              <li><span class="egg-dot" aria-hidden="true"></span>Rafael</li>
+              <li><span class="egg-dot" aria-hidden="true"></span>Leo</li>
             </ul>
           </aside>
 
@@ -179,13 +181,13 @@
             <p>Invite up to 10 people to a project. Everyone reads the same thread and the same answers, so nobody pastes AI replies into another app.</p>
             <div class="merge-art" aria-hidden="true">
               <div class="lanes">
-                <span class="lane"><i class="av av-ana">A</i></span>
-                <span class="lane"><i class="av av-raf">R</i></span>
-                <span class="lane"><i class="av av-leo">L</i></span>
-                <span class="lane"><i class="av av-ai"><svg viewBox="0 0 16 16"><path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z"/></svg></i></span>
+                <span class="lane"><i class="egg-lane"></i></span>
+                <span class="lane"><i class="egg-lane"></i></span>
+                <span class="lane"><i class="egg-lane"></i></span>
+                <span class="lane"><i class="egg-lane is-ai"></i></span>
               </div>
               <svg class="lines" viewBox="0 0 200 160" preserveAspectRatio="none"><path d="M0 20C90 20 90 80 200 80M0 60C90 60 110 80 200 80M0 100C90 100 110 80 200 80M0 140C90 140 90 80 200 80"/></svg>
-              <div class="one-thread"><span># launch-email</span><i></i><i></i><i></i></div>
+              <div class="one-thread"><span class="ot-head"><svg class="mark " viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><circle class="mark-track" cx="32" cy="32" r="27"/><circle class="mark-ring" cx="32" cy="32" r="27" pathLength="1" transform="rotate(-90 32 32)"/><circle class="egg e1" cx="32" cy="22" r="7"/><circle class="egg e2" cx="40.7" cy="37" r="7"/><circle class="egg e3" cx="23.3" cy="37" r="7"/></svg># launch-email</span><i></i><i></i><i></i></div>
             </div>
           </div>
         </article>
@@ -277,7 +279,7 @@
 
   <footer class="footer">
     <a class="brand brand-small" href="#top" aria-label="Nido, back to top">
-      <img src="assets/icon.svg" alt="" width="20" height="20">
+      <svg class="mark " viewBox="0 0 64 64" width="20" height="20" aria-hidden="true"><circle class="mark-track" cx="32" cy="32" r="27"/><circle class="mark-ring" cx="32" cy="32" r="27" pathLength="1" transform="rotate(-90 32 32)"/><circle class="egg e1" cx="32" cy="22" r="7"/><circle class="egg e2" cx="40.7" cy="37" r="7"/><circle class="egg e3" cx="23.3" cy="37" r="7"/></svg>
       <span>nido</span>
     </a>
     <p class="copy">© 2026 Nido</p>

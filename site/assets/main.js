@@ -77,7 +77,8 @@
     const box = el('div', 'done');
     box.setAttribute('role', 'status');
     const mark = el('span', 'done-mark');
-    mark.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+    // The nest: ring closes, eggs settle in.
+    mark.innerHTML = '<svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle class="mark-ring" cx="32" cy="32" r="27" pathLength="1" transform="rotate(-90 32 32)"/><circle class="egg e1" cx="32" cy="22" r="7"/><circle class="egg e2" cx="40.7" cy="37" r="7"/><circle class="egg e3" cx="23.3" cy="37" r="7"/></svg>';
     const text = el('div');
     text.append(el('b', null, title));
     const line = el('span');
@@ -203,7 +204,7 @@
   let updateDemo = () => {};
 
   if (live) {
-    const merge = new URLSearchParams(location.search).get('demo') === 'merge';
+    const merge = new URLSearchParams(location.search).get('demo') !== 'grow';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
     demo.style.setProperty('--demo-height', merge ? '1140vh' : '560vh');
@@ -276,9 +277,10 @@
       }
     })(punch);
     let punchShown = -1;
-    const soloA = demo.querySelector('.solo-a');
-    const soloB = demo.querySelector('.solo-b');
-    const soloM = demo.querySelector('.solo-merged');
+    const solos = [...demo.querySelectorAll('.solo')];
+    const eggs = [...demo.querySelectorAll('[data-egg]')];
+    const nest = demo.querySelector('[data-nest]');
+    const ring = nest.querySelector('circle');
     const soloMsgs = [...demo.querySelectorAll('[data-solo-at]')].map((n) => ({ n, at: +n.dataset.soloAt }));
     const PRE_CAPTIONS = [
       'Today, everyone has their own AI chat.',
@@ -286,6 +288,37 @@
     ];
     let preIndex = 0;
     let swapTimer = 0;
+
+    // Layout facts for the prelude, measured once per size: where each chat sits and where its egg slot is.
+    let geo = null;
+    const measure = () => {
+      const W = prelude.clientWidth;
+      const H = prelude.clientHeight;
+      const small = W < 860;
+      const L = Math.min(260, H * 0.34, W * 0.56);
+      const ed = (14 / 64) * L;
+      solos.forEach((n) => { n.style.transform = ''; });
+      const pr = prelude.getBoundingClientRect();
+      const base = solos.map((n) => {
+        const sr = n.getBoundingClientRect();
+        const tr = n.querySelector('.slot').getBoundingClientRect();
+        const cx = sr.left + sr.width / 2;
+        const cy = sr.top + sr.height / 2;
+        return { cx: cx - pr.left, cy: cy - pr.top, sx: tr.left + tr.width / 2 - cx, sy: tr.top + tr.height / 2 - cy };
+      });
+      const ww = solos[0].offsetWidth;
+      const far = small
+        ? [[-0.12 * W, -0.12 * H], [0.12 * W, 0.1 * H], [-0.06 * W, 0.32 * H]]
+        : [[-1.12 * ww, -0.02 * H], [0, 0.06 * H], [1.12 * ww, -0.05 * H]];
+      const near = small
+        ? [[-0.05 * W, -0.04 * H], [0.05 * W, 0], [0, 0.04 * H]]
+        : [[-0.2 * ww, -0.01 * H], [0, 0.01 * H], [0.2 * ww, -0.02 * H]];
+      geo = { W, H, L, ed, base, far, near, cx: W / 2, cy: H * 0.42, hyp: Math.hypot(W, H) };
+      eggs.forEach((e) => { e.style.width = e.style.height = `${ed}px`; });
+      nest.style.width = nest.style.height = `${L}px`;
+    };
+    const EGG_AT = [[0, -10], [8.7, 5], [-8.7, 5]]; // logo geometry, in 64-unit space, relative to the ring centre
+    const TILT = [-3, 2, 3];
 
     let lastTyping = null;
     let lastBeat = 0;
@@ -324,7 +357,7 @@
       setTyping(typer ? typer.name : null);
       if (beat !== lastBeat) {
         captions.forEach((n, i) => n.classList.toggle('is-on', i + 1 === beat));
-        dots.forEach((n, i) => n.classList.toggle('is-on', i + 1 === beat));
+        dots.forEach((n, i) => { n.classList.toggle('is-on', i + 1 <= beat); n.classList.toggle('is-now', i + 1 === beat); });
         lastBeat = beat;
       }
       if (changed) {
@@ -335,8 +368,10 @@
       }
     };
 
-    const preludeState = (p) => {
-      // q runs the two-chats story; the punch line then holds the frame until the app grows in.
+    const preludeState = (p, appScale) => {
+      if (!geo || geo.W !== prelude.clientWidth || geo.H !== prelude.clientHeight) measure();
+      const { H, L, ed, base, far, near, hyp } = geo;
+      // q runs the story (three chats, eggs rise out, ring closes); the punch line then holds the frame until the app zooms in.
       const q = seg(p, [0, P.story]);
       for (const m of soloMsgs) m.n.classList.toggle('is-in', q >= m.at);
       const idx = q < 0.42 ? 0 : 1;
@@ -346,33 +381,53 @@
         preCaption.classList.add('is-swapping');
         swapTimer = setTimeout(() => { preCaption.textContent = PRE_CAPTIONS[preIndex]; preCaption.classList.remove('is-swapping'); }, 220);
       }
-      preCaption.style.opacity = 1 - seg(q, [0.56, 0.62]);
-      // The two chats slide together and become one shared chat...
-      const w = soloA.offsetWidth;
-      const far = w / 2 + Math.min(80, window.innerWidth * 0.04);
-      const near = w * 0.16;
+      preCaption.style.opacity = 1 - seg(q, [0.52, 0.6]);
+
+      // The chats drift together, tilting a little, then fade out once the eggs have left.
       const drift = easeInOut(seg(q, [0.42, 0.56]));
-      const fuse = easeInOut(seg(q, [0.56, 0.66]));
-      const x = lerp(lerp(far, near, drift), 0, fuse);
-      const rot = lerp(0, 3, drift) * (1 - fuse);
-      const scale = lerp(1, 0.94, fuse);
-      soloA.style.transform = `translateX(${-x}px) rotate(${-rot}deg) scale(${scale})`;
-      soloB.style.transform = `translateX(${x}px) rotate(${rot}deg) scale(${scale})`;
-      soloA.style.opacity = soloB.style.opacity = 1 - seg(q, [0.62, 0.68]);
-      // ...which then shrinks into the middle of the frame, where the app will later zoom out from.
-      const join = easeOut(seg(q, [0.6, 0.68]));
-      const shrink = easeInOut(seg(q, [0.76, 0.9]));
-      const dy = window.innerHeight / 2 - (soloM.offsetTop + soloM.offsetHeight / 2);
-      const ms = lerp(0.94, 1, join) * Math.pow(0.03, shrink);
-      soloM.style.transform = `translateY(${(dy * shrink).toFixed(1)}px) scale(${ms.toFixed(4)})`;
-      soloM.style.opacity = (join * (1 - seg(q, [0.84, 0.9]))).toFixed(3);
+      const fade = seg(q, [0.58, 0.68]);
+      const lift = easeInOut(seg(q, [0.5, 0.66]));
+      const wsc = lerp(1, 0.94, fade);
+      const sc0 = 16 / ed;
+      const nx = geo.cx;
+      const grow = seg(p, [P.grow[0], P.grow[0] + 0.03]);
+      const ny = lerp(geo.cy, H / 2, easeOut(grow));
+      // Ring size: the logo ring until the app zooms, then it grows with the app and flies off the edges.
+      const k = Math.max(1, (hyp * appScale * 1.04) / L);
+      solos.forEach((n, i) => {
+        const tx = lerp(far[i][0], near[i][0], drift);
+        const ty = lerp(far[i][1], near[i][1], drift);
+        const rot = TILT[i] * drift;
+        n.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rot.toFixed(2)}deg) scale(${wsc.toFixed(3)})`;
+        n.style.opacity = (1 - fade).toFixed(3);
+        // Egg start: this chat's avatar slot, followed through the same transform.
+        const b = base[i];
+        const rad = (rot * Math.PI) / 180;
+        const ox = (b.sx * Math.cos(rad) - b.sy * Math.sin(rad)) * wsc;
+        const oy = (b.sx * Math.sin(rad) + b.sy * Math.cos(rad)) * wsc;
+        const sx = b.cx + tx + ox;
+        const sy = b.cy + ty + oy;
+        const gx = nx + EGG_AT[i][0] * (L / 64) * k;
+        const gy = ny + EGG_AT[i][1] * (L / 64) * k;
+        const x = lerp(sx, gx, lift);
+        const y = lerp(sy, gy, lift) - Math.sin(Math.PI * lift) * H * 0.05;
+        const sc = lerp(sc0, k, lift);
+        const e = eggs[i];
+        e.style.transform = `translate(${(x - ed / 2).toFixed(1)}px, ${(y - ed / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`;
+        e.style.opacity = (1 - clamp((k - 1) / 0.5)).toFixed(3);
+      });
+
+      // The ring draws itself around the eggs, clockwise.
+      ring.style.strokeDashoffset = (1 - easeInOut(seg(q, [0.66, 0.8]))).toFixed(4);
+      nest.style.transform = `translate(${(nx - (L * k) / 2).toFixed(1)}px, ${(ny - (L * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
+      nest.style.opacity = (1 - seg(p, [P.grow[1] - 0.05, P.grow[1]])).toFixed(3);
+
       // Hidden only once the app fully covers it.
       prelude.style.opacity = p >= P.grow[1] ? 0 : 1;
-      // The punch line: alone in the frame, centered, growing as you scroll; the app then zooms out over it.
-      // It appears as faint text, then scrolling fills it in word by word.
-      const pOut = easeOut(seg(p, P.grow));
-      const pScale = lerp(0.9, 1.1, easeOut(seg(p, [0.84 * P.story, P.grow[0]]))) + 0.2 * pOut;
-      punch.style.opacity = easeOut(seg(q, [0.84, 0.92])).toFixed(3);
+
+      // The punch line sits under the ring and fills in word by word; the app then zooms out over it.
+      const pScale = lerp(0.9, 1.04, easeOut(seg(p, [0.84 * P.story, P.grow[0]])));
+      punch.style.opacity = (easeOut(seg(q, [0.8, 0.9])) * (1 - seg(p, [P.grow[0], P.grow[0] + 0.05]))).toFixed(3);
       const fill = seg(p, [0.9 * P.story, P.grow[0] - 0.03]);
       const n = punchWords.length;
       const shown = Math.round(fill * 1000);
@@ -380,7 +435,8 @@
         punchShown = shown;
         punchWords.forEach((w, i) => { w.style.opacity = (0.12 + 0.88 * clamp(fill * (n + 1) - i)).toFixed(3); });
       }
-      punch.style.transform = `translateY(-50%) scale(${pScale.toFixed(4)})`;
+      punch.style.top = `${(ny + (L * k) / 2 + 22).toFixed(1)}px`;
+      punch.style.transform = `scale(${pScale.toFixed(4)})`;
       return p >= P.grow[0];
     };
 
@@ -408,8 +464,6 @@
       eased = next;
       const p = clamp(eased / span);
 
-      const appIn = merge ? preludeState(p) : true;
-
       const sh = easeInOut(seg(p, P.shrink));
       let g, s;
       if (merge) {
@@ -422,6 +476,7 @@
         const start = window.innerWidth < 860 ? 0.9 : 0.8;
         s = sh > 0 ? lerp(1, 0.86, sh) : lerp(start, 1, g);
       }
+      const appIn = merge ? preludeState(p, s) : true;
       const radius = (26 * Math.max(1 - g, sh)) / s;
       app.style.transform = `scale(${s.toFixed(4)})`;
       app.style.borderRadius = `${radius.toFixed(2)}px`;
@@ -446,11 +501,19 @@
     closing.addEventListener('pointerleave', () => closing.style.setProperty('--x', '-999px'));
   }
 
+  // The nav mark's ring doubles as a scroll progress bar; the hero ring turns slowly. Both stay still with reduced motion.
+  const navRing = nav.querySelector('.mark-nav');
+  const heroMark = reduceMotion ? null : document.querySelector('.hero-mark');
+
   // One passive scroll listener, batched to animation frames.
   let queued = false;
   const onFrame = (t) => {
     queued = false;
     nav.classList.toggle('is-scrolled', window.scrollY > 8);
+    const doc = document.documentElement;
+    const travel = doc.scrollHeight - window.innerHeight;
+    if (!reduceMotion) navRing.style.setProperty('--p', (travel > 0 ? clamp(window.scrollY / travel) : 1).toFixed(3));
+    if (heroMark && window.scrollY < window.innerHeight * 1.6) heroMark.style.setProperty('--turn', `${(window.scrollY * 0.06).toFixed(2)}deg`);
     if (updateDemo(t || performance.now())) schedule();
   };
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(onFrame); } };

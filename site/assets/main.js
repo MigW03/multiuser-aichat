@@ -279,6 +279,8 @@
     let punchShown = -1;
     const solos = [...demo.querySelectorAll('.solo')];
     const eggs = [...demo.querySelectorAll('[data-egg]')];
+    const tethers = [...demo.querySelectorAll('[data-tethers] line')];
+    const tetherBox = demo.querySelector('[data-tethers]');
     const nest = demo.querySelector('[data-nest]');
     const ring = nest.querySelector('circle');
     const soloMsgs = [...demo.querySelectorAll('[data-solo-at]')].map((n) => ({ n, at: +n.dataset.soloAt }));
@@ -386,7 +388,8 @@
       // The chats drift together, tilting a little, then fade out once the eggs have left.
       const drift = easeInOut(seg(q, [0.42, 0.56]));
       const fade = seg(q, [0.6, 0.7]);
-      const lift = easeInOut(seg(q, [0.48, 0.68]));
+      const rise = easeOut(seg(q, [0.4, 0.5]));
+      const lift = easeInOut(seg(q, [0.5, 0.68]));
       const wsc = lerp(1, 0.94, fade);
       const sc0 = 16 / ed;
       const nx = geo.cx;
@@ -409,13 +412,21 @@
         const sy = b.cy + ty + oy;
         const gx = nx + EGG_AT[i][0] * (L / 64) * k;
         const gy = ny + EGG_AT[i][1] * (L / 64) * k;
-        const x = lerp(sx, gx, lift);
-        const y = lerp(sy, gy, lift) - Math.sin(Math.PI * lift) * H * 0.05;
-        const sc = lerp(sc0, k, lift);
+        // Each egg first lifts straight out of its chat on a dotted tether, then flies to its place in the nest.
+        const rx = sx;
+        const ry = sy - rise * H * 0.1;
+        const x = lerp(rx, gx, lift);
+        const y = lerp(ry, gy, lift) - Math.sin(Math.PI * lift) * H * 0.04;
+        const sc = lerp(lerp(sc0, sc0 * 1.5, rise), k, lift);
+        const tl = tethers[i];
+        tl.setAttribute('x1', sx.toFixed(1)); tl.setAttribute('y1', sy.toFixed(1));
+        tl.setAttribute('x2', x.toFixed(1)); tl.setAttribute('y2', y.toFixed(1));
         const e = eggs[i];
         e.style.transform = `translate(${(x - ed / 2).toFixed(1)}px, ${(y - ed / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`;
         e.style.opacity = (1 - clamp((k - 1) / 0.5)).toFixed(3);
       });
+
+      tetherBox.style.opacity = (rise * (1 - seg(q, [0.5, 0.58]))).toFixed(3);
 
       // The ring draws itself around the eggs, clockwise.
       ring.style.strokeDashoffset = (1.004 - 1.004 * easeInOut(seg(q, [0.68, 0.82]))).toFixed(4);

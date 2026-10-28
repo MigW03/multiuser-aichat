@@ -206,7 +206,7 @@
     const merge = new URLSearchParams(location.search).get('demo') === 'merge';
     demo.classList.add('is-live');
     if (merge) demo.classList.add('is-merge');
-    demo.style.setProperty('--demo-height', merge ? '1040vh' : '560vh');
+    demo.style.setProperty('--demo-height', merge ? '1140vh' : '560vh');
 
     const app = demo.querySelector('[data-app]');
     const view = demo.querySelector('.thread-view');
@@ -250,7 +250,7 @@
     ];
     const beatOf = (c) => (c < 0.37 ? 1 : c < 0.67 ? 2 : 3);
     const P = merge
-      ? { story: 0.28, pre: [0, 0.44], grow: [0.44, 0.52], chat: [0.52, 0.93], shrink: [0.94, 1] }
+      ? { story: 0.255, pre: [0, 0.4], grow: [0.4, 0.535], chat: [0.535, 0.93], shrink: [0.94, 1] }
       : { grow: [0, 0.1], chat: [0.1, 0.92], shrink: [0.93, 1] };
 
     // Prelude parts
@@ -368,9 +368,19 @@
       if (r.bottom < 0 || r.top > vh) { navWrap.classList.remove('is-hidden'); eased = null; return false; }
       const dt = lastT ? Math.min(64, t - lastT) : 16.7;
       lastT = t;
-      eased = eased == null ? target : eased + (target - eased) * (1 - Math.pow(0.86, dt / 16.7));
-      if (Math.abs(target - eased) < 0.5) eased = target;
-      const p = clamp(eased / (r.height - vh));
+      const span = r.height - vh;
+      let next = eased == null ? target : eased + (target - eased) * (1 - Math.pow(0.86, dt / 16.7));
+      if (Math.abs(target - next) < 0.5) next = target;
+      // The zoom into the app never plays faster than about a second, however fast the scroll.
+      if (merge && eased != null) {
+        const g0 = P.grow[0] * span, g1 = P.grow[1] * span;
+        if (Math.min(eased, next) < g1 && Math.max(eased, next) > g0) {
+          const cap = ((g1 - g0) * dt) / 1000;
+          next = eased + clamp(next - eased, -cap, cap);
+        }
+      }
+      eased = next;
+      const p = clamp(eased / span);
 
       const appIn = merge ? preludeState(p) : true;
 

@@ -312,15 +312,11 @@
       const far = small
         ? [[-0.12 * W, -0.12 * H], [0.12 * W, 0.1 * H], [-0.06 * W, 0.32 * H]]
         : [[-1.12 * ww, -0.02 * H], [0, 0.06 * H], [1.12 * ww, -0.05 * H]];
-      const near = small
-        ? [[-0.05 * W, -0.04 * H], [0.05 * W, 0], [0, 0.04 * H]]
-        : [[-0.2 * ww, -0.01 * H], [0, 0.01 * H], [0.2 * ww, -0.02 * H]];
-      geo = { W, H, L, ed, base, far, near, cx: W / 2, cy: H * 0.42, hyp: Math.hypot(W, H) };
+      geo = { W, H, L, ed, base, far, cx: W / 2, cy: H * 0.42, hyp: Math.hypot(W, H) };
       eggs.forEach((e) => { e.style.width = e.style.height = `${ed}px`; });
       nest.style.width = nest.style.height = `${L}px`;
     };
     const EGG_AT = [[0, -10], [8.7, 5], [-8.7, 5]]; // logo geometry, in 64-unit space, relative to the ring centre
-    const TILT = [-3, 2, 3];
 
     let lastTyping = null;
     let lastBeat = 0;
@@ -372,7 +368,7 @@
 
     const preludeState = (p, appScale) => {
       if (!geo || geo.W !== prelude.clientWidth || geo.H !== prelude.clientHeight) measure();
-      const { H, L, ed, base, far, near, hyp } = geo;
+      const { H, L, ed, base, far, hyp } = geo;
       // q runs the story (three chats, eggs rise out, ring closes); the punch line then holds the frame until the app zooms in.
       const q = seg(p, [0, P.story]);
       for (const m of soloMsgs) m.n.classList.toggle('is-in', q >= m.at);
@@ -383,14 +379,12 @@
         preCaption.classList.add('is-swapping');
         swapTimer = setTimeout(() => { preCaption.textContent = PRE_CAPTIONS[preIndex]; preCaption.classList.remove('is-swapping'); }, 220);
       }
-      preCaption.style.opacity = 1 - seg(q, [0.52, 0.6]);
+      preCaption.style.opacity = 1 - seg(q, [0.5, 0.58]);
 
-      // The chats drift together, tilting a little, then fade out once the eggs have left.
-      const drift = easeInOut(seg(q, [0.42, 0.56]));
-      const fade = seg(q, [0.6, 0.7]);
+      // The eggs rise out of their chats; the chats and tethers then fade away where they stand, and the eggs fly to the nest.
+      const fade = easeInOut(seg(q, [0.5, 0.58]));
       const rise = easeOut(seg(q, [0.4, 0.5]));
-      const lift = easeInOut(seg(q, [0.5, 0.68]));
-      const wsc = lerp(1, 0.94, fade);
+      const lift = easeInOut(seg(q, [0.54, 0.72]));
       const sc0 = 16 / ed;
       const nx = geo.cx;
       const grow = seg(p, [P.grow[0], P.grow[0] + 0.03]);
@@ -398,18 +392,13 @@
       // Ring size: the logo ring until the app zooms, then it grows with the app and flies off the edges.
       const k = Math.max(1, (hyp * appScale * 1.04) / L);
       solos.forEach((n, i) => {
-        const tx = lerp(far[i][0], near[i][0], drift);
-        const ty = lerp(far[i][1], near[i][1], drift);
-        const rot = TILT[i] * drift;
-        n.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rot.toFixed(2)}deg) scale(${wsc.toFixed(3)})`;
+        const [tx, ty] = far[i];
+        n.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px)`;
         n.style.opacity = (1 - fade).toFixed(3);
         // Egg start: this chat's avatar slot, followed through the same transform.
         const b = base[i];
-        const rad = (rot * Math.PI) / 180;
-        const ox = (b.sx * Math.cos(rad) - b.sy * Math.sin(rad)) * wsc;
-        const oy = (b.sx * Math.sin(rad) + b.sy * Math.cos(rad)) * wsc;
-        const sx = b.cx + tx + ox;
-        const sy = b.cy + ty + oy;
+        const sx = b.cx + tx + b.sx;
+        const sy = b.cy + ty + b.sy;
         const gx = nx + EGG_AT[i][0] * (L / 64) * k;
         const gy = ny + EGG_AT[i][1] * (L / 64) * k;
         // Each egg first lifts straight out of its chat on a dotted tether, then flies to its place in the nest.
@@ -426,10 +415,10 @@
         e.style.opacity = (1 - clamp((k - 1) / 0.5)).toFixed(3);
       });
 
-      tetherBox.style.opacity = (rise * (1 - seg(q, [0.5, 0.58]))).toFixed(3);
+      tetherBox.style.opacity = (rise * (1 - fade)).toFixed(3);
 
       // The ring draws itself around the eggs, clockwise.
-      ring.style.strokeDashoffset = (1.004 - 1.004 * easeInOut(seg(q, [0.68, 0.82]))).toFixed(4);
+      ring.style.strokeDashoffset = (1.004 - 1.004 * easeInOut(seg(q, [0.74, 0.86]))).toFixed(4);
       nest.style.transform = `translate(${(nx - (L * k) / 2).toFixed(1)}px, ${(ny - (L * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
       nest.style.opacity = (1 - seg(p, [P.grow[1] - 0.05, P.grow[1]])).toFixed(3);
 
@@ -437,9 +426,9 @@
       prelude.style.opacity = p >= P.grow[1] ? 0 : 1;
 
       // The punch line sits under the ring and fills in word by word; the app then zooms out over it.
-      const pScale = lerp(0.9, 1.04, easeOut(seg(p, [0.86 * P.story, P.grow[0]])));
-      punch.style.opacity = (easeOut(seg(q, [0.82, 0.92])) * (1 - seg(p, [P.grow[0], P.grow[0] + 0.05]))).toFixed(3);
-      const fill = seg(p, [0.92 * P.story, P.grow[0] - 0.03]);
+      const pScale = lerp(0.9, 1.04, easeOut(seg(p, [0.88 * P.story, P.grow[0]])));
+      punch.style.opacity = (easeOut(seg(q, [0.86, 0.94])) * (1 - seg(p, [P.grow[0], P.grow[0] + 0.05]))).toFixed(3);
+      const fill = seg(p, [0.94 * P.story, P.grow[0] - 0.03]);
       const n = punchWords.length;
       const shown = Math.round(fill * 1000);
       if (shown !== punchShown) {

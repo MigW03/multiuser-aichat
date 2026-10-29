@@ -1,4 +1,4 @@
-import type { AllowedCommand, ChangePreview, FolderCaps, ProjectShare, ProjectShareHost, ScriptsInfo } from "@mc/shared";
+import type { AllowedCommand, ChangePreview, FolderAuto, FolderCaps, ProjectShare, ProjectShareHost, ScriptsInfo } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "../config.ts";
 import { useLive } from "../data.tsx";
@@ -12,17 +12,17 @@ import { supabase } from "../supabase.ts";
 export type SharedItem = { name: string; kind: "dir" | "file" };
 /** An item shared from this computer. `syncing`: the server has not answered for it yet. `pending`: waiting for the host or an admin. */
 export type LocalItem = SharedItem & { key: string; status: "syncing" | "pending" | "active" };
-export type LocalFolder = { linked: boolean; name: string | null; items: LocalItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth"; caps?: FolderCaps; /** Why the server refused this computer's items, when it did. */ error?: string | null };
+export type LocalFolder = { linked: boolean; name: string | null; items: LocalItem[]; state: "off" | "connecting" | "connected" | "rejected" | "auth"; caps?: FolderCaps; /** What happens without a click (off unless the owner chose it). */ auto?: FolderAuto; /** Why the server refused this computer's items, when it did. */ error?: string | null };
 
 /** What the desktop app tells the page about something dropped on the files panel: names only. */
 export type Dropped = { ok: true; items: SharedItem[]; skipped: string[] } | { ok: false; error: string };
 export type PickResult = { ok: true; name: string; items: LocalItem[]; skipped: string[] } | { ok: false; error: string | null };
 
 /** An AI change waiting for this computer's owner. The diff comes from the app itself, not from the chat server. */
-export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number; /** The app's confirmation window will offer "always allow" for it. */ canAlwaysAllow?: boolean };
+export type PendingChange = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number; /** The app's confirmation window will offer "always allow" for it. */ canAlwaysAllow?: boolean; /** Why it asks although the owner let safe things through. */ reason?: string; /** Files the AI saved without asking that nobody reviewed, when a command was held back for them. */ unreviewed?: string[] };
 
-/** A command that ran without asking because the owner always allowed it. */
-export type AutoRan = { projectId: string; id: string; ruleId: string | null; command: string; folder: string; script: boolean; ok: boolean; at: number };
+/** Something that happened without asking: a command an always-allow rule matched, an edit saved, or a safe command the owner let through. `kind` is absent in older apps (a rule). */
+export type AutoRan = { projectId: string; id: string; ruleId: string | null; kind?: "edit" | "read" | "check"; command: string; path?: string; added?: number; removed?: number; folder: string; script: boolean; ok: boolean; at: number };
 
 /** Commands this person always allowed. The page can list and revoke them; only the app's own confirmation window adds one. */
 export type AllowBridge = {
@@ -70,6 +70,8 @@ export type FolderBridge = {
   onChange: (callback: (projectId: string) => void) => () => void;
   /** This person's switch for AI changes to what they share (off by default). Absent in older builds of the app. */
   setCaps?: (projectId: string, caps: Partial<FolderCaps>) => Promise<unknown>;
+  /** What may happen without a click (edits that cannot run code, a short list of safe commands). Turning one on asks in the app's own window. Absent in older builds of the app. */
+  setAuto?: (projectId: string, auto: Partial<FolderAuto>) => Promise<unknown>;
   /** AI changes waiting for this person's decision. */
   approvals?: () => Promise<PendingChange[]>;
   /** This person's click. The file is written by this call and by nothing else. */
@@ -235,7 +237,7 @@ export function useHostApprovals(): PendingChange[] {
   return pending;
 }
 
-/** Commands that just ran without asking (newest first, at most a few), until each is dismissed. Empty in a browser. */
+/** Things that just happened without asking (newest first, at most a few), until each is dismissed. Empty in a browser. */
 export function useAutoRan(): { rows: AutoRan[]; dismiss: (id: string) => void } {
   const [rows, setRows] = useState<AutoRan[]>([]);
   const allow = folderBridge()?.allow;

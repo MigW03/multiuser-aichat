@@ -9,8 +9,8 @@ import { Agent, fetch as undiciFetch } from "undici";
 // Two layers. `checkUrl` rejects an address that is not https, has credentials, or is an IP literal in a blocked range.
 // `guardedFetch` resolves the name itself and refuses to connect when ANY resolved address is blocked, at connect time on
 // every request (so a name that resolves to a public address when it is added and to a private one later, "DNS
-// rebinding", is caught too). Redirects are left to the MCP SDK, which only follows same-origin ones; a redirect still
-// goes through the same guarded connect. Response bodies are capped.
+// rebinding", is caught too). Redirects are followed by hand, at most 3, and every Location is checked like a typed address
+// (an IP literal skips the guarded lookup). Response bodies are capped.
 
 export class BlockedAddress extends Error {
   constructor(readonly why: "scheme" | "credentials" | "address" | "invalid" | "port") {
@@ -114,6 +114,17 @@ export function checkUrl(input: unknown): URL {
   return u;
 }
 
+/** Where a redirect from `from` to `location` goes, if it may be followed: it must pass the same check as a typed address. */
+export function redirectTarget(from: string, location: string): URL {
+  let next: URL;
+  try {
+    next = new URL(location, from);
+  } catch {
+    throw new BlockedAddress("invalid");
+  }
+  return checkUrl(next.href);
+}
+
 // ------------------------------------------------------------------ the guarded connection
 
 type Resolve = (hostname: string, cb: (err: NodeJS.ErrnoException | null, addresses: { address: string; family: number }[]) => void) => void;
@@ -122,6 +133,7 @@ const defaultResolve: Resolve = (hostname, cb) => dnsLookup(hostname, { all: tru
 
 /** Largest response body kept in memory: tool lists and results are small; this stops a server that never stops sending. */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
+const MAX_REDIRECTS = 3;
 
 function limitBody(res: Response): Response {
   if (!res.body) return res;
@@ -173,8 +185,35 @@ export function createGuardedFetch(opts: { resolve?: Resolve; allowPrivate?: boo
     })();
     if (u.protocol !== "https:" && !opts.allowPrivate) throw new BlockedAddress("scheme");
     if (!opts.allowPrivate) checkUrl(u.href);
-    const res = await undiciFetch(url, { ...(init as object), dispatcher: agent } as never);
-    return limitBody(res as unknown as Response);
+    // Redirects are followed here, not by undici: a Location that is an IP literal never reaches the guarded lookup, so
+    // each hop is checked by checkUrl (https, no credentials, no blocked literal) before it is requested.
+    let target = u.href;
+    let method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET")).toUpperCase();
+    let body = init?.body;
+    let headers = new Headers(init?.headers);
+    for (let hop = 0; ; hop++) {
+      const res = (await undiciFetch(target, { ...(init as object), method, body, headers, redirect: "manual", dispatcher: agent } as never)) as unknown as Response;
+      const location = res.headers.get("location");
+      if (![301, 302, 303, 307, 308].includes(res.status) || !location) return limitBody(res);
+      void res.body?.cancel().catch(() => undefined);
+      if (hop >= MAX_REDIRECTS) throw new BlockedAddress("invalid");
+      const next = opts.allowPrivate ? new URL(location, target) : redirectTarget(target, location);
+      if (next.origin !== new URL(target).origin) {
+        headers = new Headers(headers);
+        headers.delete("authorization");
+        headers.delete("cookie");
+      }
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === "POST")) {
+        method = method === "HEAD" ? "HEAD" : "GET";
+        body = undefined;
+        headers = new Headers(headers);
+        headers.delete("content-type");
+        headers.delete("content-length");
+      } else if (body !== undefined && typeof body !== "string" && !(body instanceof Uint8Array)) {
+        throw new BlockedAddress("invalid"); // a stream cannot be sent twice
+      }
+      target = next.href;
+    }
   }) as typeof fetch;
 }
 

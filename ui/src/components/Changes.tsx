@@ -1,4 +1,4 @@
-import { classifyCommand, type ChangePreview } from "@mc/shared";
+import { classifyCommand, RISKY_FILE, type ChangePreview } from "@mc/shared";
 import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, Terminal, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { folderBridge, useAutoRan, useHostApprovals, type AutoRan, type PendingChange } from "../lib/folder.ts";
@@ -41,9 +41,6 @@ export function DiffView({ diff, cut }: { diff: string; cut?: boolean }) {
     </pre>
   );
 }
-
-/** Files that run code when a project is built, installed, committed or pushed. A change there deserves a slower look. */
-const RISKY = /(^|\/)(\.github\/|\.gitlab-ci|\.vscode\/|\.husky\/|package\.json$|Makefile$|Dockerfile|[^/]+\.(sh|bash|zsh|bat|cmd|ps1)$|pre-commit$|pre-push$)/i;
 
 /** An approved-or-not command, shown as text. The warnings are only hints from a pattern list: the host reads the command. */
 function CommandBlock({ change, warn }: { change: ChangePreview; warn: boolean }) {
@@ -101,7 +98,7 @@ export function ProposalCards({ proposals }: { proposals: Proposal[] }) {
             </span>
             <Stats change={p.change} />
             <span className={`chip ${p.outcome === "applied" ? "accent" : ""}`}>
-              {p.outcome ? (p.outcome === "applied" && (p.change.kind === "git" || p.change.kind === "exec") ? "Approved and run" : OUTCOME[p.outcome]) : (
+              {p.outcome ? (p.outcome === "applied" && p.change.auto ? (p.change.kind === "exec" ? "Ran without asking" : "Saved without asking") : p.outcome === "applied" && (p.change.kind === "git" || p.change.kind === "exec") ? "Approved and run" : OUTCOME[p.outcome]) : (
                 <>
                   <Hourglass size={12} strokeWidth={STROKE} aria-hidden /> Waiting for the owner
                 </>
@@ -209,6 +206,12 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
           </IconButton>
         )}
       </header>
+      {item.reason && (
+        <p className="small ask-reason" role="note">
+          {item.reason}
+          {c.kind === "exec" && item.unreviewed && item.unreviewed.length > 0 ? " Approving this command marks them reviewed: checks run without asking again until the AI saves another file." : ""}
+        </p>
+      )}
       {c.kind === "exec" ? (
         <CommandBlock change={c} warn />
       ) : (
@@ -219,7 +222,7 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
               <TriangleAlert size={ICON_SM} strokeWidth={STROKE} aria-hidden /> This throws away uncommitted changes. They cannot be brought back. The diff below is what would be lost.
             </p>
           )}
-          {c.kind !== "git" && RISKY.test(c.path) && (
+          {c.kind !== "git" && RISKY_FILE.test(c.path) && (
             <p className="small risky" role="note">
               This file can run code when the project is built, installed or pushed. Read the whole diff before approving.
             </p>
@@ -251,7 +254,7 @@ function PendingCard({ item, projectName, view, setView }: { item: PendingChange
   return expanded ? createPortal(<div className="dock-backdrop">{card}</div>, document.body) : card;
 }
 
-/** A command that just ran because the owner always allowed it. Shown so it never happens unseen; Revoke takes the permission back. */
+/** Something that just happened without asking: a command a rule matched or the owner let through, or an edit saved. Shown so it never happens unseen. */
 function AutoRanRow({ ran, projectName, dismiss }: { ran: AutoRan; projectName: string; dismiss: () => void }) {
   const allow = folderBridge()?.allow;
   const [error, setError] = useState<string | null>(null);
@@ -264,13 +267,23 @@ function AutoRanRow({ ran, projectName, dismiss }: { ran: AutoRan; projectName: 
       setError("Could not revoke it.");
     }
   }
+  const edit = ran.kind === "edit";
   return (
-    <section className="dock-card dock-ran" aria-label="A command ran without asking">
+    <section className="dock-card dock-ran" aria-label={edit ? "A file was saved without asking" : "A command ran without asking"}>
       <header>
-        <Terminal size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+        {edit ? <FilePen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <Terminal size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
         <span className="grow">
-          {ran.ok ? "Ran" : "Tried to run"} without asking: <code>{ran.command}</code>
-          <span className="muted"> · {ran.folder || projectName}</span>
+          {edit ? (
+            <>
+              {ran.ok ? "Saved" : "Tried to save"} without asking: <code>{ran.path}</code> <span className="diff-stats small"><span className="add">+{ran.added ?? 0}</span> <span className="del">−{ran.removed ?? 0}</span></span>
+              <span className="muted"> · {projectName}</span>
+            </>
+          ) : (
+            <>
+              {ran.ok ? "Ran" : "Tried to run"} without asking: <code>{ran.command}</code>
+              <span className="muted"> · {ran.folder || projectName}</span>
+            </>
+          )}
         </span>
         {ran.ruleId && (
           <Button size="sm" onClick={() => void revoke()}>
@@ -281,7 +294,13 @@ function AutoRanRow({ ran, projectName, dismiss }: { ran: AutoRan; projectName: 
           <X size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>
       </header>
-      <p className="small muted">You always allowed this exact command in {projectName}. Revoke makes it ask every time again.</p>
+      <p className="small muted">
+        {edit
+          ? `The AI's edit was saved at once because you chose that for ${projectName}. Change this in Project settings.`
+          : ran.kind
+            ? `A safe command, run at once because you chose that for ${projectName}. Change this in Project settings.`
+            : `You always allowed this exact command in ${projectName}. Revoke makes it ask every time again.`}
+      </p>
       {error && <p className="small risky">{error}</p>}
     </section>
   );

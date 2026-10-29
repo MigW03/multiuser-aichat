@@ -1,16 +1,23 @@
-import { FOLDER_LIMITS, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
-import { Check, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, TriangleAlert, Upload, X } from "lucide-react";
+import { FOLDER_LIMITS, isDesignPath, showSupabaseTab, showVercelTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { Check, Database, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, Shapes, Triangle, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, onChanged, useApp } from "../data.tsx";
 import { folderBridge, useLocalFolder, useProjectShares, useScripts, type Dropped, type FolderBridge, type PickResult, type ShareRow } from "../lib/folder.ts";
+import { pickedTab, tabShowsName, type FilesTab } from "../lib/filesTabs.ts";
 import { PREF, readPref, writePref } from "../lib/prefs.ts";
 import { showScriptsTab } from "../lib/scriptsTab.ts";
+import { useSupabaseState } from "../lib/supabaseState.ts";
+import { vercelTabDot } from "../lib/vercelFormat.ts";
+import { useVercelState } from "../lib/vercelState.ts";
+import { DesignsBody } from "./design/DesignsTab.tsx";
 import { DiffView } from "./Changes.tsx";
 import { NoticeBody, shareFolderNotice } from "./Notice.tsx";
 import { NotesCard } from "./NotesUi.tsx";
 import { SplitResizer, useSplit } from "./PanelResizer.tsx";
 import { ScriptsBody, scriptsDot } from "./ScriptsUi.tsx";
+import { SupabaseBody } from "./SupabaseUi.tsx";
+import { useVercelOverview, VercelBody } from "./VercelUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, InfoTip, Menu, Spinner, STROKE, Tip, useToast } from "./kit.tsx";
 
 // The project's shared files live in the right column of a project's chats, as the approved hi-fi boards draw it
@@ -70,7 +77,7 @@ export function RightColumn({ project, onClose }: { project: ProjectSummary; onC
 const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
 function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: () => void }) {
-  const { me } = useApp();
+  const { me, design } = useApp();
   const shares = useProjectShares(project.id);
   const bridge = folderBridge();
   const canShare = !!bridge && typeof bridge.pick === "function" && typeof bridge.remove === "function";
@@ -84,9 +91,20 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const canScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
   const scripts = useScripts(project.id, canScripts);
   const hasScripts = canScripts && showScriptsTab(scripts.info);
-  const [tabPref, setTabPref] = useState<"files" | "scripts">(() => (readPref<string>(PREF.filesTab(me.id), "files") === "scripts" ? "scripts" : "files"));
-  const tab = hasScripts && tabPref === "scripts" ? "scripts" : "files";
-  const pickTab = (next: "files" | "scripts") => {
+  // The Supabase tab: for everyone in a project linked to a Supabase project, once they have Supabase set up themselves.
+  const sup = useSupabaseState(project.id);
+  const hasSupabase = !!sup.state && showSupabaseTab(sup.state);
+  // The Vercel tab: the same, for a project linked to a Vercel project. Its first read also gives the dot on the tab.
+  const ver = useVercelState(project.id);
+  const hasVercel = !!ver.state && showVercelTab(ver.state);
+  const [verVersion, setVerVersion] = useState(0);
+  const verOverview = useVercelOverview(project.id, hasVercel && ver.state?.mine.state === "ready", verVersion);
+  // Designs belong to the project, so their tab is always there, shared folder or not.
+  const shown: FilesTab[] = ["files", "designs", ...(hasScripts ? (["scripts"] as const) : []), ...(hasSupabase ? (["supabase"] as const) : []), ...(hasVercel ? (["vercel"] as const) : [])];
+  type Tab = FilesTab;
+  const [tabPref, setTabPref] = useState<string>(() => readPref<string>(PREF.filesTab(me.id), "files"));
+  const tab: Tab = pickedTab(tabPref, shown);
+  const pickTab = (next: Tab) => {
     setTabPref(next);
     writePref(PREF.filesTab(me.id), next);
   };
@@ -131,67 +149,94 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const empty = shares.data.length === 0;
   const overlay = over && <DropOverlay />;
 
-  if (empty) {
-    return (
-      <section className="side-card folder-card empty" aria-label="Files" {...dragProps}>
-        <span className="folder-empty-close">
-          <IconButton label="Hide files" onClick={onClose} className="sm">
-            <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
-          </IconButton>
-        </span>
-        <Folder size={22} strokeWidth={1.75} aria-hidden />
-        <div className="strong">{canDrop ? "Drop a folder or files here" : "Files"}</div>
-        <p className="small muted">
-          {canShare
-            ? project.my_role === "member"
-              ? `Share folders or files from your computer. The host or an admin approves them first, then everyone in ${project.name} can read them and the AI can use them in project chats. Nothing is uploaded.`
-              : `Share folders or files from your computer. Everyone in ${project.name} can read them, and the AI can use them in project chats. Members can only read; nothing is uploaded.`
-            : bridge
-              ? "Sharing needs a newer version of the desktop app. Restart it to update."
-              : `Nothing is shared in ${project.name} yet. Folders and files are shared from your computer, so this takes the desktop app. Open ${project.name} there to share.`}
-        </p>
-        {canShare && <ShareMenu share={share} primary />}
-        {share.error && <ErrorLine>{share.error}</ErrorLine>}
-        {share.dialog}
-        {overlay}
-      </section>
-    );
-  }
-
   return (
     <section className="side-card folder-card" aria-label="Files" {...dragProps}>
       <header className="side-card-head">
-        {hasScripts ? (
-          <span className="side-card-title grow">
-            <span className="notes-filter files-tabs" role="tablist" aria-label="Files and scripts">
-              <button type="button" role="tab" aria-selected={tab === "files"} className={`notes-tab ${tab === "files" ? "on" : ""}`} onClick={() => pickTab("files")}>
-                Files
-              </button>
+        <span className="side-card-title grow">
+          <span className="notes-filter files-tabs" role="tablist" aria-label="Files, designs, scripts and services">
+            <button type="button" role="tab" aria-selected={tab === "files"} className={`notes-tab ${tab === "files" ? "on" : ""}`} onClick={() => pickTab("files")}>
+              Files
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "designs"} className={`notes-tab ${tab === "designs" ? "on" : ""}`} onClick={() => pickTab("designs")}>
+              Designs
+            </button>
+            {hasScripts && (
               <button type="button" role="tab" aria-selected={tab === "scripts"} className={`notes-tab ${tab === "scripts" ? "on" : ""}`} onClick={() => pickTab("scripts")}>
                 Scripts
                 <ScriptsDot info={scripts.info} />
               </button>
-            </span>
-            {tab === "files" && <FolderInfo />}
+            )}
+            {hasSupabase && (
+              <button type="button" role="tab" aria-label="Supabase" title="Supabase" aria-selected={tab === "supabase"} className={`notes-tab ${tab === "supabase" ? "on" : ""}`} onClick={() => pickTab("supabase")}>
+                <Database size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+                {tabShowsName("supabase", tab, shown) && <span className="tab-name">Supabase</span>}
+              </button>
+            )}
+            {hasVercel && (
+              <button type="button" role="tab" aria-label="Vercel" title="Vercel" aria-selected={tab === "vercel"} className={`notes-tab ${tab === "vercel" ? "on" : ""}`} onClick={() => pickTab("vercel")}>
+                <Triangle size={ICON_SM} strokeWidth={STROKE} fill="currentColor" aria-hidden />
+                {tabShowsName("vercel", tab, shown) && <span className="tab-name">Vercel</span>}
+                <VercelDot overview={verOverview.data} />
+              </button>
+            )}
           </span>
-        ) : (
-          <>
-            <Folder size={ICON_SM} strokeWidth={STROKE} aria-hidden />
-            <span className="side-card-title grow">
-              <b className="truncate">Files</b>
-              <FolderInfo />
-            </span>
-          </>
+          {tab === "files" && !empty && <FolderInfo />}
+        </span>
+        {tab === "designs" && design.available && (
+          <IconButton label="New design" onClick={design.create} className="sm">
+            <Plus size={ICON_SM} strokeWidth={STROKE} />
+          </IconButton>
         )}
-        {canShare && tab === "files" && <ShareMenu share={share} />}
+        {canShare && tab === "files" && !empty && <ShareMenu share={share} />}
         <IconButton label="Hide files" onClick={onClose} className="sm">
           <PanelRightClose size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>
       </header>
-      {tab === "scripts" && scriptsApi ? <ScriptsBody project={project} info={scripts.info} version={scripts.version} execOn={local?.caps?.exec === true} bridge={scriptsApi} /> : <FolderBody project={project} rows={shares.data} share={share} />}
+      {tab === "scripts" && scriptsApi ? (
+        <ScriptsBody project={project} info={scripts.info} version={scripts.version} execOn={local?.caps?.exec === true} bridge={scriptsApi} />
+      ) : tab === "supabase" ? (
+        <SupabaseBody project={project} sup={sup} />
+      ) : tab === "vercel" ? (
+        <VercelBody project={project} vh={ver} overview={verOverview} onRefresh={() => setVerVersion((n) => n + 1)} />
+      ) : tab === "designs" ? (
+        <DesignsBody project={project} />
+      ) : empty ? (
+        <FolderEmpty project={project} canShare={canShare} canDrop={canDrop} bridge={!!bridge} share={share} />
+      ) : (
+        <FolderBody project={project} rows={shares.data} share={share} />
+      )}
       {overlay}
     </section>
   );
+}
+
+/** The Files tab while nothing is shared: what sharing means, and the Share button where this computer can share. */
+function FolderEmpty({ project, canShare, canDrop, bridge, share }: { project: ProjectSummary; canShare: boolean; canDrop: boolean; bridge: boolean; share: ReturnType<typeof useShare> }) {
+  return (
+    <div className="side-card-body folder-empty-body">
+      <Folder size={22} strokeWidth={1.75} aria-hidden />
+      <div className="strong">{canDrop ? "Drop a folder or files here" : "Files"}</div>
+      <p className="small muted">
+        {canShare
+          ? project.my_role === "member"
+            ? `Share folders or files from your computer. The host or an admin approves them first, then everyone in ${project.name} can read them and the AI can use them in project chats. Nothing is uploaded.`
+            : `Share folders or files from your computer. Everyone in ${project.name} can read them, and the AI can use them in project chats. Members can only read; nothing is uploaded.`
+          : bridge
+            ? "Sharing needs a newer version of the desktop app. Restart it to update."
+            : `Nothing is shared in ${project.name} yet. Folders and files are shared from your computer, so this takes the desktop app. Open ${project.name} there to share.`}
+      </p>
+      {canShare && <ShareMenu share={share} primary />}
+      {share.error && <ErrorLine>{share.error}</ErrorLine>}
+      {share.dialog}
+    </div>
+  );
+}
+
+/** A small dot on the Vercel tab: red when the latest production build failed, yellow while one is building. */
+function VercelDot({ overview }: { overview: Parameters<typeof vercelTabDot>[0] }) {
+  const dot = vercelTabDot(overview);
+  if (!dot) return null;
+  return <span className={`mdot tab-dot ${dot}`} role="img" aria-label={dot === "failed" ? "The latest production build failed" : "A build is running"} />;
 }
 
 /** A small dot on the Scripts tab: green while a script runs, red for a crash that has not been looked at (also when the Files tab is open). */
@@ -426,7 +471,9 @@ function ItemIcon({ row, mine }: { row: ShareRow; mine: boolean }) {
 
 /** Browse the shared files, one level at a time, and read a file. The top level is the list of items; below it all of it goes through the server to the owner's app. */
 function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { projectId: string; rows: ShareRow[]; meId: string; canRemoveOthers: boolean; onRemove: (row: ShareRow) => void }) {
-  const { files } = useApp();
+  const { files, design } = useApp();
+  // A design file opens on the design canvas; everything else in the file panel.
+  const openFile = (p: string) => (isDesignPath(p) && design.available ? design.open(p) : files.open(p));
   const [path, setPath] = useState("");
   const [dir, setDir] = useState<FolderListResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -475,7 +522,7 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
             const removable = mine || canRemoveOthers;
             return (
               <li key={row.id} className={removable ? "has-menu" : undefined}>
-                <button type="button" disabled={waiting} aria-current={row.kind === "file" && files.path === row.name ? "true" : undefined} onClick={() => (row.kind === "dir" ? setPath(row.name) : files.open(row.name))}>
+                <button type="button" disabled={waiting} aria-current={row.kind === "file" && files.path === row.name ? "true" : undefined} onClick={() => (row.kind === "dir" ? setPath(row.name) : openFile(row.name))}>
                   <ItemIcon row={row} mine={mine} />
                   <span className="grow truncate">{row.name}</span>
                   {waiting ? <span className="small muted">Waiting for approval</span> : !mine && <span className="small muted truncate owner">{row.owner_name}</span>}
@@ -490,8 +537,8 @@ function FolderBrowser({ projectId, rows, meId, canRemoveOthers, onRemove }: { p
           {dir.entries.length === 0 && <li className="small muted pad">This folder is empty.</li>}
           {dir.entries.map((e) => (
             <li key={e.name}>
-              <button type="button" aria-current={e.type === "file" && files.path === join(e.name) ? "true" : undefined} onClick={() => (e.type === "dir" ? setPath(join(e.name)) : files.open(join(e.name)))}>
-                {e.type === "dir" ? <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
+              <button type="button" aria-current={e.type === "file" && files.path === join(e.name) ? "true" : undefined} onClick={() => (e.type === "dir" ? setPath(join(e.name)) : openFile(join(e.name)))}>
+                {e.type === "dir" ? <FolderOpen size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : isDesignPath(e.name) ? <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <File size={ICON_SM} strokeWidth={STROKE} aria-hidden />}
                 <span className="grow truncate">{e.name}</span>
                 {e.type === "file" && e.size !== undefined && <span className="small muted">{sizeLabel(e.size)}</span>}
               </button>

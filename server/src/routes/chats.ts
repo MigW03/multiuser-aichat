@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isPlanProvider, LIMITS, parseDesignMarker, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
@@ -155,7 +155,10 @@ chats.post("/:id/messages", rateLimit("send", 30, 60_000), async (c) => {
   if (chat.title === DEFAULT_CHAT_TITLE) {
     // Words name the chat; pictures alone give the AI nothing to name it from.
     const titleModel = skip || !provider || !model || content === IMAGE_ONLY_TEXT ? null : { provider, model };
-    void nameChat(chatId, userId, content === IMAGE_ONLY_TEXT ? "Image" : content, titleModel).catch((e) => console.error(`[title] chat ${chatId}:`, e));
+    // A design marker is written by the app, not by the person: the chat is named from the words after it.
+    const marked = parseDesignMarker(content);
+    const words = marked ? marked.rest.trim() || (marked.ref.path ? `Design ${marked.ref.path.split("/").at(-1)}` : "Design") : content;
+    void nameChat(chatId, userId, content === IMAGE_ONLY_TEXT ? "Image" : words, titleModel).catch((e) => console.error(`[title] chat ${chatId}:`, e));
   }
 
   if (!skip) void processChatQueue(chatId).catch((e) => console.error(`[run] chat ${chatId}:`, e));
@@ -261,8 +264,8 @@ messages.post("/:id/retry", rateLimit("retry", 20, 60_000), async (c) => {
   if (!answer.run_id) return c.json({ error: "This answer can't be retried." }, 400);
   if (!(await listKeyHints(userId)).length) return c.json({ error: "Add an AI key in Settings first." }, 400);
 
-  await admin.from("messages").update({ status: "pending", run_id: null }).eq("run_id", answer.run_id).eq("role", "user");
-  await admin.from("messages").delete().eq("id", id);
+  // The questions keep their run_id: the run that follows finds this answer through it and writes the new attempt into the same message.
+  await admin.from("messages").update({ status: "pending" }).eq("run_id", answer.run_id).eq("role", "user");
   void processChatQueue(answer.chat_id as string).catch((e) => console.error(`[run] chat ${answer.chat_id}:`, e));
   return c.json({ ok: true });
 });

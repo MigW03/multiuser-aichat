@@ -139,7 +139,7 @@ function createWindow() {
     height: 720,
     title: "Nido",
     // Same as the app background (--bg), so nothing flashes before the page paints.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#2a2a2e" : "#fafafa",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#262925" : "#f1f1e8",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       // Tells the preload script whether multiuserchat:// links come back to this app.

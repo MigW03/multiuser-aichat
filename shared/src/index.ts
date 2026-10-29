@@ -225,6 +225,8 @@ export type ModelInfo = {
   reasoning?: Reasoning[];
   /** Whether the model can look at pictures. Missing: the provider does not say, so pictures are allowed and it may refuse. */
   vision?: boolean;
+  /** Whether the model can call tools. Missing: the provider does not say. */
+  tools?: boolean;
 };
 
 /** Short label for a model id: "claude-sonnet-4-5-20250929" -> "Sonnet 4.5". Falls back to the id. */
@@ -426,6 +428,13 @@ export type FolderCaps = {
   exec: boolean;
 };
 
+/**
+ * What the host lets happen without a click, per project, kept on the host's computer. Both off by default: every change and
+ * every command asks. `edit`: edits to existing files and new files save at once. `exec`: a short list of read-only and
+ * project-check commands (folder-auto.ts) run at once. Only meaningful while the matching `FolderCaps` switch is on.
+ */
+export type FolderAuto = { edit: boolean; exec: boolean };
+
 /** Why the AI can or cannot propose file changes in a project right now: some owner's app allows it, no connected app does, or every owner's app is closed. */
 export type AiEditState = "edit" | "off" | "offline";
 
@@ -452,7 +461,12 @@ export type ChangePreview = {
   diff: string;
   /** The diff was cut for size. */
   cut: boolean;
+  /** The host's app ran or saved it without asking, because the host chose "save / run safe ones without asking" for this project. */
+  auto?: boolean;
 };
+
+/** Files that run code when a project is built, installed, committed or pushed. A change there always asks, and deserves a slower look. */
+export const RISKY_FILE = /(^|\/)(\.github\/|\.gitlab-ci|\.vscode\/|\.husky\/|package\.json$|Makefile$|Dockerfile|[^/]+\.(sh|bash|zsh|bat|cmd|ps1)$|pre-commit$|pre-push$)/i;
 
 /** Broadcast on `chat:<id>`: a proposal is waiting for the host. Informational only: the decision happens on the host's computer. */
 export type ApprovalEvent = { messageId: string; change: ChangePreview; askedBy: string; readFiles: number };
@@ -474,13 +488,15 @@ export type FolderRequest =
   | { id: string; op: "git_change"; action: "add" | "restore"; paths: string[]; askedBy: string; readFiles: number }
   | { id: string; op: "git_change"; action: "commit"; message: string; askedBy: string; readFiles: number }
   | { id: string; op: "git_change"; action: "branch"; name: string; askedBy: string; readFiles: number }
-  | { id: string; op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number };
+  | { id: string; op: "exec"; command: string; description?: string; workdir?: string; timeoutSec?: number; askedBy: string; readFiles: number }
+  // An older design file (*.design.html) in a shared folder, read whole (read-only) to show it and copy it into the project.
+  | { id: string; op: "design_read"; path: string };
 
 export type GitStatusFile = { path: string; /** index column of `git status --porcelain` */ index: string; /** worktree column */ worktree: string };
 export type GitStatusResult = { branch: string | null; files: GitStatusFile[]; truncated: boolean };
 export type GitTextResult = { text: string; truncated: boolean };
 /** What an approved command did. `output` is stdout and stderr together, cut to the start and the end when long. */
-export type ExecResult = { command: string; exitCode: number | null; signal: string | null; timedOut: boolean; output: string; truncated: boolean; ms: number };
+export type ExecResult = { command: string; exitCode: number | null; signal: string | null; timedOut: boolean; output: string; truncated: boolean; ms: number; /** Ran without asking (the host's "run safe ones" setting). */ auto?: boolean };
 /** A script from the package.json of a folder shared from this computer, for the Scripts tab. `command` is what runs (npm, pnpm, yarn or bun, by the lock file). */
 export type ScriptInfo = { key: string; folder: string; name: string; body: string; command: string };
 export type ScriptState = "wait" | "run" | "stopping" | "stopped" | "ok" | "crash";
@@ -528,6 +544,8 @@ export type McpRemoteServer = {
   /** One plain sentence when status is failed or needs_sign_in. */
   error?: string;
   tools: McpToolView[];
+  /** Set for servers Nido knows (Vercel): the AI gets `offered` of the server's `total` tools unless `all` is on. */
+  preset?: { name: string; offered: number; total: number; all: boolean };
 };
 export type McpRemoteList = {
   servers: McpRemoteServer[];
@@ -622,3 +640,9 @@ export type AllowedCommand = { id: string; command: string; folder: string; scri
 export * from "./mcp-text.ts";
 export * from "./preview-url.ts";
 export * from "./genui.ts";
+export * from "./supabase.ts";
+export * from "./vercel.ts";
+export * from "./mcp-presets.ts";
+export * from "./design.ts";
+export * from "./edit-match.ts";
+export * from "./files.ts";

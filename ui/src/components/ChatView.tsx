@@ -1,9 +1,10 @@
 import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
-import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
+import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Shapes, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { fetchChatPeople, notifyChanged, useApp, useLive } from "../data.tsx";
 import { copyText, setPinned } from "../lib/actions.ts";
+import { setChatSender } from "../lib/designBus.ts";
 import { setDraftTarget } from "../lib/drafts.ts";
 import { uploadPictures } from "../lib/images.ts";
 import { useModelReasoning } from "../lib/models.ts";
@@ -39,7 +40,7 @@ function typingText(names: string[]): string | null {
 }
 
 export function ChatView({ chat, project, projectPeople, projectOnline, leftCollapsed, onShowLeft }: Props) {
-  const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite, preview } = useApp();
+  const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite, preview, design } = useApp();
   const thinking = useModelReasoning(choice);
   const toast = useToast();
   const room = useChatRoom(chat.id, me.id);
@@ -97,7 +98,10 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const typing = typingText(room.typingIds.map((id) => names.get(id)).filter((n): n is string => !!n));
   const doneCount = room.messages.filter((m) => m.status === "done" && m.kind !== "summary_request").length;
 
-  async function send(out: OutgoingMessage): Promise<boolean> {
+  async function send(out: OutgoingMessage, raw = false): Promise<boolean> {
+    // In a project, a message about a design starts with its marker (the open design, the layers picked, canvas edits).
+    const marker = project && !raw ? design.take() : null;
+    if (marker) out = { ...out, content: `${marker}\n${out.content}`.slice(0, LIMITS.messageChars) };
     const id = crypto.randomUUID();
     // With Auto the chosen model uses its own default thinking, so no level is sent.
     const reasoning = choice && isSmartModel(choice.model) ? null : thinking.effective;
@@ -174,6 +178,10 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
 
   // A click in a note's generated UI drafts a message here, in the chat that is open.
   useEffect(() => setDraftTarget((text) => setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }))), []);
+  // The design panel's "Build in code" and "Update code" are messages sent here (they carry their own marker).
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useEffect(() => (project ? setChatSender((content) => sendRef.current({ content, mentions: [], replyTo: null, quote: null, pictures: [] }, true)) : undefined), [project]);
 
   /** A click in an answer's generated UI: a reply to that answer, drafted in the composer for the person to send or change. */
   function draftReply(m: ChatMessage, text: string) {
@@ -223,6 +231,11 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
           <IconButton label="Invite someone to this chat" onClick={() => openInvite({ kind: "chat", chatId: chat.id })}>
             <UserPlus size={ICON} strokeWidth={STROKE} />
           </IconButton>
+        )}
+        {project && design.available && (
+          <button type="button" className={`btn sm ${design.path ? "active" : ""}`} aria-pressed={!!design.path} onClick={() => (design.path ? design.close() : design.pick())} title="Designs (⌘K)">
+            <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Design
+          </button>
         )}
         {preview.available && (
           <button type="button" className={`btn sm ${preview.open ? "active" : ""}`} aria-pressed={preview.open} onClick={() => (preview.open ? preview.close() : preview.show())} title="Preview a web page from this computer">
@@ -279,6 +292,16 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}
         draft={draft}
+        {...(project && design.available
+          ? {
+              design: {
+                chip: design.chip,
+                onClear: () => design.setChip(null),
+                onNew: () => design.setChip({ action: "new" }),
+                onOpen: (path: string) => design.open(path),
+              },
+            }
+          : {})}
       />
 
       {dialog === "rename" && (

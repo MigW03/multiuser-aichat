@@ -11,6 +11,8 @@
     "@ai-sdk/anthropic": "^4.0.79",
     "@ai-sdk/openai": "^4.0.93",
     "@ai-sdk/openai-compatible": "^3.0.68",
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1156.0",
     "@hono/node-server": "^2.1.5",
     "@mc/shared": "*",
     "@modelcontextprotocol/sdk": "^1.32.1",

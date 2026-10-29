@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { IMAGE_LIMITS } from "@mc/shared";
+import { DESIGN_LIMITS, FILE_STORE_LIMITS, IMAGE_LIMITS } from "@mc/shared";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
 import { sweepUnsentImages } from "./images.ts";
@@ -11,6 +11,8 @@ import { relay, resetFolderStatus } from "./folders.ts";
 import { MCP_PATH } from "./mcp-relay.ts";
 import { mcpRelay } from "./mcp.ts";
 import { chats, messages } from "./routes/chats.ts";
+import { createDesignRoutes } from "./routes/designs.ts";
+import { files } from "./routes/files.ts";
 import { folder } from "./routes/folder.ts";
 import { invites, publicInvites } from "./routes/invites.ts";
 import { keys } from "./routes/keys.ts";
@@ -18,7 +20,10 @@ import { notes } from "./routes/notes.ts";
 import { mcpOauthPublic, mcpServers } from "./routes/mcp.ts";
 import { projects } from "./routes/projects.ts";
 import { smart } from "./routes/smart.ts";
+import { supabase } from "./routes/supabase.ts";
+import { vercel } from "./routes/vercel.ts";
 import { recoverRuns } from "./run-queue.ts";
+import { missingR2, storageOn } from "./r2.ts";
 
 const app = new Hono<AuthVars>();
 
@@ -28,7 +33,19 @@ app.use("/api/*", cors({ origin: env.allowedOrigins, allowHeaders: ["authorizati
 const smallBody = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request too large" }, 413) });
 // Picture uploads send the file itself as the body; this is the only route allowed a big one.
 const pictureBody = bodyLimit({ maxSize: IMAGE_LIMITS.bytes + 1024, onError: (c) => c.json({ error: "That picture is over 5 MB." }, 413) });
-app.use("/api/*", (c, next) => (c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path) ? pictureBody(c, next) : smallBody(c, next)));
+// A design save sends the whole design (up to 400,000 characters, a few bytes each at most).
+const designBody = bodyLimit({ maxSize: DESIGN_LIMITS.chars * 3 + 4096, onError: (c) => c.json({ error: "That design is too large." }, 413) });
+// Storing a shared file sends the file itself as the body.
+const storedFileBody = bodyLimit({ maxSize: FILE_STORE_LIMITS.fileBytes + 1024, onError: (c) => c.json({ error: `That file is over ${FILE_STORE_LIMITS.fileBytes / 1024 / 1024} MB.` }, 413) });
+app.use("/api/*", (c, next) =>
+  c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path)
+    ? pictureBody(c, next)
+    : (c.req.method === "PUT" && /^\/api\/projects\/[^/]+\/designs\/[^/]+$/.test(c.req.path)) || (c.req.method === "POST" && /^\/api\/projects\/[^/]+\/designs$/.test(c.req.path))
+      ? designBody(c, next)
+      : c.req.method === "PUT" && /^\/api\/projects\/[^/]+\/files\/[^/]+\/object$/.test(c.req.path)
+        ? storedFileBody(c, next)
+        : smallBody(c, next),
+);
 
 app.get("/health", (c) => c.json({ ok: true }));
 
@@ -43,7 +60,11 @@ app.route("/api", keys);
 app.route("/api", smart);
 app.route("/api/projects", projects);
 app.route("/api/projects", folder);
+app.route("/api/projects", files);
+app.route("/api/projects", createDesignRoutes());
 app.route("/api/projects", notes);
+app.route("/api/projects", supabase);
+app.route("/api/projects", vercel);
 app.route("/api/mcp", mcpServers);
 app.route("/api/chats", chats);
 app.route("/api/messages", messages);
@@ -57,6 +78,8 @@ app.onError((err, c) => {
 
 const server = serve({ fetch: app.fetch, port: env.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
   console.log(`server listening on http://${info.address}:${info.port}`);
+  // Names only, never values: without these, project designs (and the AI's design tools) are off.
+  console.log(storageOn() ? "[storage] R2 is set: project designs are on" : `[storage] R2 is not set (${missingR2().join(", ")}): project designs and the AI's design tools are off`);
   void recoverRuns();
   // Pictures uploaded and never sent are removed after an hour.
   const sweep = () => void sweepUnsentImages().catch((e) => console.error("[images] sweep failed:", e));

@@ -244,3 +244,18 @@ describe("caps and the cache", () => {
     assert.deepEqual(await hub.itemsOf(P, "cat"), [{ key: "key-secret-plans", name: "secret-plans", status: "pending" }]);
   });
 });
+
+
+describe("older design files", () => {
+  test("are read (only read) from the owner of the item", async () => {
+    const r = await call({ op: "design_read", path: "my-app/designs/a.design.html" });
+    assert.equal(r.path, "my-app/designs/a.design.html");
+    assert.equal(sent[0]!.owner, "ana");
+    assert.equal(sent[0]!.req.op, "design_read");
+  });
+  test("only paths ending in .design.html, and only in approved items", async () => {
+    await refused(call({ op: "design_read", path: "my-app/a.html" }), "bad_request");
+    await refused(call({ op: "design_read", path: "secret-plans/a.design.html" }), "not_found");
+    assert.equal(sent.length, 0);
+  });
+});

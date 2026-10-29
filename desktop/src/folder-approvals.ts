@@ -1,17 +1,33 @@
 import { FOLDER_LIMITS as L, type ChangePreview, type FolderResponse } from "@mc/shared";
+import type { AutoDecision } from "./folder-auto.ts";
 import { commitStaged, type Staged } from "./folder-changes.ts";
 import type { ExecStaged } from "./folder-exec.ts";
 import type { GitStaged } from "./folder-git.ts";
 import { FolderError } from "./folder-fs.ts";
 
 // Proposals waiting for the host. A proposal lives only in this app's memory: the chat server can ask for one and can
-// cancel it, but only the host's click in this app (decide) ever writes anything. The one thing approved in advance is a
-// command the host ticked "always allow" for in the confirmation window (folder-allow.ts): an exact match runs at once.
+// cancel it, but only the host's click in this app (decide) ever writes anything. Two things are approved in advance: a
+// command the host ticked "always allow" for in the confirmation window (folder-allow.ts: an exact match runs at once), and,
+// when the host chose it for the project in a window this app shows, what folder-auto.ts lets through (edits that cannot
+// run code, a short list of read-only and project-check commands). Everything else waits here for the click.
 
-export type PendingView = { projectId: string; id: string; change: ChangePreview; askedBy: string; readFiles: number; expiresAt: number; /** The confirmation window will offer "always allow" for it. */ canAlwaysAllow?: boolean };
+export type PendingView = {
+  projectId: string;
+  id: string;
+  change: ChangePreview;
+  askedBy: string;
+  readFiles: number;
+  expiresAt: number;
+  /** The confirmation window will offer "always allow" for it. */
+  canAlwaysAllow?: boolean;
+  /** Why it asks although the host let safe things through, in one plain sentence. Only a hint. */
+  reason?: string;
+  /** Files the AI saved without asking that nobody reviewed: shown with a command that was held back for them. */
+  unreviewed?: string[];
+};
 
 export type Kind = "files" | "git" | "exec";
-type AnyStaged = Staged | GitStaged | ExecStaged;
+export type AnyStaged = Staged | GitStaged | ExecStaged;
 const kindOf = (s: AnyStaged): Kind => ("exec" in s ? "exec" : "git" in s ? "git" : "files");
 
 type Entry = {
@@ -34,6 +50,17 @@ export type AllowHooks = {
   ran: (view: PendingView, res: FolderResponse) => void;
 };
 
+export type AutoHooks = {
+  /** Whether this may happen without asking. Called only when no always-allow rule matched. */
+  check: (projectId: string, staged: AnyStaged) => Promise<AutoDecision>;
+  /** It was saved or run without asking. */
+  ran: (view: PendingView, res: FolderResponse, kind: "edit" | "read" | "check") => void;
+  /** The files the AI saved without asking that nobody reviewed since. A command that runs project code asks while there are any, even one always allowed. */
+  held: (projectId: string) => string[];
+  /** The host approved a command (and was shown the unreviewed files with it). */
+  reviewed: (projectId: string) => void;
+};
+
 export type ApprovalHooks = {
   /** A proposal is waiting for the host. */
   onAdd: (view: PendingView) => void;
@@ -48,6 +75,7 @@ export type ApprovalHooks = {
    */
   confirm: (view: PendingView) => Promise<boolean | "always">;
   allow?: AllowHooks;
+  auto?: AutoHooks;
 };
 
 const key = (projectId: string, id: string) => `${projectId}\n${id}`;
@@ -77,26 +105,53 @@ export class Approvals {
     return [...this.pending.values()].map((e) => e.view);
   }
 
-  /** Waits for the host's decision. Resolves with the answer to send back to the server. */
-  async propose(projectId: string, staged: AnyStaged, ctx: { askedBy: string; readFiles: number }): Promise<FolderResponse> {
+  /**
+   * Waits for the host's decision. Resolves with the answer to send back to the server. `preview` shows everybody in the chat
+   * what is proposed, once it is known whether it will wait (it carries `auto` when it will not).
+   */
+  async propose(projectId: string, staged: AnyStaged, ctx: { askedBy: string; readFiles: number; preview?: (change: ChangePreview) => void }): Promise<FolderResponse> {
     const k = key(projectId, staged.id);
-    if (this.pending.has(k) || this.starting.has(k)) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
-    const verdict = "exec" in staged && this.hooks.allow ? await this.hooks.allow.check(projectId, staged).catch((): AllowVerdict => "no") : "no";
-    if (this.pending.has(k) || this.starting.has(k)) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
-    const view: PendingView = { projectId, id: staged.id, change: staged.change, askedBy: ctx.askedBy, readFiles: ctx.readFiles, expiresAt: Date.now() + this.ms, ...(verdict === "offer" ? { canAlwaysAllow: true } : {}) };
-    if (verdict === "auto") {
-      // A rule the host made matches this exact command: it runs without asking. Nothing waits in the dock.
-      if (this.execBusy(projectId)) return { id: staged.id, ok: false, code: "busy", message: "A command is already waiting for its owner or running. Wait for it to finish." };
+    const open = () => this.pending.has(k) || this.starting.has(k);
+    if (open()) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
+    const isExec = "exec" in staged;
+    let verdict: AllowVerdict = isExec && this.hooks.allow ? await this.hooks.allow.check(projectId, staged).catch((): AllowVerdict => "no") : "no";
+    // A rule the host made runs project code too: while the AI has saved files nobody reviewed, it asks like anything else.
+    const held = verdict === "auto" && !staged.change.script ? (this.hooks.auto?.held(projectId) ?? []) : [];
+    if (held.length > 0) verdict = "offer";
+    const decision: AutoDecision = verdict !== "auto" && this.hooks.auto && kindOf(staged) !== "git" ? await this.hooks.auto.check(projectId, staged).catch((): AutoDecision => ({ auto: false })) : { auto: false };
+    if (open()) return { id: staged.id, ok: false, code: "bad_request", message: "That request is already open." };
+    const view: PendingView = {
+      projectId,
+      id: staged.id,
+      change: staged.change,
+      askedBy: ctx.askedBy,
+      readFiles: ctx.readFiles,
+      expiresAt: Date.now() + this.ms,
+      ...(verdict === "offer" ? { canAlwaysAllow: true } : {}),
+      ...(held.length > 0
+        ? { reason: `Asking because the AI saved files without your review: ${held.slice(0, 3).join(", ")}${held.length > 3 ? ` and ${held.length - 3} more` : ""}. Commands run code in your project.`, unreviewed: held.slice(-20) }
+        : {
+            ...(!decision.auto && decision.reason ? { reason: decision.reason } : {}),
+            ...(!decision.auto && decision.unreviewed?.length ? { unreviewed: decision.unreviewed } : {}),
+          }),
+    };
+    if (verdict === "auto" || decision.auto) {
+      // A rule the host made matches this exact command, or the host let this kind of thing through: it happens without asking. Nothing waits in the dock.
+      if (isExec && this.execBusy(projectId)) return { id: staged.id, ok: false, code: "busy", message: "A command is already waiting for its owner or running. Wait for it to finish." };
+      staged.change.auto = true;
+      ctx.preview?.(staged.change);
       this.starting.set(k, projectId);
       let res: FolderResponse;
       try {
-        res = await this.finish(k, projectId, staged.id, staged, true);
+        res = await this.finish(k, projectId, staged.id, staged, true, true);
       } finally {
         this.starting.delete(k);
       }
-      this.hooks.allow?.ran(view, res);
+      if (verdict === "auto") this.hooks.allow?.ran(view, res);
+      else if (decision.auto) this.hooks.auto?.ran(view, res, decision.kind);
       return res;
     }
+    ctx.preview?.(staged.change);
     return new Promise((resolve) => {
       const timer = setTimeout(() => this.end(k, { id: staged.id, ok: false, code: "expired", message: "Nobody approved this change in time, so it was dropped." }), this.ms);
       this.pending.set(k, { view, staged, timer, settle: resolve });
@@ -127,6 +182,8 @@ export class Approvals {
       e.deciding = false;
       if (this.pending.get(k) !== e) return false; // it ended while the window was open (expired, cancelled, switched off)
       if (!confirmed) return true;
+      // The host saw the command (and the files the AI saved unreviewed, if it was held for them) and said yes.
+      if (!e.view.change.script) this.hooks.auto?.reviewed(projectId);
     }
     // Taken out first, so a double click cannot run it twice.
     this.pending.delete(k);
@@ -138,7 +195,7 @@ export class Approvals {
   }
 
   /** Declines, or runs, what the host (or a rule) decided on. The entry is already out of `pending`. */
-  private async finish(k: string, projectId: string, id: string, staged: AnyStaged, approve: boolean): Promise<FolderResponse> {
+  private async finish(k: string, projectId: string, id: string, staged: AnyStaged, approve: boolean, auto = false): Promise<FolderResponse> {
     const kind = kindOf(staged);
     let res: FolderResponse;
     if (!approve) {
@@ -150,7 +207,8 @@ export class Approvals {
         if ("exec" in staged) {
           const run = staged.run.bind(staged);
           try {
-            res = { id, ok: true, result: await run((kill) => this.running.set(k, { projectId, id, kill })) };
+            const ran = await run((kill) => this.running.set(k, { projectId, id, kill }));
+            res = { id, ok: true, result: auto ? { ...ran, auto: true } : ran };
           } finally {
             this.running.delete(k);
           }
@@ -159,7 +217,7 @@ export class Approvals {
         } else {
           await commitStaged(staged);
           const { path, created, added, removed } = staged.change;
-          res = { id, ok: true, result: { path, created, added, removed } };
+          res = { id, ok: true, result: { path, created, added, removed, ...(auto ? { auto: true } : {}) } };
         }
       } catch (err) {
         if (err instanceof FolderError) res = { id, ok: false, code: err.code, message: err.message };

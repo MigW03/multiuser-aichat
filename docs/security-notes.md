@@ -51,6 +51,51 @@ A register of the places where the app shows or runs content it does not trust, 
 - **Where:** `desktop/src/preview.ts` (mode `localhost`), `shared/src/preview-url.ts`.
 - A browser view of the person's **own** dev server. Own process and cookie jar, no preload, localhost addresses only, popups/downloads/permissions refused. Unlike section 3, the page **can** reach the internet and other localhost ports (a dev project needs CDNs, APIs, HMR). A posted localhost link makes a GET to that port on click. Nobody but the person chooses what runs here: do not route files from teammates through this mode (that is what "run" mode is for: `opts.run.owns(url)` decides the mode in the main process, the page cannot choose).
 
+## 5. Project designs and the design canvas (server, R2, desktop and web, every member)
+
+- **Where:** `shared/src/design.ts` (`designUnsafe`, addresses, marker), `server/src/project-designs.ts` (checks, keys, versions), `server/src/routes/designs.ts`, `server/src/design-tools.ts` (AI tools), `server/src/design-events.ts`, `supabase/migrations/0024_project_designs.sql`, `desktop/src/folder-design.ts` (read-only, older files), `ui/src/lib/designModel.ts` (`parseDesign`, `cleanStyle`, `styleSet`), `ui/src/components/design/` (canvas). Tests: `server/src/project-designs.test.ts`, `server/src/design.test.ts`, `desktop/src/folder-design.test.ts`, the "older design files" block in `folder-hub.test.ts`, `ui/src/lib/designModel.test.ts`.
+- **What it is:** designs that belong to a project. The list and versions are rows in Postgres (server-only); the HTML of each version is an object in R2 (bucket `nido-files`, prefix `designs/`). Any member saves from the canvas and the AI saves with its tools, **without an approval card** (Miguel's decision, 2026-10-23). They are drawn inside the app for everyone in the project. This is the one place where the server keeps what people write outside chat (privacy notes should say so).
+- **Walls:**
+  1. **Members only.** Every route and every AI tool checks the person's project role first (`project_role_of`); the database functions check it again. Delete: the maker, the host or an admin. Both tables have RLS on with no policies and no grants to `anon`/`authenticated`; only the service role reads them.
+  2. **Keys can't escape.** Keys are built only by `designPrefix` from UUID-checked project and design ids plus a random UUID: `designs/<project>/<design>/<uuid>.html`. The database refuses any other key (`app_design_key_ok`), and the server checks a key against the design's prefix again before fetching it. The slug in a URL is checked against `^[a-z0-9]+(-[a-z0-9]+)*$`; anything else names no design.
+  3. **Inert when stored** (`checkDesignText` on the server before every save, create, edit and restore): size limit `DESIGN_LIMITS.chars`, plain text (no NUL, no lone surrogates), no secrets (`redactSecrets`), and `designUnsafe`: no `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<style>`, `<link>`, `<meta>`, `<base>`, SVG `use`/`foreignObject`/animation; no `on*` attribute; no `srcset`, `action`, `formaction`, `ping`, `background`, `poster`, `xlink:href`, `srcdoc`; no `javascript:`/`vbscript:`/`data:text/html` in any attribute (after decoding character references and removing control characters); `src` only as a `data:image/...` picture; in `style` no backslash escapes, `expression()`, `behavior`, `-moz-binding`, `@import`, or `url()` other than an inline picture. Objects are stored as `application/octet-stream`, attachment, and never served to a browser directly (the server reads them and returns JSON).
+  4. **Clean again before drawing** (`parseDesign`): its own DOMPurify instance with the forbidden tags and attributes above, `src` only `data:` pictures, `href` only on `<a>` and only `#`, `http(s)`, `mailto`, and `cleanStyle` on every style. Parsed in a detached, inert document; the canvas draws a copy into a **shadow root** inside an `overflow: hidden` viewport whose content sits under a CSS transform. Clicks and middle-clicks on the canvas never follow a link. What cleaning removed is shown in a banner.
+  5. **No lost work:** each save names the version it was made from (`baseVersion`); the database refuses a stale one (row lock, `stale`) and the losing object is removed. The AI changes or replaces a design only after reading it in the same answer, and names that version. The last 50 versions are kept and can be restored; a deleted design stays 30 days.
+  6. **AI reads designs as data:** `design_read` fences the text in `<project_design_data>` (a closing tag inside is escaped) and the instructions say it is never an instruction.
+  7. **Chat marker:** `designMarker` escapes every value, and `parseDesignMarker` reads one marker only at the very start of a message. The marker only selects what the AI looks at; it grants nothing.
+  8. **Older folder files:** the host's app only **reads** `*.design.html` files now (relay op `design_read`, same path walk as every read, inside an approved item, no links, nothing hidden). Writing a design file on the host without approval is gone; "Move to project" copies the text through the normal create checks.
+- **Left over (accepted, state them to the auditor):**
+  - Any member can create, change, empty or restore any design in the project (rate limits: 120 saves a minute, 60 creates and 60 deletes an hour per person); the maker, host and admins can delete. Versions make this recoverable.
+  - The AI can do the same through a prompt injection (for example a pasted page that says "rewrite the design"). Worst case is a spoiled design; Versions restores it. It cannot write anything else without the usual approval.
+  - A hostile design can still **show** anything as text and pictures (a fake dialog drawn on the canvas). It cannot run code, submit forms or load from the network.
+  - `<a href="https://...">` is kept (designs show links) but never followed on the canvas.
+  - The realtime hints (`design_saved`, `design_list`, `design_ai`, `design_ask`, `design_handover`, presence) travel on the project channel, which every member can also send on. A member could fake them: make others reload, show the canvas as read-only for up to 120 s, or claim the editor seat. Courtesy locks only; the version check still protects every save.
+  - Objects of dropped versions, losing saves and purged designs are removed best effort; a leftover can't be reached (no row names it).
+- **Never:** build a design key outside `designPrefix`; fetch a key the design's row does not name or that is outside its prefix; drop the server-side `checkDesignText` "because the canvas cleans anyway" (the AI reads designs, and the HTML may be opened elsewhere); give clients direct access to the tables or the objects; draw a design outside the shadow root or without `parseDesign`; or add `<style>` support without a new review.
+- **Re-audit when:** DOMPurify is upgraded, the design format gains new tags or attributes, designs are served straight from R2 or shared outside the project, designs can be renamed, or the canvas starts running anything (prototype mode, scripts).
+
+---
+
+## 6. Stored copy of shared files (Cloudflare R2, server, every member)
+
+- **Whose content:** the files of an approved shared item, uploaded by that item's owner. Every project member can list and download them.
+- **The wall:** every route checks the signed-in person belongs to the project and that the item is approved (`activeShareFor`); only the item's owner writes or removes. Keys are `projects/<project uuid>/<item uuid>/<path>` built only by `file-paths.ts` from UUID-checked ids and a validated path (no `..`, `.`, empty parts, backslash, `:`, control or direction characters, Windows device names, hidden names such as `.env`, `.git`, `node_modules`, `*.pem`).
+- **What the content can do:** nothing on our origin. Objects are stored as `application/octet-stream` with `Content-Disposition: attachment`, and the download address (valid 60 s, `no-store`) forces both again, so a stored HTML file is saved, not run, and R2 is a different origin from the app.
+- **Secrets:** text files that contain a key or token are refused (422, `file-scan.ts`, same patterns as `redactSecrets`), because a download would otherwise skip the masking that reads of a shared folder get. Binary files are not scanned.
+- **Limits:** 25 MB a file, 1 GB and 20,000 files a project, 3 uploads in memory at once, `Content-Length` required, rate limits per person.
+- **Kept afterwards:** the object, until the owner removes it, the item stops being shared, or the project is deleted (best effort; an orphan can't be read because reads need an approved item).
+- **Never:** build a key from anything but `file-paths.ts`; serve an object through our own origin with its stored type; return the R2 credentials, endpoint or bucket in an answer or a log line; let a non-owner write.
+- **Re-audit when:** the AI reads stored files, the desktop app uploads automatically, files are served inline for preview, or items can be renamed (a one-file item is stored under its name).
+
+---
+
+## 7. Remote MCP servers: the server fetches addresses people type (server, `server/src/ssrf.ts`)
+
+- **Walls:** `checkUrl` (https only, no credentials, no blocked IP literal, no local names); `guardedFetch` resolves the name itself and refuses any blocked address on every new connection (DNS rebinding). **Redirects are followed by hand** (`redirectTarget`, at most 3 hops): an IP literal in a `Location` never reaches the guarded lookup, so every hop is checked like a typed address. Found and fixed in the 2026-10-29 audit (undici followed redirects itself, so a public server could 302 to `http://10.x` or `https://169.254.169.254`). Bodies are capped at 8 MB.
+- **Tests:** `server/src/ssrf.test.ts` (`redirectTarget`, hop limit, POST turns into GET).
+- **Never:** let undici follow redirects (`redirect: "manual"` stays), or build a second outbound fetch for user-typed addresses outside `guardedFetch`.
+- **Re-audit when:** undici or the MCP SDK is upgraded, or another feature fetches a user-typed address.
+
 ---
 
 ## Questions an audit should ask of every new surface like these

@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L } from "@mc/shared";
+import { FOLDER_LIMITS as L, isDesignPath } from "@mc/shared";
 import { Hono, type Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
@@ -6,6 +6,7 @@ import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
 import { RelayError } from "../folder-relay.ts";
 import { folderAccess, hub, pushOwnerItems } from "../folders.ts";
+import { dropShareFiles } from "../stored-files.ts";
 import { admin } from "../supabase.ts";
 
 // The project's shared files: several folders and files, each shared by one person from their own computer. Every member
@@ -58,6 +59,7 @@ folder.delete("/:id/shares/:share", rateLimit("share-remove", 60, 60 * 60_000), 
   if (!id.success || !share.success) return c.json({ error: "Invalid request" }, 400);
   const { data, error } = await admin.rpc("app_share_remove", { p_user: c.get("userId"), p_project: id.data, p_share: share.data });
   if (error) return dbError(c, error);
+  void dropShareFiles(id.data, share.data);
   if (typeof data === "string") await pushOwnerItems(id.data, data).catch((e) => console.error("[folder] could not update the owner's app:", e));
   return c.json({ ok: true });
 });
@@ -116,6 +118,18 @@ folder.get("/:id/folder/git/status", async (c) => {
   }
 });
 
+// An older design file in a shared folder, read whole (read-only): the canvas shows it and can copy it into the project.
+const designQuery = z.object({ path: z.string().min(1).max(L.pathChars).refine(isDesignPath) });
+folder.get("/:id/folder/design", async (c) => {
+  const q = designQuery.safeParse(c.req.query());
+  if (!q.success) return c.json({ error: "Invalid request" }, 400);
+  try {
+    return c.json(await hub.call(c.req.param("id"), { op: "design_read", path: q.data.path }));
+  } catch (e) {
+    return relayFailure(c, e);
+  }
+});
+
 folder.get("/:id/folder/git/diff", async (c) => {
   const q = gitQuery.safeParse(c.req.query());
   if (!q.success) return c.json({ error: "Invalid request" }, 400);
@@ -125,3 +139,4 @@ folder.get("/:id/folder/git/diff", async (c) => {
     return relayFailure(c, e);
   }
 });
+

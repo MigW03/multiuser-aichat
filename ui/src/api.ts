@@ -3,6 +3,11 @@ import type {
   ApiError,
   AssignableRole,
   AiEditState,
+  DesignList,
+  DesignReadResult,
+  DesignVersionList,
+  DesignWriteResult,
+  FolderDesignResult,
   ChatGptPollResponse,
   ChatGptStartResponse,
   ChatGptUsage,
@@ -24,7 +29,18 @@ import type {
   SendMessageResponse,
   SmartSettings,
   SummarizeRequest,
+  SupabaseLink,
+  SupabaseProjectOption,
+  SupabaseSection,
+  SupabaseSectionData,
+  SupabaseState,
+  VercelLink,
+  VercelProjectOption,
+  VercelSection,
+  VercelSectionData,
+  VercelState,
 } from "@mc/shared";
+import { projectDesignSlug } from "@mc/shared";
 import { config } from "./config.ts";
 import { supabase } from "./supabase.ts";
 
@@ -38,6 +54,9 @@ export class ApiRequestError extends Error {
     super(message);
   }
 }
+
+/** The slug in a project design's address, for its URL. Anything else names no design. */
+const designSlugOf = (path: string) => encodeURIComponent(projectDesignSlug(path) ?? "-");
 
 async function call<T>(method: string, path: string, body?: unknown, opts: { auth?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -80,7 +99,7 @@ export const api = {
   // Remote MCP servers (connected tools the chat server calls for you; secrets are write-only)
   mcpServers: () => call<McpRemoteList>("GET", "/api/mcp/servers"),
   mcpAdd: (body: { name: string; url: string; auth: McpRemoteAuthInput }) => call<McpRemoteServer>("POST", "/api/mcp/servers", body),
-  mcpSet: (id: string, body: { enabled?: boolean; tool?: { name: string; enabled: boolean } }) => call<McpRemoteServer>("PATCH", `/api/mcp/servers/${id}`, body),
+  mcpSet: (id: string, body: { enabled?: boolean; allTools?: boolean; tool?: { name: string; enabled: boolean } }) => call<McpRemoteServer>("PATCH", `/api/mcp/servers/${id}`, body),
   mcpToken: (id: string, value: string) => call<McpRemoteServer>("PUT", `/api/mcp/servers/${id}/token`, { value }),
   mcpDelete: (id: string) => call<{ ok: true }>("DELETE", `/api/mcp/servers/${id}`),
   mcpRetry: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/retry`),
@@ -115,6 +134,17 @@ export const api = {
   updateNote: (projectId: string, noteId: string, body: { title: string; body: string }) => call<{ ok: true }>("PATCH", `/api/projects/${projectId}/notes/${noteId}`, body),
   deleteNote: (projectId: string, noteId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/notes/${noteId}`),
 
+  /** The project's designs (they belong to the project; the server keeps them). */
+  designList: (projectId: string) => call<DesignList>("GET", `/api/projects/${projectId}/designs`),
+  /** A new design: empty with one board, or `content` copied from an older design file ("Move to project"). */
+  designCreate: (projectId: string, body: { name: string; board?: "desktop" | "phone"; content?: string }) => call<DesignWriteResult>("POST", `/api/projects/${projectId}/designs`, body),
+  designRead: (projectId: string, path: string) => call<DesignReadResult>("GET", `/api/projects/${projectId}/designs/${designSlugOf(path)}`),
+  /** Saves a whole design. `baseVersion`: the version it was made from. */
+  designSave: (projectId: string, path: string, content: string, baseVersion: number) => call<DesignWriteResult>("PUT", `/api/projects/${projectId}/designs/${designSlugOf(path)}`, { content, baseVersion }),
+  designDelete: (projectId: string, path: string) => call<{ path: string }>("DELETE", `/api/projects/${projectId}/designs/${designSlugOf(path)}`),
+  designVersions: (projectId: string, path: string) => call<DesignVersionList>("GET", `/api/projects/${projectId}/designs/${designSlugOf(path)}/versions`),
+  designRestore: (projectId: string, path: string, version: number, baseVersion: number) => call<DesignWriteResult>("POST", `/api/projects/${projectId}/designs/${designSlugOf(path)}/restore`, { version, baseVersion }),
+
   /** The host or an admin answers a member's request to share something. */
   decideShare: (projectId: string, shareId: string, approve: boolean) => call<{ ok: true }>("POST", `/api/projects/${projectId}/shares/${shareId}/decision`, { approve }),
   /** Stops sharing one item: its owner, the host or an admin. */
@@ -122,12 +152,41 @@ export const api = {
   folderList: (projectId: string, path: string) => call<FolderListResult>("GET", `/api/projects/${projectId}/folder/list?${new URLSearchParams({ path })}`),
   /** Whether the AI can propose file edits in this project right now. */
   folderAi: (projectId: string) => call<{ edit: AiEditState }>("GET", `/api/projects/${projectId}/folder/ai`),
+  /** An older design file in a shared folder, read whole (read-only). */
+  folderDesignRead: (projectId: string, path: string) => call<FolderDesignResult>("GET", `/api/projects/${projectId}/folder/design?${new URLSearchParams({ path })}`),
   folderRead: (projectId: string, path: string) => call<FolderReadResult>("GET", `/api/projects/${projectId}/folder/read?${new URLSearchParams({ path })}`),
 
   /** Read-only git for the project (404 with code git_off when no owner has switched git on). */
   gitStatus: (projectId: string) => call<GitStatusResult>("GET", `/api/projects/${projectId}/folder/git/status`),
   gitDiff: (projectId: string, path: string, target: "worktree" | "staged" | "head" = "head") =>
     call<GitTextResult>("GET", `/api/projects/${projectId}/folder/git/diff?${new URLSearchParams({ path, target })}`),
+
+  /** The Supabase tab: the project's link, this person's own Supabase connection, and one section read through it. */
+  supabaseState: (projectId: string) => call<SupabaseState>("GET", `/api/projects/${projectId}/supabase`),
+  supabaseProjects: (projectId: string) => call<{ projects: SupabaseProjectOption[] }>("GET", `/api/projects/${projectId}/supabase/projects`),
+  supabaseLink: (projectId: string, ref: string) => call<{ link: SupabaseLink | null }>("PUT", `/api/projects/${projectId}/supabase`, { ref }),
+  supabaseUnlink: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/supabase`),
+  supabaseData: <S extends SupabaseSection>(projectId: string, section: S, q: { source?: string; minutes?: number; errors?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (q.source) params.set("source", q.source);
+    if (q.minutes) params.set("minutes", String(q.minutes));
+    if (q.errors) params.set("errors", "1");
+    return call<{ data: SupabaseSectionData[S] }>("GET", `/api/projects/${projectId}/supabase/data/${section}${params.size ? `?${params}` : ""}`);
+  },
+
+  /** The Vercel tab: the project's link, this person's own Vercel connection, and one section read through it. */
+  vercelState: (projectId: string) => call<VercelState>("GET", `/api/projects/${projectId}/vercel`),
+  vercelProjects: (projectId: string) => call<{ projects: VercelProjectOption[] }>("GET", `/api/projects/${projectId}/vercel/projects`),
+  vercelLink: (projectId: string, pick: { teamId: string; projectId: string }) => call<{ link: VercelLink | null }>("PUT", `/api/projects/${projectId}/vercel`, pick),
+  vercelUnlink: (projectId: string) => call<{ ok: true }>("DELETE", `/api/projects/${projectId}/vercel`),
+  vercelData: <S extends VercelSection>(projectId: string, section: S, q: { since?: string; minutes?: number; errors?: boolean; deployment?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (q.since) params.set("since", q.since);
+    if (q.minutes) params.set("minutes", String(q.minutes));
+    if (q.errors) params.set("errors", "1");
+    if (q.deployment) params.set("deployment", q.deployment);
+    return call<{ data: VercelSectionData[S] }>("GET", `/api/projects/${projectId}/vercel/data/${section}${params.size ? `?${params}` : ""}`);
+  },
 
   createChat: (projectId: string | null) => call<{ id: string }>("POST", "/api/chats", { projectId }),
   renameChat: (id: string, title: string) => call<{ title: string }>("PATCH", `/api/chats/${id}`, { title }),

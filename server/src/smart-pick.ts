@@ -13,7 +13,7 @@ export type Pick = { model: string; fallback: boolean; why?: string; ms?: number
 /** `fetchImpl` is only swapped in tests. The key is sent to OpenRouter and nowhere else, and is never logged. */
 export async function pickSmartModel(args: { apiKey: string; models: string[]; info: ModelInfo[]; signal?: AbortSignal; fetchImpl?: typeof fetch } & PickInput): Promise<Pick> {
   const started = Date.now();
-  const options = smartOptions(args.models, args.info, args.pictures);
+  const options = smartOptions(args.models, args.info, args.pictures, args.tools === true);
   const fallback = (why: string, detail = ""): Pick => {
     console.error(`[smart] using the cheapest model of the set: ${why}${detail ? ` (${detail})` : ""}`);
     return { model: cheapest(options).id, fallback: true, why, ms: Date.now() - started };

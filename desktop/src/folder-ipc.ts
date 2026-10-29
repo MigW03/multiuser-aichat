@@ -1,10 +1,11 @@
-import { classifyCommand, FOLDER_LIMITS as L, type AllowedCommand, type ChangePreview, type FolderCaps, type FolderResponse, type ScriptsInfo } from "@mc/shared";
+import { classifyCommand, FOLDER_LIMITS as L, type AllowedCommand, type ChangePreview, type FolderAuto, type FolderCaps, type FolderResponse, type ScriptsInfo } from "@mc/shared";
 import { app, BrowserWindow, dialog, ipcMain, Notification, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { AllowStore, boundTexts, offerable } from "./folder-allow.ts";
 import { Approvals, type AllowVerdict, type PendingView } from "./folder-approvals.ts";
+import { editDecision, execDecision, Unreviewed } from "./folder-auto.ts";
 import { stageChange } from "./folder-changes.ts";
 import { stageExec } from "./folder-exec.ts";
 import { listScripts, longRunningRefusal, ScriptRunner, stageScript } from "./folder-scripts.ts";
@@ -20,7 +21,7 @@ import type { RunServer } from "./run-server.ts";
 // stop sharing. It can never name a path or read a file: items are chosen in a native dialog or dropped by the person,
 // and read only for requests that arrive from the chat server for items the host or an admin approved.
 
-type Link = { items: ItemSpec[]; userId: string; caps?: FolderCaps };
+type Link = { items: ItemSpec[]; userId: string; caps?: FolderCaps; /** What may happen without a click (folder-auto.ts). Off unless the owner chose it. */ auto?: FolderAuto };
 type Links = Record<string, Link>;
 
 const STORE = () => join(app.getPath("userData"), "shared-folders.json");
@@ -37,7 +38,10 @@ async function loadLinks(): Promise<Links> {
         .filter((i): i is ItemSpec => typeof i?.abs === "string" && (i.kind === "dir" || i.kind === "file"))
         .slice(0, L.items)
         .map((i) => ({ abs: i.abs, kind: i.kind, key: typeof i.key === "string" && i.key.length >= 1 && i.key.length <= 64 ? i.key : randomUUID() }));
-      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(l.caps?.edit === true || l.caps?.git === true || l.caps?.exec === true ? { caps: { edit: l.caps.edit === true, git: l.caps.git === true, exec: l.caps.exec === true } } : {}) };
+      // A "without a click" choice only counts while the switch it belongs to is on.
+      const caps = l.caps?.edit === true || l.caps?.git === true || l.caps?.exec === true ? { edit: l.caps.edit === true, git: l.caps.git === true, exec: l.caps.exec === true } : undefined;
+      const auto = { edit: caps?.edit === true && l.auto?.edit === true, exec: caps?.exec === true && l.auto?.exec === true };
+      if (valid.length) out[projectId] = { items: valid, userId: l.userId, ...(caps ? { caps } : {}), ...(auto.edit || auto.exec ? { auto } : {}) };
     }
     return out;
   } catch {
@@ -69,9 +73,10 @@ async function validateFile(picked: string): Promise<string> {
 
 /** `syncing`: the server has not answered for this item yet. `pending`: waiting for the host or an admin. */
 export type ItemView = { name: string; kind: "dir" | "file"; key: string; status: "syncing" | "pending" | "active" };
-export type FolderInfo = { linked: boolean; name: string | null; items: ItemView[]; state: FolderState; caps: FolderCaps; /** Why the server refused, when it did. */ error: string | null };
+export type FolderInfo = { linked: boolean; name: string | null; items: ItemView[]; state: FolderState; caps: FolderCaps; /** What happens without a click. */ auto: FolderAuto; /** Why the server refused, when it did. */ error: string | null };
 const NO_CAPS: FolderCaps = { edit: false, git: false, exec: false };
-const EMPTY: FolderInfo = { linked: false, name: null, items: [], state: "off", caps: NO_CAPS, error: null };
+const NO_AUTO: FolderAuto = { edit: false, exec: false };
+const EMPTY: FolderInfo = { linked: false, name: null, items: [], state: "off", caps: NO_CAPS, auto: NO_AUTO, error: null };
 type PickResult = { ok: true; name: string; items: FolderInfo["items"]; skipped: string[] } | { ok: false; error: string | null };
 
 export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; run: RunServer }) {
@@ -82,8 +87,12 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const assigned = new Map<string, Map<string, ItemStatus>>();
   // Packaged, the worker is kept outside app.asar (asarUnpack in package.json): worker threads load from the real disk.
   const search = workerSearch(join(__dirname, "folder-worker.cjs").replace(/app\.asar([\\/])/, "app.asar.unpacked$1"));
+  /** Files the AI saved without asking that the host has not looked at since (folder-auto.ts). */
+  const unreviewed = new Unreviewed();
   const ready = loadLinks().then((l) => {
     links = l;
+    // What was saved before this run is not known: it counts as unreviewed until the host approves a command.
+    for (const [projectId, link] of Object.entries(l)) if (link.auto?.edit) unreviewed.seedEarlier(projectId);
   });
 
   // Only the app's own page may use these calls (not an iframe or a page it navigated to).
@@ -105,6 +114,12 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
   const capsOf = (projectId: string): FolderCaps => {
     const c = mine(projectId) ? links[projectId]!.caps : undefined;
     return c ? { edit: c.edit === true, git: c.git === true, exec: c.exec === true } : NO_CAPS;
+  };
+  /** What happens without a click right now: the owner's choice, and only while its switch is on. */
+  const autoOf = (projectId: string): FolderAuto => {
+    const a = mine(projectId) ? links[projectId]!.auto : undefined;
+    const c = capsOf(projectId);
+    return { edit: c.edit && a?.edit === true, exec: c.exec && a?.exec === true };
   };
 
   /** The scripts that run from the Scripts tab. The page hears that something changed and asks for the state. */
@@ -137,6 +152,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     },
     onGone: (projectId, id) => {
       boundOf.delete(approvalKey(projectId, id));
+      ruleOf.delete(approvalKey(projectId, id));
       opts.getWindow()?.webContents.send("folder:approval-gone", { projectId, id });
     },
     stillAllowed: (projectId, kind) => capsOf(projectId)[kind === "files" ? "edit" : kind],
@@ -172,6 +188,24 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
       if (r.response !== 1) return false;
       return view.canAlwaysAllow && r.checkboxChecked ? "always" : true;
+    },
+    auto: {
+      check: async (projectId, staged) => {
+        const a = autoOf(projectId);
+        if ("exec" in staged) return a.exec ? execDecision(staged, unreviewed.list(projectId)) : { auto: false };
+        if ("git" in staged) return { auto: false };
+        return a.edit ? editDecision(staged, unreviewed.count(projectId)) : { auto: false };
+      },
+      held: (projectId) => unreviewed.list(projectId),
+      reviewed: (projectId) => unreviewed.clear(projectId),
+      ran: (view, res, kind) => {
+        const change = view.change;
+        if (kind === "edit" && res.ok) unreviewed.add(view.projectId, change.path);
+        opts.getWindow()?.webContents.send("folder:auto-ran", { projectId: view.projectId, id: view.id, ruleId: null, kind, command: change.command ?? "", path: change.path, added: change.added, removed: change.removed, folder: change.workdir ?? "", script: false, ok: res.ok, at: Date.now() });
+        // A saved file shows in the dock only. A command that ran also tells the host when the app is in the background.
+        const win = opts.getWindow();
+        if (kind !== "edit" && Notification.isSupported() && !(win?.isFocused() ?? false)) new Notification({ title: "Ran a safe command", body: `${change.command ?? ""} · ${change.workdir ?? ""}` }).show();
+      },
     },
     allow: {
       check: async (projectId, staged): Promise<AllowVerdict> => {
@@ -235,9 +269,8 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     if (approvals.count(projectId) >= L.proposals) return { id, ok: false, code: "busy", message: "Several changes are already waiting for the owner. Wait for them to be decided." };
     try {
       const staged = exec ? await stageExec(itemsOf(projectId), req as never) : git ? await stageGitChange(itemsOf(projectId), req as never) : await stageChange(itemsOf(projectId), req as never);
-      preview(staged.change);
       const readFiles = typeof r.readFiles === "number" && Number.isFinite(r.readFiles) ? Math.min(1000, Math.max(0, Math.floor(r.readFiles))) : 0;
-      return await approvals.propose(projectId, staged, { askedBy: label(r.askedBy), readFiles });
+      return await approvals.propose(projectId, staged, { askedBy: label(r.askedBy), readFiles, preview });
     } catch (err) {
       if (err instanceof FolderError) return { id, ok: false, code: err.code, message: err.message };
       console.error("[folder] could not prepare a change:", err instanceof Error ? err.message : err);
@@ -313,7 +346,7 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
     if (!mine(projectId)) return EMPTY;
     const items = viewOf(projectId);
     const conn = conns.get(projectId);
-    return { linked: true, name: summaryName(nameItems(links[projectId]!.items)), items, state: conn?.state ?? "off", caps: capsOf(projectId), error: conn?.error ?? null };
+    return { linked: true, name: summaryName(nameItems(links[projectId]!.items)), items, state: conn?.state ?? "off", caps: capsOf(projectId), auto: autoOf(projectId), error: conn?.error ?? null };
   };
 
   ipcMain.handle("folder:set-session", async (e, raw: unknown) => {
@@ -501,8 +534,10 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       const r = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
       if (r.response !== 1) return info(projectId);
     }
-    const { caps: _old, ...rest } = links[projectId]!;
-    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git || next.exec ? { caps: next } : {}) } };
+    const { caps: _old, auto: _oldAuto, ...rest } = links[projectId]!;
+    // A switch turned off takes its "without a click" choice with it, so turning it on again starts from asking.
+    const keptAuto = { edit: next.edit && _oldAuto?.edit === true, exec: next.exec && _oldAuto?.exec === true };
+    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.git || next.exec ? { caps: next } : {}), ...(keptAuto.edit || keptAuto.exec ? { auto: keptAuto } : {}) } };
     await saveLinks(links);
     if (!next.edit) approvals.closeProject(projectId, "The owner turned off AI changes.", "files"); // what was waiting is withdrawn at once
     if (!next.git) approvals.closeProject(projectId, "The owner turned off git.", "git");
@@ -510,6 +545,46 @@ export function setupFolderHost(opts: { allowedOrigin: string; getWindow: () => 
       approvals.closeProject(projectId, "The owner turned off commands.", "exec"); // and a command that is running is stopped
       scripts.stopProject(projectId); // and so are the scripts
     }
+    conns.get(projectId)?.capsChanged();
+    changed(projectId);
+    return info(projectId);
+  });
+
+  // What may happen without a click (folder-auto.ts). Turning one on is confirmed in a window the app shows, which the page cannot click; turning one off just happens.
+  ipcMain.handle("folder:set-auto", async (e, projectId: unknown, auto: unknown): Promise<FolderInfo | null> => {
+    if (!trusted(e) || !isUuid(projectId)) return null;
+    await ready;
+    if (!mine(projectId)) return null;
+    const given = (auto ?? {}) as { edit?: unknown; exec?: unknown };
+    const caps = capsOf(projectId);
+    const before = links[projectId]!.auto ?? NO_AUTO;
+    const next: FolderAuto = {
+      edit: typeof given.edit === "boolean" ? given.edit && caps.edit : before.edit,
+      exec: typeof given.exec === "boolean" ? given.exec && caps.exec : before.exec,
+    };
+    const win = opts.getWindow();
+    const ask = async (title: string, detail: string) => {
+      const options = { type: "warning" as const, title, message: title, detail, buttons: ["Cancel", "Allow"], defaultId: 0, cancelId: 0, noLink: true };
+      return (win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)).response === 1;
+    };
+    if (next.edit && !before.edit) {
+      const ok = await ask(
+        "Save the AI's changes without asking?",
+        "In this project's chats, an edit the AI makes to a file you share, or a new file, will be written at once. You see it in chat and in this app afterwards, but nothing waits for your click.\n\nIt still asks before replacing a whole file, changing a file that runs code (package.json, scripts, CI, Dockerfile, hooks, anything executable) or making a large change. Secrets, .env files and keys stay off limits. There is no undo here: use git.\n\nWhile files the AI saved are unreviewed, tests and builds ask once, so the AI cannot write code and run it with no click from you. You can switch this off any time.",
+      );
+      if (!ok) return info(projectId);
+    }
+    if (next.exec && !before.exec) {
+      const ok = await ask(
+        "Run safe commands without asking?",
+        "In this project's chats, these will run at once, without a window: pwd, ls inside the shared folder, and the project's own checks (npm test, npm run lint, typecheck, check or build, and the pnpm and yarn forms) when package.json has that script and the script is plain. Every other command still asks, as before.\n\nThere is no sandbox: a test or build runs the project's code with your user's rights. If the AI saved files without asking since you last approved a command, checks ask first. Output goes into the chat and to the AI provider. You can switch this off any time.",
+      );
+      if (!ok) return info(projectId);
+    }
+    const { auto: _old, ...rest } = links[projectId]!;
+    links = { ...links, [projectId]: { ...rest, ...(next.edit || next.exec ? { auto: next } : {}) } };
+    await saveLinks(links);
+    if (next.edit && !before.edit) unreviewed.clear(projectId); // from here on, what is unreviewed is what is saved from now
     conns.get(projectId)?.capsChanged();
     changed(projectId);
     return info(projectId);

@@ -1,6 +1,7 @@
 import { FOLDER_LIMITS as L, type FolderCaps, type FolderEntry, type FolderGlobResult, type FolderResponse, type FolderSearchResult } from "@mc/shared";
 import { lstat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { designRead } from "./folder-design.ts";
 import { FolderError, folderName, listDir, readText, splitPath, type Target } from "./folder-fs.ts";
 import { gitRead } from "./folder-git.ts";
 
@@ -107,6 +108,9 @@ export async function answer(items: Item[], req: unknown, search: Search, caps: 
             : await search.grep(targets, r.pattern, { include: r.include, literal: r.literal, caseSensitive: r.caseSensitive, limit: r.limit });
         return { id, ok: true, result };
       }
+      // An older design file in the folder, read whole so the canvas can show it and copy it into the project (folder-design.ts).
+      case "design_read":
+        return { id, ok: true, result: await designRead(items, r as never) };
       case "git":
         // Read-only git (status, diff, log, show). Switched on by the host with the other AI switches.
         if (!caps.git) throw new FolderError("disabled", "The host has not allowed git in this project.");

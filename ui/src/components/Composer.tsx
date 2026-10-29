@@ -1,5 +1,5 @@
-import { answerPreview, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, type ChatMessage, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
-import { ArrowUp, CornerUpLeft, Plus, Square, X } from "lucide-react";
+import { answerPreview, designChipLabel, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, type ChatMessage, type DesignRef, type ModelChoice, type Person, type Reasoning } from "@mc/shared";
+import { ArrowUp, CornerUpLeft, Image as ImageIcon, Plus, Shapes, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
@@ -8,7 +8,7 @@ import { useModelReasoning, useModelVision } from "../lib/models.ts";
 import { MarkdownBackdrop } from "./MarkdownBackdrop.tsx";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
-import { Avatar, ICON, ICON_SM, STROKE } from "./kit.tsx";
+import { Avatar, ICON, ICON_SM, Menu, STROKE } from "./kit.tsx";
 
 export type OutgoingMessage = { content: string; mentions: string[]; replyTo: string | null; quote: string | null; pictures: Picture[] };
 
@@ -35,6 +35,11 @@ type Props = {
   status?: ReactNode;
   /** Text to put in the box, ready to send or change: a click in a generated answer. `key` changes for each new draft. */
   draft?: { text: string; key: number } | null;
+  /**
+   * In a project that shares a folder: what the next message is about on the design side (the open design, the layers
+   * picked with "Ask AI", or a request for a new design), shown as a chip; "+" can ask for a design.
+   */
+  design?: { chip: DesignRef | null; onClear: () => void; onNew: () => void; onOpen: (path: string) => void };
 };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -46,7 +51,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
     .map((p) => p.id);
 }
 
-export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft }: Props) {
+export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft, design }: Props) {
   const thinking = useModelReasoning(choice);
   const vision = useModelVision(choice);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -277,6 +282,18 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
               ))}
             </div>
           )}
+          {design?.chip && (
+            <div className="design-strip">
+              <button type="button" className={`design-chip ${design.chip.sel?.length ? "picked" : ""}`} title={design.chip.path ?? "A new design"} onClick={() => design.chip?.path && design.onOpen(design.chip.path)}>
+                <Shapes size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+                <span className="truncate">{designChipLabel(design.chip)}</span>
+              </button>
+              <span className="small muted truncate">{design.chip.action === "new" ? "The AI draws a design from your message" : design.chip.sel?.length ? "The AI changes only these layers" : "Your message is about this design"}</span>
+              <button type="button" className="icon-btn" aria-label="Don't send this with the message" onClick={design.onClear}>
+                <X size={ICON_SM} strokeWidth={STROKE} />
+              </button>
+            </div>
+          )}
           {pictures.length > 0 && (
             <div className="composer-pics">
               {pictures.map((p) => (
@@ -300,16 +317,32 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
             </div>
           )}
           <div className="composer-row">
-            <button
-              type="button"
-              className="icon-btn attach-btn"
-              aria-label="Attach pictures"
-              title={noVision ? "This model doesn't support images" : "Attach pictures"}
-              disabled={noVision || pictures.length >= IMAGE_LIMITS.perMessage}
-              onClick={() => fileInput.current?.click()}
-            >
-              <Plus size={ICON} strokeWidth={STROKE} />
-            </button>
+            {design ? (
+              <Menu
+                label="Add to the message"
+                placement="above"
+                items={[
+                  { label: "Picture", icon: <ImageIcon size={ICON_SM} strokeWidth={STROKE} />, disabled: noVision || pictures.length >= IMAGE_LIMITS.perMessage, ...(noVision ? { hint: "This model doesn't support images" } : {}), onSelect: () => fileInput.current?.click() },
+                  { label: "Design", icon: <Shapes size={ICON_SM} strokeWidth={STROKE} />, hint: "The AI answers with a design", onSelect: design.onNew },
+                ]}
+                trigger={({ toggle, open }) => (
+                  <button type="button" className={`icon-btn attach-btn ${open ? "active" : ""}`} aria-label="Add to the message" aria-haspopup="menu" aria-expanded={open} title="Add a picture or ask for a design" onClick={toggle}>
+                    <Plus size={ICON} strokeWidth={STROKE} />
+                  </button>
+                )}
+              />
+            ) : (
+              <button
+                type="button"
+                className="icon-btn attach-btn"
+                aria-label="Attach pictures"
+                title={noVision ? "This model doesn't support images" : "Attach pictures"}
+                disabled={noVision || pictures.length >= IMAGE_LIMITS.perMessage}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Plus size={ICON} strokeWidth={STROKE} />
+              </button>
+            )}
             <input
               ref={fileInput}
               type="file"

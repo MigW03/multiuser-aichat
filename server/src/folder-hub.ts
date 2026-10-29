@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS as L, type AiEditState, type ChangePreview, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
+import { FOLDER_LIMITS as L, isDesignPath, type AiEditState, type ChangePreview, type FolderCaps, type FolderGlobResult, type FolderListResult, type FolderSearchResult } from "@mc/shared";
 import { RelayError, type CallOptions, type Relay, type RelayRequest, type ShareItemOut } from "./folder-relay.ts";
 
 // The hub sits between the project's members (and the AI answering them) and the owners' apps. A project's files are
@@ -141,6 +141,12 @@ export function createHub(relay: Relay, deps: HubDeps) {
       }
       case "exec":
         return relay.callOwner(projectId, target(shares, req.workdir).owner_id, req, opts);
+      case "design_read": {
+        // Read-only, design files only: the owner's app checks again, and answers about the item asked about only.
+        if (!isDesignPath(req.path)) throw new RelayError("host", "Only design files (ending in .design.html) can be read this way.", "bad_request");
+        const item = itemFor(shares, req.path);
+        return asked(item, relay.callOwner(projectId, item.owner_id, req, opts));
+      }
     }
   }
 
@@ -162,6 +168,11 @@ export function createHub(relay: Relay, deps: HubDeps) {
       const shares = await active(projectId).catch(() => [] as Share[]);
       const online = new Set(relay.onlineOwners(projectId));
       return owners(shares).some((o) => online.has(o)) ? "off" : "offline";
+    },
+
+    /** Names of the approved folders (not single files) of a project. */
+    async dirNames(projectId: string): Promise<string[]> {
+      return (await active(projectId).catch(() => [] as Share[])).filter((s) => s.kind === "dir").map((s) => s.name);
     },
 
     /** Forget what was cached about a project, after an item was approved, declined, removed or reported. */

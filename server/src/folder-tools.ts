@@ -378,7 +378,7 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
 }
 
 /** Collapses control characters and brackets in a name that came from a person, so it can't pose as part of the prompt. */
-const promptSafe = (name: string, max: number = L.nameChars) => name.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff"<>`]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+export const promptSafe = (name: string, max: number = L.nameChars) => name.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff"<>`]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
 /** Why a run cannot change files, in words the AI can pass on, so it names the real reason and who can fix it. */
 const READ_ONLY_WHY: Record<Exclude<AiEditState, "edit">, string> = {

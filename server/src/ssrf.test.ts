@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, test } from "node:test";
-import { BlockedAddress, checkUrl, createGuardedFetch, isBlockedAddress } from "./ssrf.ts";
+import { BlockedAddress, checkUrl, createGuardedFetch, isBlockedAddress, redirectTarget } from "./ssrf.ts";
 
 describe("blocked addresses", () => {
   test("private, loopback, link-local, metadata and reserved IPv4 ranges", () => {
@@ -98,6 +98,35 @@ describe("the guarded connection", () => {
       await assert.rejects(createGuardedFetch()(url), (e: unknown) => e instanceof BlockedAddress);
     } finally {
       server.close();
+    }
+  });
+  test("a redirect is checked like a typed address: an IP literal skips the lookup, so it is refused by name", () => {
+    for (const loc of ["https://169.254.169.254/latest/meta-data/", "https://10.0.0.5/x", "https://[::1]/", "https://[fdaa::1]/", "http://example.com/", "https://user:pw@example.com/", "https://localhost/", "https://db.internal/", "file:///etc/passwd", "//127.0.0.1/x"]) {
+      assert.throws(() => redirectTarget("https://mcp.example.com/a", loc), (e: unknown) => e instanceof BlockedAddress, loc);
+    }
+    assert.equal(redirectTarget("https://mcp.example.com/a/b", "../c?x=1").href, "https://mcp.example.com/c?x=1");
+    assert.equal(redirectTarget("https://mcp.example.com/a", "https://other.example.org/z").href, "https://other.example.org/z");
+  });
+  test("redirects are followed by hand: at most 3 hops, a POST turns into a GET after 302", async () => {
+    const seen: { url: string; method: string; auth?: string }[] = [];
+    const a = createServer((req, res) => {
+      seen.push({ url: req.url!, method: req.method!, auth: req.headers.authorization });
+      const n = Number(req.url!.slice(1)) || 0;
+      if (req.url === "/loop") return void res.writeHead(302, { location: "/loop" }).end();
+      if (n < 2) return void res.writeHead(n === 0 ? 302 : 307, { location: `/${n + 1}` }).end();
+      res.end("done");
+    });
+    await new Promise<void>((r) => a.listen(0, "127.0.0.1", r));
+    const base = `http://127.0.0.1:${(a.address() as AddressInfo).port}`;
+    try {
+      const f = createGuardedFetch({ allowPrivate: true });
+      const res = await f(`${base}/0`, { method: "POST", body: "{}", headers: { authorization: "Bearer t", "content-type": "application/json" } });
+      assert.equal(await res.text(), "done");
+      assert.deepEqual(seen.map((x) => x.method), ["POST", "GET", "GET"]);
+      await assert.rejects(f(`${base}/loop`), (e: unknown) => e instanceof BlockedAddress);
+    } finally {
+      a.closeAllConnections();
+      a.close();
     }
   });
 });

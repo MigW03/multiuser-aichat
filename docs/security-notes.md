@@ -89,6 +89,15 @@ A register of the places where the app shows or runs content it does not trust, 
 
 ---
 
+## 7. Remote MCP servers: the server fetches addresses people type (server, `server/src/ssrf.ts`)
+
+- **Walls:** `checkUrl` (https only, no credentials, no blocked IP literal, no local names); `guardedFetch` resolves the name itself and refuses any blocked address on every new connection (DNS rebinding). **Redirects are followed by hand** (`redirectTarget`, at most 3 hops): an IP literal in a `Location` never reaches the guarded lookup, so every hop is checked like a typed address. Found and fixed in the 2026-10-29 audit (undici followed redirects itself, so a public server could 302 to `http://10.x` or `https://169.254.169.254`). Bodies are capped at 8 MB.
+- **Tests:** `server/src/ssrf.test.ts` (`redirectTarget`, hop limit, POST turns into GET).
+- **Never:** let undici follow redirects (`redirect: "manual"` stays), or build a second outbound fetch for user-typed addresses outside `guardedFetch`.
+- **Re-audit when:** undici or the MCP SDK is upgraded, or another feature fetches a user-typed address.
+
+---
+
 ## Questions an audit should ask of every new surface like these
 
 1. Whose content is it, and who decides to look at it or run it? Is there a confirmation the page cannot click?

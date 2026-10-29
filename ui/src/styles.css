@@ -788,6 +788,7 @@ h1, h2, h3, p { margin: 0; }
 .dock-card header { display: flex; align-items: center; gap: 8px; font: var(--text-row); }
 .dock-card header svg { flex: none; color: var(--p-text); }
 .dock-actions { justify-content: flex-end; }
+.dock-card .ask-reason { padding: 6px 8px; border: 1px dashed var(--warning); border-radius: 8px; background: var(--warning-tint); }
 .dock-card .risky { padding: 6px 8px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-tint); }
 .dock-pill { display: flex; align-items: center; gap: 8px; align-self: flex-end; max-width: 100%; padding: 6px 12px; border: 1px solid var(--warning); border-radius: var(--r-full); background: var(--card); box-shadow: var(--shadow-menu); font: var(--text-row); }
 .dock-pill:hover { background: var(--hover-row); }
@@ -802,6 +803,7 @@ h1, h2, h3, p { margin: 0; }
 .settings-rows { border: 1px solid var(--border); border-radius: var(--r-panel); background: var(--card); }
 .setting-row { display: flex; gap: 16px; align-items: flex-start; padding: 14px 16px; }
 .setting-row + .setting-row { border-top: 1px solid var(--border); }
+.auto-setting .segmented { margin-top: 6px; flex-wrap: wrap; }
 .setting-note { margin-top: 6px; color: var(--warning); }
 .setting-switch { flex: none; margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
 .setting-switch:disabled { cursor: default; }

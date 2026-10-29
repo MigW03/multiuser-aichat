@@ -145,6 +145,17 @@ describe("change tools", () => {
     assert.deepEqual(Object.keys(setup(async () => ({})).tools).sort(), ["edit", "glob", "grep", "read", "write"]);
   });
 
+  test("an edit the host let save without asking is reported as such, not as reviewed", async () => {
+    const { use, tools } = setup(async (_req, opts) => {
+      opts?.onPreview?.({ ...change, auto: true });
+      return { path: "src/a.ts", created: false, added: 1, removed: 1, auto: true };
+    });
+    use.files.add("src/a.ts");
+    const out = await exec(tools.edit, { path: "src/a.ts", oldString: "a", newString: "b" });
+    assert.match(out, /Edited src\/a\.ts \(\+1 -1\)\. It was written at once/);
+    assert.doesNotMatch(out, /host reviewed the diff and approved/);
+  });
+
   test("an edit needs a read first, and asks the host with the asker's name", async () => {
     const calls: Record<string, unknown>[] = [];
     const { use, tools, events } = setup(async (req, opts) => {

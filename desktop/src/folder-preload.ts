@@ -58,6 +58,7 @@ export const folderApi = {
   unlink: (projectId: string): Promise<void> => ipcRenderer.invoke("folder:unlink", projectId),
   /** The host's switches for AI changes to files, git and commands (all off by default; turning on commands asks in a native window). Only the keys given change. */
   setCaps: (projectId: string, caps: { edit?: boolean; git?: boolean; exec?: boolean }): Promise<unknown> => ipcRenderer.invoke("folder:set-caps", projectId, caps),
+  setAuto: (projectId: string, auto: { edit?: boolean; exec?: boolean }): Promise<unknown> => ipcRenderer.invoke("folder:set-auto", projectId, auto),
   /** AI changes waiting for this computer's owner to decide. */
   approvals: (): Promise<unknown[]> => ipcRenderer.invoke("folder:approvals"),
   /** The host's click. The file is written only by this call. */

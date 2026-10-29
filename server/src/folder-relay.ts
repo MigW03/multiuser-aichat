@@ -61,7 +61,7 @@ export type RelayRequest =
   | { op: "design_read"; path: string };
 
 /** The host's answer once a proposed change was approved and written. */
-export type ChangeResult = { path: string; created: boolean; added: number; removed: number };
+export type ChangeResult = { path: string; created: boolean; added: number; removed: number; /** Written at once: the host let this kind of edit save without asking. */ auto?: boolean };
 
 export type CallOptions = {
   /** How long to wait for the host's answer. Changes wait for a person, so they get minutes, not seconds. */
@@ -100,9 +100,10 @@ const changePreview = z.object({
   removed: z.number().int().nonnegative(),
   diff: z.string().max(L.diffChars + 100),
   cut: z.boolean(),
+  auto: z.boolean().optional(),
 });
 const previewMsg = z.object({ type: z.literal("event"), id: z.string().max(64), event: z.literal("pending"), change: changePreview });
-const changeDone = z.object({ path: clean(L.pathChars), created: z.boolean(), added: z.number().int().nonnegative(), removed: z.number().int().nonnegative() });
+const changeDone = z.object({ path: clean(L.pathChars), created: z.boolean(), added: z.number().int().nonnegative(), removed: z.number().int().nonnegative(), auto: z.boolean().optional() });
 
 const results = {
   design_read: z.object({ path: clean(L.pathChars), text: cleanText(DESIGN_LIMITS.chars) }),
@@ -117,6 +118,7 @@ const results = {
     output: z.string().max(L.execHeadChars + L.execTailChars + 200),
     truncated: z.boolean(),
     ms: z.number().int().nonnegative(),
+    auto: z.boolean().optional(),
   }),
   git: z.union([
     z.object({

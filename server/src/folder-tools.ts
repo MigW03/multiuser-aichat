@@ -84,7 +84,7 @@ export function formatGitText(kind: "diff" | "log" | "show", r: GitTextResult): 
 export function formatExec(r: ExecResult): string {
   const how = r.timedOut ? `Timed out and was stopped after ${Math.round(r.ms / 1000)}s.` : r.signal ? `Stopped (${r.signal}).` : `Exit code ${r.exitCode}.`;
   const body = r.output.trim() === "" ? "(no output)" : r.output;
-  return `${how} The host reviewed the command and approved it.\n${fenced("command_output", `command=${quoted(r.command.split("\n")[0]!)}`, `${body}${r.truncated ? "\n(Output was cut: the start and the end are shown.)" : ""}`)}`;
+  return `${how} ${r.auto ? "It ran without asking, because the host let this kind of command run without asking." : "The host reviewed the command and approved it."}\n${fenced("command_output", `command=${quoted(r.command.split("\n")[0]!)}`, `${body}${r.truncated ? "\n(Output was cut: the start and the end are shown.)" : ""}`)}`;
 }
 
 /** What the model is told when a call fails. The messages are written to be shown to the people in the chat too. */
@@ -189,7 +189,7 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
         }
         use.edits.push({ p: r.path, ok: true });
         if (id) hooks.done(id, "applied");
-        return `${r.created ? "Created" : "Edited"} ${r.path} (+${r.added} -${r.removed}). The host reviewed the diff and approved it.`;
+        return `${r.created ? "Created" : "Edited"} ${r.path} (+${r.added} -${r.removed}). ${r.auto ? "It was written at once, because the host let edits like this save without asking. Nobody reviewed the diff first, so say plainly what you changed." : "The host reviewed the diff and approved it."}`;
       } catch (e) {
         if (e instanceof RelayError && e.kind === "offline") use.offline = true;
         const code = e instanceof RelayError && e.kind === "host" ? e.code : undefined;
@@ -213,7 +213,7 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
 
   const changeTools = () => ({
         edit: tool({
-          description: `Make an exact string replacement in a file of the project's shared folder. The change is only a proposal: the project's host sees the diff and has to approve it in their desktop app before anything is written, which can take a few minutes. The result tells you whether it was approved. Usage:
+          description: `Make an exact string replacement in a file of the project's shared folder. The change is a proposal: the project's host sees the diff and has to approve it in their desktop app before anything is written, which can take a few minutes, unless the host let safe edits save without asking (then it is written at once). The result tells you which. Usage:
 - Read the file with the read tool first; editing a file you have not read in this answer fails.
 - oldString must match the file's text exactly, including indentation (copy it from the read output without the "<line>: " prefix). The edit fails if oldString is not found, or is found more than once: then include more surrounding lines, or set replaceAll to change every occurrence (for renames).
 - Prefer editing existing files over creating new ones. Make one focused change per call. Do not edit .env files, keys or other secrets.`,
@@ -232,7 +232,7 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
           },
         }),
         write: tool({
-          description: `Create a file, or replace a whole file, in the project's shared folder. Like edit, this is only a proposal: the project's host has to approve the diff in their desktop app before anything is written. Usage:
+          description: `Create a file, or replace a whole file, in the project's shared folder. Like edit, this is a proposal: the project's host has to approve the diff in their desktop app before anything is written, except a new file when the host let new files save without asking. Replacing a whole file always asks. Usage:
 - To change part of an existing file use edit instead. To replace an existing file entirely, read it with the read tool first.
 - Missing folders are created. Do not create documentation files unless asked. Do not write .env files, keys or other secrets.`,
           inputSchema: z.object({
@@ -353,7 +353,7 @@ export function folderTools(call: FolderCaller, use: FolderUse, changes?: Change
 
   const execTools = () => ({
     bash: tool({
-      description: `Run a shell command on the host's computer, in the project's shared folder. EVERY command is a proposal: the host sees the exact command and has to approve it in their desktop app and confirm it in a second window, which can take minutes and can be declined. Usage:
+      description: `Run a shell command on the host's computer, in the project's shared folder. A command is a proposal: the host sees the exact command and has to approve it in their desktop app and confirm it in a second window, which can take minutes and can be declined. A few plain commands (a test, lint, typecheck or build script from package.json, pwd, ls) may run without asking if the host allowed that; anything chained or unusual always asks. Usage:
 - Use the read, glob, grep, edit and write tools for files, not cat, find, grep, sed or echo. Use git_status, git_diff, git_commit and the other git tools instead of git through this tool.
 - Use it for what only a command can do: run tests, a build, a linter, a package script, a formatter, a type check.
 - The command runs in /bin/sh on macOS and Linux (cmd on Windows), in the shared folder or in workdir. Use workdir instead of cd. Quote paths with spaces. Chain steps that depend on each other with && so one approval covers them.

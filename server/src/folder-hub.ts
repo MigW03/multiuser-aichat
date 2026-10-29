@@ -170,6 +170,11 @@ export function createHub(relay: Relay, deps: HubDeps) {
       return owners(shares).some((o) => online.has(o)) ? "off" : "offline";
     },
 
+    /** Names of the approved folders (not single files) of a project. */
+    async dirNames(projectId: string): Promise<string[]> {
+      return (await active(projectId).catch(() => [] as Share[])).filter((s) => s.kind === "dir").map((s) => s.name);
+    },
+
     /** Forget what was cached about a project, after an item was approved, declined, removed or reported. */
     invalidate: (projectId: string) => void cache.delete(projectId),
 

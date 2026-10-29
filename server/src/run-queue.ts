@@ -23,6 +23,7 @@ import { answerSlot } from "./answer-slot.ts";
 import { designAi } from "./design-events.ts";
 import { designInstructions, designsOffInstructions, designTools } from "./design-tools.ts";
 import { FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
+import { loadProjectRules, projectRulesInstructions } from "./project-rules.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
@@ -267,6 +268,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let instructions!: string;
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
+    let projectRules = "";
     let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean }; editState: AiEditState } | null = null;
     /** The asker's own connected tools (MCP), if their desktop app is online and has any switched on. */
     let connected: { tools: ToolSet; state: McpState } | null = null;
@@ -359,6 +361,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           : undefined;
         const call = (req: RelayRequest, opts?: CallOptions) => hub.call(projectId, req as never, opts);
         folder = { tools: folderTools(call, use, changes, caps, designing ?? undefined), use, caps, editState };
+        // AGENTS.md at the top of a shared folder: project rules for the AI. Read beside the rest of the setup, never counted as a file the answer read.
+        projectRules = projectRulesInstructions(await loadProjectRules(call, await hub.dirNames(projectId), controller.signal));
         runSeconds = LOCK_SECONDS_EDIT;
         await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
       }
@@ -401,7 +405,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),

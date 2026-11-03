@@ -1,11 +1,12 @@
 import type { McpRemoteList, McpRemoteServer } from "@mc/shared";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
+import { copyText } from "../lib/actions.ts";
 import { useScrollTo } from "../lib/hooks.ts";
 import { ConfirmDialog } from "./Dialogs.tsx";
 import { ToolList } from "./McpSettings.tsx";
-import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput } from "./kit.tsx";
+import { Button, Dialog, ErrorLine, Field, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
 
 // Remote MCP servers in Settings: tool servers at an https address that the chat server calls for you, so they work in the
 // web and desktop apps alike. Their sign-in (a header value or OAuth) is kept encrypted on the server and never comes
@@ -63,6 +64,34 @@ function useRemote() {
   return { list, error, load, put, watchSignIn: () => setPollUntil(Date.now() + 10 * 60_000), add: (s: McpRemoteServer) => setList((l) => (l ? { ...l, servers: [...l.servers, s] } : l)), remove: (id: string) => setList((l) => (l ? { ...l, servers: l.servers.filter((x) => x.id !== id) } : l)) };
 }
 
+/** The server address on one line, cut with an ellipsis. A Copy URL button shows only when the address is cut. */
+function ServerUrl({ url }: { url: string }) {
+  const toast = useToast();
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setCut(el.scrollWidth > el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [url]);
+  return (
+    <p className="small muted mcp-url">
+      <span ref={ref} className="mcp-command mcp-url-text" title={url}>
+        {url}
+      </span>
+      {cut && (
+        <button type="button" className="link-button mcp-url-copy" onClick={() => void copyText(url).then((ok) => toast.push(ok ? "URL copied" : "Could not copy", ok ? "info" : "error"))}>
+          Copy URL
+        </button>
+      )}
+    </p>
+  );
+}
+
 function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatch, onToken }: { server: McpRemoteServer; focused: boolean; oauthAvailable: boolean; onChange: (s: McpRemoteServer) => void; onRemove: () => void; onWatch: () => void; onToken: () => void }) {
   const [open, setOpen] = useState(focused);
   const ref = useScrollTo<HTMLDivElement>(focused);
@@ -102,9 +131,7 @@ function RemoteRow({ server, focused, oauthAvailable, onChange, onRemove, onWatc
             </span>
           )}
         </div>
-        <p className="small muted mcp-command" title={server.url}>
-          {server.url}
-        </p>
+        <ServerUrl url={server.url} />
         {preset && server.status === "ready" && (
           <p className="small muted mcp-preset">
             {preset.all ? `All ${preset.total} tools are offered to the AI.` : `Nido picks ${preset.offered} of ${preset.total} ${preset.name} tools for the AI: the ones for looking at a project. Tools that change things stay off.`}{" "}

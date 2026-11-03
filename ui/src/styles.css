@@ -820,6 +820,9 @@ h1, h2, h3, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .setting-switch, .setting-switch::after { transition: none; } }
 .settings-rows > .error-line { padding: 0 16px 12px; }
 .mcp-command { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.mcp-url { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mcp-url-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.mcp-url-copy { flex: none; font-size: inherit; }
 .mcp-status { margin-left: 6px; font: var(--text-small); font-weight: 500; color: var(--muted-fg); }
 .mcp-status.ready { color: var(--p-text); }
 .mcp-status.failed { color: var(--danger); }

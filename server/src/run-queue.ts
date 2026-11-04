@@ -397,7 +397,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       // Everything they cause goes to that app alone; nobody else in the chat sees a card.
       if (projectId) {
         if (mcpRelay.hasPanels(authorId)) {
-          panelling = panelTools((req, opts) => mcpRelay.panel(authorId, req, opts), { projectId, signal: controller.signal, connected: connected?.state ?? { servers: [] }, stats: panelStats }) as ToolSet;
+          panelling = panelTools((req, opts) => mcpRelay.panel(authorId, req, opts), { projectId, chatId, signal: controller.signal, connected: connected?.state ?? { servers: [] }, stats: panelStats }) as ToolSet;
           // What the project is linked to (public ids and names only), so a Vercel or Supabase panel gets the right arguments.
           const [vercel, supabase] = await Promise.all([vercelLinkStore.get(projectId).catch(() => null), supabaseLinkStore.get(projectId).catch(() => null)]);
           panelLinks = { vercel: vercel ? { projectId: vercel.projectId, teamId: vercel.teamId, teamSlug: vercel.teamSlug, name: vercel.name } : null, supabase: supabase ? { ref: supabase.ref, name: supabase.name } : null };

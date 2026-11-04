@@ -145,6 +145,19 @@ describe("the person's click", () => {
   });
 });
 
+describe("which chat a proposal belongs to", () => {
+  const CHAT = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  test("the chat the person asked in is kept on the proposal, for new, update and delete", async () => {
+    const { store, drafts } = setup();
+    const n = await drafts.propose(U, P, undefined, draft(), CHAT);
+    assert.equal(n.chatId, CHAT);
+    const m = await store.create(U, P, draft({ name: "Other" }));
+    assert.equal((await drafts.propose(U, P, m.id, draft({ name: "Other", view: 'root = Stack([Text("v2")])' }), CHAT)).chatId, CHAT);
+    assert.equal((await drafts.proposeDelete(U, P, m.id, CHAT)).chatId, CHAT);
+    assert.equal((await drafts.propose(U, P, undefined, draft({ name: "No chat" }))).chatId, undefined);
+  });
+});
+
 describe("a proposal that stands in for one of Nido's tabs", () => {
   test("keeps that through the card and the click, and an update shows what the panel was", async () => {
     const { store, drafts } = setup();

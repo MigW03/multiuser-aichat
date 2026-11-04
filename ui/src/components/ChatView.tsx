@@ -17,6 +17,8 @@ import { EmptyChat } from "./EmptyStates.tsx";
 import { RightPanelToggle } from "./FolderUi.tsx";
 import { MessageList, OPTIMISTIC_SEQ } from "./Messages.tsx";
 import { noteTitleFrom } from "./NotesUi.tsx";
+import { PanelDraftCards } from "./PanelDraftCards.tsx";
+import { usePanelDrafts } from "../lib/panels.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, IconButton, ICON, ICON_SM, Menu, STROKE, useToast } from "./kit.tsx";
 import { useChatRoom } from "./useChatRoom.ts";
@@ -176,6 +178,10 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
     setReply({ message: m, who: m.role === "assistant" ? modelName(m.model) : (names.get(m.author_id ?? "") ?? "Someone"), ...(quote ? { quote } : {}) });
   }
 
+  // What the AI proposed for this person's custom panels in this chat (desktop app only): cards under the last message.
+  const allDrafts = usePanelDrafts(project?.id ?? null);
+  const panelDrafts = allDrafts.filter((d) => !d.chatId || d.chatId === chat.id);
+
   // A click in a note's generated UI drafts a message here, in the chat that is open.
   useEffect(() => setDraftTarget((text) => setDraft((d) => ({ text, key: (d?.key ?? 0) + 1 }))), []);
   // The design panel's "Build in code" and "Update code" are messages sent here (they carry their own marker).
@@ -275,6 +281,8 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         onUpdateKey={() => openSettings("key")}
         onDraft={draftReply}
         emptyState={room.loaded ? <EmptyChat shared={shared} hasKey={hasKey} onAddKey={openAddKey} /> : null}
+        tail={panelDrafts.length ? <div className="panel-draft-tail"><PanelDraftCards drafts={panelDrafts} /></div> : null}
+        tailKey={panelDrafts.map((d) => d.id).join(",")}
       />
 
       <Composer

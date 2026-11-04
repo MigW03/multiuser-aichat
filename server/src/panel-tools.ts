@@ -91,7 +91,7 @@ const fn = z.object({
 /** What happened with the drafts of one answer, so the answer can be corrected if the AI only wrote a draft out as text. */
 export type PanelStats = { sent: number; lastError: string | null };
 
-export function panelTools(ask: Ask, ctx: { projectId: string; signal: AbortSignal; connected: McpState; stats?: PanelStats }) {
+export function panelTools(ask: Ask, ctx: { projectId: string; /** The chat this answer is in: the card for the person shows there. */ chatId?: string; signal: AbortSignal; connected: McpState; stats?: PanelStats }) {
   const stats = ctx.stats ?? { sent: 0, lastError: null };
   const refuse = (message: string) => {
     stats.lastError = message.replace(/^Error: /, "").slice(0, 300);
@@ -132,7 +132,7 @@ export function panelTools(ask: Ask, ctx: { projectId: string; signal: AbortSign
           const bad = [viewProblem(draft.view), checkSources(draft, ctx.connected)].filter(Boolean).join(" ");
           if (bad) return refuse(bad);
           drafts++;
-          const r = answer(await ask({ panelOp: "draft", projectId: ctx.projectId, ...(panel_id ? { panelId: panel_id } : {}), draft }, options()));
+          const r = answer(await ask({ panelOp: "draft", projectId: ctx.projectId, ...(ctx.chatId ? { chatId: ctx.chatId } : {}), ...(panel_id ? { panelId: panel_id } : {}), draft }, options()));
           if (!r) return refuse("The app did not answer.");
           if (!r.ok) return refuse(typeof r.error === "string" ? r.error.slice(0, 300) : "The app refused the draft.");
           stats.sent++;
@@ -149,7 +149,7 @@ export function panelTools(ask: Ask, ctx: { projectId: string; signal: AbortSign
       inputSchema: z.object({ panel_id: z.string().describe("The panel's id from panel_list.") }),
       execute: async ({ panel_id }) => {
         try {
-          const r = answer(await ask({ panelOp: "delete_request", projectId: ctx.projectId, panelId: panel_id }, options()));
+          const r = answer(await ask({ panelOp: "delete_request", projectId: ctx.projectId, ...(ctx.chatId ? { chatId: ctx.chatId } : {}), panelId: panel_id }, options()));
           if (!r?.ok) return `Error: ${typeof r?.error === "string" ? r.error.slice(0, 300) : "the app did not answer."}`;
           return "A card with a Delete button is on the person's screen. The panel is not deleted until they press it. Tell them that in one sentence.";
         } catch (e) {

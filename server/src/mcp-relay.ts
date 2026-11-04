@@ -24,8 +24,8 @@ export type McpRequest = { server: string; tool: string; args: Record<string, un
 /** What the AI may ask the person's own desktop app about their custom panels (never anyone else's). The app answers in JSON text. */
 export type PanelRequest =
   | { panelOp: "list"; projectId: string }
-  | { panelOp: "draft"; projectId: string; panelId?: string; draft: PanelDraft }
-  | { panelOp: "delete_request"; projectId: string; panelId: string };
+  | { panelOp: "draft"; projectId: string; chatId?: string; panelId?: string; draft: PanelDraft }
+  | { panelOp: "delete_request"; projectId: string; chatId?: string; panelId: string };
 
 export type McpCallOptions = {
   /** How long to wait for the tool. */

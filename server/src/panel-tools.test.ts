@@ -50,6 +50,16 @@ describe("panel_draft", () => {
       assert.equal(a2.length, 0);
     }
   });
+  test("the chat the person asked in goes along, so the card shows in that chat", async () => {
+    const asked: PanelRequest[] = [];
+    const tools = panelTools(async (req) => (asked.push(req), reply({ ok: true, draftId: "d1" })), { projectId: P, chatId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", signal: new AbortController().signal, connected });
+    await run(tools.panel_draft, good());
+    await run(tools.panel_request_delete, { panel_id: "11111111-1111-4111-8111-111111111111" });
+    assert.deepEqual(asked.map((r) => (r as { chatId?: string }).chatId), ["cccccccc-cccc-4ccc-8ccc-cccccccccccc", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"]);
+    const { asked: none, tools: t2 } = setup();
+    await run(t2.panel_draft, good());
+    assert.equal("chatId" in none[0]!, false);
+  });
   test("an update names the panel and says Update", async () => {
     const { asked, tools } = setup();
     const out = await run(tools.panel_draft, good({ panel_id: "11111111-1111-4111-8111-111111111111" }));

@@ -3,7 +3,9 @@ import { describe, test } from "node:test";
 import type { McpCallResult, McpState } from "@mc/shared";
 import { RelayError } from "./folder-relay.ts";
 import type { PanelRequest } from "./mcp-relay.ts";
-import { panelInstructions, panelsOffInstructions, panelTools } from "./panel-tools.ts";
+import { streamText, stepCountIs } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
+import { panelInstructions, panelsOffInstructions, panelTools, withoutPastedDraft, type PanelStats } from "./panel-tools.ts";
 
 const run = async (t: unknown, input: unknown) => (t as { execute: (i: unknown, o: unknown) => Promise<string> }).execute(input, { toolCallId: "t", messages: [] });
 const P = "33333333-3333-4333-8333-333333333333";
@@ -111,7 +113,7 @@ describe("panel_draft", () => {
     const junk = setup(() => ({ text: "not json", isError: false, truncated: false }));
     assert.match(await run(junk.tools.panel_draft, good()), /did not answer/);
     const long = setup(() => reply({ ok: false, error: "x".repeat(2000) }));
-    assert.ok((await run(long.tools.panel_draft, good())).length < 400);
+    assert.ok((await run(long.tools.panel_draft, good())).length < 520);
   });
 });
 
@@ -155,5 +157,104 @@ describe("instructions", () => {
     const text = panelsOffInstructions("Ana");
     assert.match(text, /only in the Nido desktop app/);
     assert.match(text, /no panel tools/);
+  });
+});
+
+describe("what the AI is told when a draft fails, and what the answer says", () => {
+  test("names that differ only in capitals are corrected to the connected server and tool, not refused", async () => {
+    const { asked, tools } = setup();
+    const out = await run(tools.panel_draft, good({ sources: [{ id: "prs", label: "Open PRs", server: "GitHub", tool: "LIST_PULL_REQUESTS", purpose: "List pull requests" }] }));
+    assert.match(out, /on the person's screen/);
+    const src = (asked[0] as { draft: { sources: { server: string; tool: string }[] } }).draft.sources[0]!;
+    assert.deepEqual([src.server, src.tool], ["github", "list_pull_requests"]);
+  });
+  test("every problem comes back at once, with what to do about it", async () => {
+    const { tools } = setup();
+    const out = await run(tools.panel_draft, good({ view: "root = Stack([missing])", sources: [{ id: "a", label: "L", server: "jira", tool: "list_issues", purpose: "P" }] }));
+    assert.match(out, /never defines: missing/);
+    assert.match(out, /"jira", which is not connected/);
+    assert.match(out, /call panel_draft again/);
+    assert.match(out, /Do not give the person the draft as text/);
+  });
+  test("a draft written out as JSON for the person to paste is replaced by what happened; a sent draft or other JSON is left alone", () => {
+    const pasted = 'Below is a draft you can paste:\n```json\n{"name":"Vercel Analytics","icon":"chart","view":"root = Stack([])"}\n```\nClick Add.';
+    const none: PanelStats = { sent: 0, lastError: null };
+    const replaced = withoutPastedDraft(pasted, none);
+    assert.match(replaced, /could not put that panel on your screen/);
+    assert.match(replaced, /nothing to paste/);
+    assert.ok(!replaced.includes("Vercel Analytics"), "the pasted JSON is gone");
+    assert.match(withoutPastedDraft(pasted, { sent: 0, lastError: "The wireframe has no root." }), /The problem: The wireframe has no root\./);
+    assert.equal(withoutPastedDraft(pasted, { sent: 1, lastError: null }), pasted);
+    const other = 'Config:\n```json\n{"name":"x","retries":3}\n```';
+    assert.equal(withoutPastedDraft(other, none), other);
+    assert.equal(withoutPastedDraft("No JSON here.", none), "No JSON here.");
+    assert.equal(withoutPastedDraft("```json\nnot json\n```", none), "```json\nnot json\n```");
+  });
+  test("the instructions say to call the tool, give the linked project's ids, and show no variables or data functions", () => {
+    const text = panelInstructions("Ana", { vercel: { projectId: "prj_abcdefghij12", teamId: "team_abcdefghij12", teamSlug: "ana-team", name: "my-app" }, supabase: { ref: "abcdefghijklmnopqrst", name: "db" } });
+    assert.match(text, /you CALL the panel_draft tool/);
+    assert.match(text, /Never write a draft out as JSON or text/);
+    assert.match(text, /projectId prj_abcdefghij12, teamId team_abcdefghij12/);
+    assert.match(text, /Supabase project "db" \(ref abcdefghijklmnopqrst\)/);
+    assert.match(text, /A source id is NOT a variable/);
+    assert.ok(!/Built-in Functions|\$varName/.test(text), "no data functions or variables for panels");
+    assert.ok(!panelInstructions("Ana").includes("linked to the Vercel project"));
+  });
+});
+
+describe("through the AI SDK's own tool loop, with a scripted model", () => {
+  const usage = { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } };
+  const call = (input: unknown, id: string) => ({ type: "tool-call" as const, toolCallId: id, toolName: "panel_draft", input: JSON.stringify(input) });
+  const scripted = (...turns: ({ type: string } & Record<string, unknown>)[][]) => {
+    let i = 0;
+    const seen: unknown[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: async (options: unknown) => {
+        seen.push(options);
+        const parts = turns[Math.min(i++, turns.length - 1)]!;
+        const last = i >= turns.length;
+        return { stream: new ReadableStream({ start(c) { for (const p of parts) c.enqueue(p); c.enqueue({ type: "finish", finishReason: { unified: last ? "stop" : "tool-calls", raw: undefined }, usage }); c.close(); } }) } as never;
+      },
+    });
+    return { model, seen };
+  };
+  async function runIt(model: MockLanguageModelV4, stats: PanelStats, answerer: Parameters<typeof panelTools>[0]) {
+    const result = streamText({ model, prompt: "make me a Vercel panel", tools: panelTools(answerer, { projectId: P, signal: new AbortController().signal, connected, stats }), stopWhen: stepCountIs(6) });
+    let text = "";
+    for await (const part of result.fullStream) if (part.type === "text-delta") text += part.text;
+    return text;
+  }
+
+  test("a model that calls panel_draft gets a draft to the person's app and is told to stop", async () => {
+    const asked: PanelRequest[] = [];
+    const stats: PanelStats = { sent: 0, lastError: null };
+    const { model } = scripted([call(good(), "c1")], [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "The draft is on your screen." }, { type: "text-end", id: "t" }]);
+    const text = await runIt(model, stats, async (req) => (asked.push(req), reply({ ok: true, draftId: "d1" })));
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0]!.panelOp, "draft");
+    assert.equal(stats.sent, 1);
+    assert.equal(withoutPastedDraft(text, stats), text);
+  });
+
+  test("a draft with a problem comes back as a tool result, the model fixes it and calls again", async () => {
+    const asked: PanelRequest[] = [];
+    const stats: PanelStats = { sent: 0, lastError: null };
+    const bad = good({ view: "root = Stack([missing])" });
+    const { model, seen } = scripted([call(bad, "c1")], [call(good(), "c2")], [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Done." }, { type: "text-end", id: "t" }]);
+    await runIt(model, stats, async (req) => (asked.push(req), reply({ ok: true, draftId: "d1" })));
+    assert.equal(asked.length, 1, "only the fixed draft reached the app");
+    assert.equal(stats.sent, 1);
+    const second = JSON.stringify((seen[1] as { prompt: unknown }).prompt);
+    assert.match(second, /never defines: missing/, "the model was told what was wrong");
+    assert.match(second, /call panel_draft again/);
+  });
+
+  test("a model that only writes the draft out ends with nothing sent, and the answer says so instead of asking for a paste", async () => {
+    const stats: PanelStats = { sent: 0, lastError: null };
+    const pasted = 'Paste this:\n```json\n{"name":"Vercel Analytics","icon":"chart","view":"root = Stack([x])"}\n```';
+    const { model } = scripted([{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: pasted }, { type: "text-end", id: "t" }]);
+    const text = await runIt(model, stats, async () => reply({ ok: true }));
+    assert.equal(stats.sent, 0);
+    assert.match(withoutPastedDraft(text, stats), /nothing to paste/);
   });
 });

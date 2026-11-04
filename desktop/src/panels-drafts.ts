@@ -56,8 +56,8 @@ export class PanelDrafts {
       return this.put({ id: randomUUID(), userId, projectId, kind: "new", createdAt: this.now(), ...draft });
     }
     const current = await this.store.get(userId, projectId, panelId);
-    const { name, icon, sources, functions } = current.meta;
-    return this.put({ id: randomUUID(), userId, projectId, kind: "update", panelId: current.meta.id, createdAt: this.now(), ...draft, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev } });
+    const { name, icon, sources, functions, replaces } = current.meta;
+    return this.put({ id: randomUUID(), userId, projectId, kind: "update", panelId: current.meta.id, createdAt: this.now(), ...draft, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev, ...(replaces ? { replaces } : {}) } });
   }
 
   /** The AI asked to delete a panel: a card with a button the person presses. It deletes nothing. */
@@ -83,7 +83,7 @@ export class PanelDrafts {
   async commit(userId: string, projectId: string, id: string): Promise<{ kind: "new" | "update"; meta: PanelMeta }> {
     const p = this.find(userId, projectId, id);
     if (p.kind === "delete") throw new PanelError("bad_request", "That one is a delete request: press Delete.");
-    const draft: PanelDraft = { name: p.name, icon: p.icon, view: p.view, sources: p.sources, functions: p.functions };
+    const draft: PanelDraft = { name: p.name, icon: p.icon, view: p.view, sources: p.sources, functions: p.functions, ...(p.replaces ? { replaces: p.replaces } : {}) };
     let meta: PanelMeta;
     if (p.kind === "new") meta = await this.store.create(userId, projectId, draft);
     else {

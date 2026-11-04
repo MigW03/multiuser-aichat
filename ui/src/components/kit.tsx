@@ -329,6 +329,38 @@ function clipBox(el: HTMLElement) {
   return box;
 }
 
+/**
+ * Keeps a floating menu inside the screen (or, for a menu drawn inside a clipping ancestor, inside that ancestor): shifts it
+ * sideways when it would run past an edge and caps its height, with a scrollbar, when it is taller than the room. Re-fitted
+ * when the window changes size. `viewport`: a menu drawn in <body>, which only the window can cut off.
+ */
+function useKeepOnScreen(ref: { current: HTMLElement | null }, active: boolean, viewport: boolean, placement: "below" | "above") {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !active) return;
+    const fit = () => {
+      el.style.translate = el.style.maxHeight = el.style.overflowY = "";
+      const box = viewport ? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight } : clipBox(el);
+      const m = POPOVER_MARGIN;
+      // Height first: a scrollbar makes the menu wider, so the sideways fit is measured after it.
+      const before = el.getBoundingClientRect();
+      const room = placement === "above" ? before.bottom - box.top - m : box.bottom - m - before.top;
+      if (before.height > room) {
+        el.style.maxHeight = `${Math.max(room, 120)}px`;
+        el.style.overflowY = "auto";
+      }
+      const r = el.getBoundingClientRect();
+      let dx = 0;
+      if (r.right > box.right - m) dx = box.right - m - r.right;
+      if (r.left + dx < box.left + m) dx = box.left + m - r.left;
+      if (dx) el.style.translate = `${dx}px 0`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  });
+}
+
 /** A panel that opens above its button, right edges aligned. It narrows, shifts sideways and shortens so none of it is cut off. */
 export function Popover({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -373,6 +405,7 @@ function SubmenuItem({ label, icon, badge, menuId, closeMenu, children }: { labe
   const flyout = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   const viaKey = useRef(false);
+  useKeepOnScreen(flyout, open && !narrow && !!at, true, "below");
   const clear = () => window.clearTimeout(timer.current);
   const later = (value: boolean, ms: number) => {
     clear();
@@ -480,8 +513,10 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const [at, setAt] = useState<CSSProperties | null>(null);
+  useKeepOnScreen(boxRef, open && (!portal || !!at), portal, placement);
 
   useLayoutEffect(() => {
     if (!open || !portal) return setAt(null);
@@ -525,14 +560,14 @@ export function Menu({
     const props = { role: "menu", "aria-label": label };
     if (!portal) {
       return (
-        <div className={`menu ${align} ${placement}`} {...props} style={width ? { minWidth: width } : undefined}>
+        <div ref={boxRef} className={`menu ${align} ${placement}`} {...props} style={width ? { minWidth: width } : undefined}>
           {children}
         </div>
       );
     }
     return at
       ? createPortal(
-          <div className="menu portal" data-menu-of={id} {...props} style={{ ...at, ...(width ? { minWidth: width } : null) }}>
+          <div ref={boxRef} className="menu portal" data-menu-of={id} {...props} style={{ ...at, ...(width ? { minWidth: width } : null) }}>
             {children}
           </div>,
           document.body,

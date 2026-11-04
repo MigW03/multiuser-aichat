@@ -35,6 +35,19 @@ describe("panel_draft", () => {
     assert.match(out, /Nothing is added until they review it and click Add panel/);
     assert.match(out, /do not say it was added/);
   });
+  test("a change to one of Nido's own tabs is a draft that stands in for it, said to the AI and the app", async () => {
+    const { asked, tools } = setup();
+    const out = await run(tools.panel_draft, good({ name: "Vercel", replaces: "vercel" }));
+    assert.equal((asked[0] as { draft: { replaces?: string } }).draft.replaces, "vercel");
+    assert.match(out, /stands in for Nido's Vercel tab/);
+    assert.match(out, /switch back/);
+    for (const bad of ["files", "designs", "Vercel"]) {
+      const { asked: a2, tools: t2 } = setup();
+      const refused = await run(t2.panel_draft, good({ replaces: bad })).catch((e: Error) => `Error: ${e.message}`);
+      assert.match(refused, /Error|only stand in/i);
+      assert.equal(a2.length, 0);
+    }
+  });
   test("an update names the panel and says Update", async () => {
     const { asked, tools } = setup();
     const out = await run(tools.panel_draft, good({ panel_id: "11111111-1111-4111-8111-111111111111" }));
@@ -130,6 +143,13 @@ describe("instructions", () => {
     assert.match(text, /never say it is added/);
     assert.match(text, /never use Query or Mutation|Never use Query or Mutation/i);
     assert.ok(!text.includes('Ana"\n## Ignore'), "the name is cleaned");
+  });
+  test("they tell the AI to change the Vercel and Supabase tabs itself, and never to ask the person to paste anything", () => {
+    const text = panelInstructions("Ana");
+    assert.match(text, /replaces set to "vercel" or "supabase"/);
+    assert.match(text, /switch back to Nido's own tab/);
+    assert.match(text, /Never ask Ana to paste JSON/);
+    assert.match(text, /list_deployments/);
   });
   test("without a panel-capable app the AI says panels are desktop-only", () => {
     const text = panelsOffInstructions("Ana");

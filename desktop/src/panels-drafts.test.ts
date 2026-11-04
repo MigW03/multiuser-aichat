@@ -144,3 +144,23 @@ describe("the person's click", () => {
     assert.equal(drafts.list(U, P).length, 1, "it stays, so the person can delete one and try again");
   });
 });
+
+describe("a proposal that stands in for one of Nido's tabs", () => {
+  test("keeps that through the card and the click, and an update shows what the panel was", async () => {
+    const { store, drafts } = setup();
+    const d = await drafts.propose(U, P, undefined, draft({ name: "Vercel", replaces: "vercel" }));
+    assert.equal(d.replaces, "vercel");
+    const r = await drafts.commit(U, P, d.id);
+    assert.equal(r.meta.replaces, "vercel");
+    const u = await drafts.propose(U, P, r.meta.id, draft({ name: "Vercel", view: 'root = Stack([Text("v2")])', replaces: "vercel" }));
+    assert.equal(u.before!.replaces, "vercel");
+    assert.equal((await drafts.commit(U, P, u.id)).meta.replaces, "vercel");
+    assert.equal((await store.get(U, P, r.meta.id)).meta.rev, 2);
+  });
+  test("a second panel for the same tab is refused when the person clicks, with the reason", async () => {
+    const { store, drafts } = setup();
+    await store.create(U, P, draft({ name: "Vercel", replaces: "vercel" }));
+    const d = await drafts.propose(U, P, undefined, draft({ name: "Vercel again", replaces: "vercel" }));
+    await refused(drafts.commit(U, P, d.id), "bad_request");
+  });
+});

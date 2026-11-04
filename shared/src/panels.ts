@@ -51,6 +51,11 @@ export const PANEL_FUNCTION_KINDS = ["checklist", "notes", "input", "draft", "re
 export type PanelFunctionKind = (typeof PANEL_FUNCTION_KINDS)[number];
 export type PanelFunction = { id: string; label: string; kind: PanelFunctionKind; description: string };
 
+/** The tabs Nido ships that a custom panel may stand in for: the AI edits them by making a panel that replaces them, which the person can switch back. */
+export const PANEL_REPLACES = ["vercel", "supabase"] as const;
+export type PanelReplaces = (typeof PANEL_REPLACES)[number];
+export const PANEL_REPLACES_LABEL: Record<PanelReplaces, string> = { vercel: "Vercel", supabase: "Supabase" };
+
 export type PanelMeta = {
   id: string;
   name: string;
@@ -61,6 +66,8 @@ export type PanelMeta = {
   updatedAt: number;
   sources: PanelSource[];
   functions: PanelFunction[];
+  /** This panel stands in for one of Nido's own tabs: that tab is hidden while the panel exists. */
+  replaces?: PanelReplaces;
 };
 
 /** What the AI (through a draft the person approves) hands over: everything except the bookkeeping. */
@@ -71,6 +78,7 @@ export type PanelDraft = {
   view: string;
   sources: PanelSource[];
   functions: PanelFunction[];
+  replaces?: PanelReplaces;
 };
 
 export type PanelListItem = PanelMeta | { id: string; broken: true };
@@ -144,7 +152,7 @@ export const viewIsAllowed = (view: string): boolean => !/\b(Query|Mutation)\s*\
 
 // ------------------------------------------------------------------ what the AI proposed, waiting for the person
 
-export type PanelShape = { name: string; icon: PanelIcon; view: string; sources: PanelSource[]; functions: PanelFunction[] };
+export type PanelShape = { name: string; icon: PanelIcon; view: string; sources: PanelSource[]; functions: PanelFunction[]; replaces?: PanelReplaces };
 export type DraftKind = "new" | "update" | "delete";
 /** What the page sees of a proposal, to draw its card and the review. The app keeps the proposal itself; a click names only its id. */
 export type DraftView = PanelShape & {

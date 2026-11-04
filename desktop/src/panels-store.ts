@@ -1,4 +1,4 @@
-import { checkDraft, checkState, functions, icon, PANEL_LIMITS as L, PanelError, sources, uuid, UUID, validName, fail, type PanelFull, type PanelListItem, type PanelMeta } from "@mc/shared";
+import { checkDraft, checkState, functions, icon, PANEL_LIMITS as L, PANEL_REPLACES_LABEL, PanelError, replaces, sources, uuid, UUID, validName, fail, type PanelFull, type PanelListItem, type PanelMeta, type PanelReplaces } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ const FORMAT = 1;
 
 // ------------------------------------------------------------------ files
 
-type Stored = { format: number; id: string; name: string; icon: string; rev: number; createdAt: number; updatedAt: number; sources: unknown; functions: unknown };
+type Stored = { format: number; id: string; name: string; icon: string; rev: number; createdAt: number; updatedAt: number; sources: unknown; functions: unknown; replaces?: unknown };
 
 /** A real, plain file or folder: never a link. */
 async function plain(path: string, dir: boolean): Promise<boolean> {
@@ -60,7 +60,8 @@ function parseMeta(raw: string | null, id: string): PanelMeta | null {
     if (m.format !== FORMAT || m.id !== id) return null;
     const rev = Number(m.rev);
     if (typeof m.rev !== "number" || !Number.isInteger(rev) || rev < 1) return null;
-    return { id, name: validName(m.name), icon: icon(m.icon), rev, createdAt: Number(m.createdAt) || 0, updatedAt: Number(m.updatedAt) || 0, sources: sources(m.sources), functions: functions(m.functions) };
+    const rep = replaces(m.replaces);
+    return { id, name: validName(m.name), icon: icon(m.icon), rev, createdAt: Number(m.createdAt) || 0, updatedAt: Number(m.updatedAt) || 0, sources: sources(m.sources), functions: functions(m.functions), ...(rep ? { replaces: rep } : {}) };
   } catch {
     return null;
   }
@@ -167,9 +168,10 @@ export class PanelStore {
       const existing = await this.list(userId, projectId);
       if (existing.length >= L.perProject) fail("too_many", `A project can have ${L.perProject} custom panels. Delete one first.`);
       this.assertFreeName(existing, draft.name, null);
+      this.assertFreeReplaces(existing, draft.replaces, null);
       const id = randomUUID();
       const now = Date.now();
-      const meta: PanelMeta = { id, name: draft.name, icon: draft.icon, rev: 1, createdAt: now, updatedAt: now, sources: draft.sources, functions: draft.functions };
+      const meta: PanelMeta = { id, name: draft.name, icon: draft.icon, rev: 1, createdAt: now, updatedAt: now, sources: draft.sources, functions: draft.functions, ...(draft.replaces ? { replaces: draft.replaces } : {}) };
       const dir = join(project, id);
       await mkdir(dir, { recursive: true, mode: 0o700 });
       try {
@@ -191,9 +193,11 @@ export class PanelStore {
     const dir = this.panelDir(userId, projectId, panelId);
     return this.locked(dir, async () => {
       const current = await this.get(userId, projectId, panelId);
-      this.assertFreeName(await this.list(userId, projectId), draft.name, current.meta.id);
+      const all = await this.list(userId, projectId);
+      this.assertFreeName(all, draft.name, current.meta.id);
+      this.assertFreeReplaces(all, draft.replaces, current.meta.id);
       await this.keepPrev(dir);
-      const meta: PanelMeta = { id: current.meta.id, name: draft.name, icon: draft.icon, rev: current.meta.rev + 1, createdAt: current.meta.createdAt, updatedAt: Date.now(), sources: draft.sources, functions: draft.functions };
+      const meta: PanelMeta = { id: current.meta.id, name: draft.name, icon: draft.icon, rev: current.meta.rev + 1, createdAt: current.meta.createdAt, updatedAt: Date.now(), sources: draft.sources, functions: draft.functions, ...(draft.replaces ? { replaces: draft.replaces } : {}) };
       await writeAtomic(join(dir, "view.openui"), draft.view);
       await writeAtomic(join(dir, "panel.json"), metaText(meta));
       return meta;
@@ -291,6 +295,11 @@ export class PanelStore {
       await rm(dir, { recursive: true, force: true });
       await this.locked(project, async () => this.saveOrder(project, (await this.order(project)).filter((x) => x !== id)));
     });
+  }
+
+  /** One panel at a time stands in for each of Nido's own tabs. */
+  private assertFreeReplaces(all: PanelListItem[], rep: PanelReplaces | undefined, selfId: string | null): void {
+    if (rep && all.some((p) => !("broken" in p) && p.id !== selfId && p.replaces === rep)) fail("bad_request", `Another panel already stands in for Nido's ${PANEL_REPLACES_LABEL[rep]} tab. Update that one instead.`);
   }
 
   private assertFreeName(all: PanelListItem[], name: string, selfId: string | null): void {

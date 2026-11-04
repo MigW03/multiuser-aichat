@@ -1,4 +1,4 @@
-import type { DraftView, PanelShape } from "@mc/shared";
+import { PANEL_REPLACES_LABEL, type DraftView, type PanelShape } from "@mc/shared";
 import { Renderer } from "@openuidev/react-lang";
 import { LayoutPanelTop } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -18,6 +18,17 @@ import { Markdown } from "./Markdown.tsx";
 
 const markdownText = (text: string) => <Markdown text={text} />;
 const noAct: PanelData["act"] = { fix: () => undefined, askToFix: () => undefined };
+
+/** A proposal that stands in for one of Nido's own tabs says so, and that the person can switch back. */
+function Replaces({ shape }: { shape: PanelShape }) {
+  if (!shape.replaces) return null;
+  const name = PANEL_REPLACES_LABEL[shape.replaces];
+  return (
+    <p className="small panel-replaces">
+      <mark>Replaces Nido's {name} tab.</mark> You can switch back to Nido's own {name} tab any time, from this panel's menu.
+    </p>
+  );
+}
 
 /** The wireframe of a proposal: the real pieces, with a placeholder where data would be, and nothing clickable. */
 function Wireframe({ shape }: { shape: PanelShape }) {
@@ -130,6 +141,7 @@ function Review({ draft, onAdd, onClose, busy }: { draft: DraftView; onAdd: () =
           ))}
         </ul>
       )}
+      <Replaces shape={draft} />
       {tab === "wireframe" ? <Wireframe shape={draft} /> : <Details shape={draft} />}
     </Dialog>
   );
@@ -229,6 +241,7 @@ function Card({ draft }: { draft: DraftView }) {
         </div>
       ) : (
         <>
+          <Replaces shape={draft} />
           {update ? <Outlines before={draft.before!} now={draft} /> : <Wireframe shape={draft} />}
           {update && newInUpdate(draft.before!, draft).map((t) => <mark key={t}>{t}</mark>)}
           <div className="gen-buttons">

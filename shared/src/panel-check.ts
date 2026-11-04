@@ -1,4 +1,4 @@
-import { PANEL_FUNCTION_KINDS, PANEL_ICONS, PANEL_LIMITS as L, isReadTool, viewIsAllowed, type PanelDraft, type PanelErrorCode, type PanelFunction, type PanelMeta, type PanelSource } from "./panels.ts";
+import { PANEL_FUNCTION_KINDS, PANEL_ICONS, PANEL_LIMITS as L, PANEL_REPLACES, isReadTool, viewIsAllowed, type PanelDraft, type PanelErrorCode, type PanelFunction, type PanelMeta, type PanelReplaces, type PanelSource } from "./panels.ts";
 
 // The checks every custom panel passes, in the AI's tool on the chat server and again in the desktop app before anything is
 // kept: one copy, so what one side accepts the other accepts too. Nothing is repaired: anything odd is refused with a plain
@@ -104,10 +104,18 @@ function view(value: unknown): string {
   return value;
 }
 
+/** Which of Nido's own tabs a panel stands in for: one of the listed, or none. */
+export function replaces(value: unknown): PanelReplaces | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !(PANEL_REPLACES as readonly string[]).includes(value)) return fail("bad_request", `A panel can only stand in for one of Nido's tabs: ${PANEL_REPLACES.join(", ")}.`);
+  return value as PanelReplaces;
+}
+
 /** A draft as the app accepts it: every field checked, nothing extra kept. */
 export function checkDraft(raw: unknown): PanelDraft {
   const d = (raw ?? {}) as Record<string, unknown>;
-  return { name: validName(d.name), icon: icon(d.icon), view: view(d.view), sources: sources(d.sources), functions: functions(d.functions) };
+  const rep = replaces(d.replaces);
+  return { name: validName(d.name), icon: icon(d.icon), view: view(d.view), sources: sources(d.sources), functions: functions(d.functions), ...(rep ? { replaces: rep } : {}) };
 }
 
 /** What a panel saves for itself: an object of named values, plain data only, of limited size, depth and number of keys. */

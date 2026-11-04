@@ -1,4 +1,4 @@
-import { PANEL_ICONS, PANEL_LIMITS, type PanelFull, type PanelIcon, type ProjectSummary } from "@mc/shared";
+import { PANEL_ICONS, PANEL_LIMITS, PANEL_REPLACES_LABEL, type PanelFull, type PanelIcon, type ProjectSummary } from "@mc/shared";
 import { Ellipsis, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { draftInOpenChat } from "../lib/drafts.ts";
@@ -93,6 +93,7 @@ export function PanelTab({ project, panelId, count, index, onGone }: { project: 
     { label: "Undo last change", disabled: !full.hasPrev, onSelect: () => void run(bridge.undo(project.id, panelId), () => toast.push("Went back one version", "info")) },
     { label: "Clear saved data…", onSelect: () => void run(bridge.clearState(project.id, panelId), (done) => done && setToken((n) => n + 1)) },
     "divider",
+    ...(meta.replaces ? [{ label: `Switch back to Nido's ${PANEL_REPLACES_LABEL[meta.replaces]} tab…`, onSelect: remove }] : []),
     { label: "Delete panel…", danger: true, onSelect: remove },
   ];
 
@@ -100,7 +101,7 @@ export function PanelTab({ project, panelId, count, index, onGone }: { project: 
     <div className="side-card-body panel-tab">
       <div className="panel-tab-head">
         <strong className="grow panel-tab-name">{meta.name}</strong>
-        <span className="chip" title="Stored only on this computer">On this computer</span>
+        <span className="chip" title={meta.replaces ? `Stands in for Nido's ${PANEL_REPLACES_LABEL[meta.replaces]} tab. Stored only on this computer.` : "Stored only on this computer"}>{meta.replaces ? `Replaces ${PANEL_REPLACES_LABEL[meta.replaces]}` : "On this computer"}</span>
         <IconButton label="Refresh" className="sm" onClick={() => setToken((n) => n + 1)}>
           <RotateCw size={ICON_SM} strokeWidth={STROKE} />
         </IconButton>

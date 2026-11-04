@@ -1,8 +1,11 @@
 import type { ProjectSummary, ScriptInfo, ScriptRun, ScriptsInfo } from "@mc/shared";
-import { Copy, Play, Square, TriangleAlert } from "lucide-react";
+import { Copy, LifeBuoy, Play, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { api } from "../api.ts";
+import { notifyChanged, useApp } from "../data.tsx";
 import { folderBridge, type ScriptsBridge } from "../lib/folder.ts";
-import { openProjectSettings } from "../lib/router.ts";
+import { navigate, openProjectSettings } from "../lib/router.ts";
+import { troubleshootMessage } from "../lib/troubleshoot.ts";
 import { Button, ErrorLine, ICON_SM, STROKE, useToast } from "./kit.tsx";
 
 // The Scripts tab of the Files card: the package.json scripts of the folders this person shares from this computer, each with
@@ -69,7 +72,7 @@ function statusOf(run: ScriptRun | undefined, now: number): string | null {
       return `Finished · exit 0${took ? ` · ${took}` : ""}`;
     case "crash":
       if (run.note) return run.note;
-      return `Crashed${run.exitCode === null ? "" : ` · exit ${run.exitCode}`}${run.endedAt === null ? "" : ` · ${duration(now - run.endedAt)} ago`}`;
+      return `Crashed${run.exitCode === null ? "" : ` · exit ${run.exitCode}`}`;
   }
 }
 
@@ -79,7 +82,9 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const running = !!info?.runs.some((r) => r.state === "run" || r.state === "crash");
+  const { keys, choice, openAddKey } = useApp();
+  const toast = useToast();
+  const running = !!info?.runs.some((r) => r.state === "run");
   const now = useNow(running);
 
   if (!info) return <div className="side-card-body"><p className="small muted">Reading package.json…</p></div>;
@@ -98,6 +103,36 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
       else await bridge.cancel(project.id, s.key, s.name);
     } catch {
       setError("That didn't work. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Starts a chat in this project with the end of the script's log and sends it, so the AI answers. Without an AI key nothing is
+  // sent anywhere: the person is asked to add one first.
+  const troubleshoot = async (s: ScriptInfo) => {
+    const run = runOf(s);
+    if (!run || run.state !== "crash") return;
+    if (!keys?.length) {
+      toast.push("Add your AI key first, then troubleshoot.", "info");
+      openAddKey();
+      return;
+    }
+    setError(null);
+    setBusy(idOf(s.key, s.name));
+    try {
+      const log = await bridge.log(project.id, s.key, s.name).catch(() => null);
+      const chatId = (await api.createChat(project.id)).id;
+      await api.sendMessage(chatId, {
+        id: crypto.randomUUID(),
+        content: troubleshootMessage(s.name, run.exitCode, run.note, log),
+        ...(choice ? { provider: choice.provider, model: choice.model } : {}),
+        mentions: [],
+      });
+      notifyChanged();
+      navigate({ name: "project", projectId: project.id, chatId });
+    } catch {
+      setError("Couldn't start the chat. Try again.");
     } finally {
       setBusy(null);
     }
@@ -140,6 +175,7 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
                         open={open === id}
                         onToggle={() => setOpen(open === id ? null : id)}
                         onAct={(what) => void act(s, what)}
+                        onTroubleshoot={() => void troubleshoot(s)}
                         bridge={bridge}
                       />
                     );
@@ -153,7 +189,7 @@ export function ScriptsBody({ project, info, version, execOn, bridge }: { projec
   );
 }
 
-function ScriptRow({ project, script, run, now, version, execOn, busy, open, onToggle, onAct, bridge }: { project: ProjectSummary; script: ScriptInfo; run: ScriptRun | undefined; now: number; version: number; execOn: boolean; busy: boolean; open: boolean; onToggle: () => void; onAct: (what: "run" | "stop" | "cancel") => void; bridge: ScriptsBridge }) {
+function ScriptRow({ project, script, run, now, version, execOn, busy, open, onToggle, onAct, onTroubleshoot, bridge }: { project: ProjectSummary; script: ScriptInfo; run: ScriptRun | undefined; now: number; version: number; execOn: boolean; busy: boolean; open: boolean; onToggle: () => void; onAct: (what: "run" | "stop" | "cancel") => void; onTroubleshoot: () => void; bridge: ScriptsBridge }) {
   const state = run?.state;
   const status = statusOf(run, now);
   return (
@@ -175,18 +211,25 @@ function ScriptRow({ project, script, run, now, version, execOn, busy, open, onT
             Cancel
           </Button>
         ) : (
-          <Button size="sm" disabled={!execOn || busy} busy={busy} onClick={() => onAct("run")} aria-label={`Run ${script.name}: ${script.command}`}>
-            <Play size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {state === "crash" ? "Run again" : "Run"}
-          </Button>
+          <>
+            {state === "crash" && (
+              <Button size="sm" disabled={busy} onClick={onTroubleshoot} aria-label={`Troubleshoot ${script.name} with the AI`}>
+                Troubleshoot
+              </Button>
+            )}
+            <Button size="sm" disabled={!execOn || busy} busy={busy} onClick={() => onAct("run")} aria-label={`Run ${script.name}: ${script.command}`}>
+              <Play size={ICON_SM} strokeWidth={STROKE} aria-hidden /> {state === "crash" ? "Run again" : "Run"}
+            </Button>
+          </>
         )}
       </div>
-      {open && <ScriptLog project={project} script={script} run={run} version={version} bridge={bridge} />}
+      {open && <ScriptLog project={project} script={script} run={run} version={version} bridge={bridge} onTroubleshoot={onTroubleshoot} busy={busy} />}
     </li>
   );
 }
 
 /** The log of one script, under its row: live while it runs, kept after it ends until it runs again or is cleared. */
-function ScriptLog({ project, script, run, version, bridge }: { project: ProjectSummary; script: ScriptInfo; run: ScriptRun | undefined; version: number; bridge: ScriptsBridge }) {
+function ScriptLog({ project, script, run, version, bridge, onTroubleshoot, busy }: { project: ProjectSummary; script: ScriptInfo; run: ScriptRun | undefined; version: number; bridge: ScriptsBridge; onTroubleshoot: () => void; busy: boolean }) {
   const toast = useToast();
   const [text, setText] = useState<string | null>(null);
   const [atEnd, setAtEnd] = useState(true);
@@ -238,6 +281,11 @@ function ScriptLog({ project, script, run, version, bridge }: { project: Project
           </button>
         )}
         <span className="grow small muted">{live ? "Live" : ""}</span>
+        {run?.state === "crash" && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onTroubleshoot}>
+            <LifeBuoy size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Troubleshoot
+          </Button>
+        )}
         <Button size="sm" variant="ghost" disabled={!text} onClick={copy}>
           <Copy size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Copy
         </Button>

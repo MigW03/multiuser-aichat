@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { RelayError } from "./folder-relay.ts";
-import { finishSignIn, signOut, startSignIn, STATE_MS, type OAuthDeps } from "./mcp-oauth.ts";
+import { finishSignIn, RowOAuthProvider, signOut, startSignIn, STATE_MS, type OAuthDeps } from "./mcp-oauth.ts";
 import { RemoteMcp, reasonOf } from "./mcp-remote.ts";
 import type { RemoteRow } from "./mcp-remote-store.ts";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startFixture, type Fixture } from "./test-fixtures/http-mcp-server.ts";
 import { BlockedAddress, createGuardedFetch } from "./ssrf.ts";
 
@@ -213,5 +214,44 @@ describe("OAuth", () => {
     await assert.rejects(startSignIn(off.d, off.row), /not set up/);
     await off.mcp.reconnect(off.row);
     assert.equal(off.mcp.view(off.row).error, "OAuth sign-in is not set up on this chat server.");
+  });
+
+  const signedIn = async (ctx: Awaited<ReturnType<typeof setup>>) => {
+    const { state } = await signIn(ctx);
+    const done = await finishSignIn(ctx.d, { state, code: "good-code" });
+    assert.ok(done.ok);
+    return ctx.store.rows.get(ctx.row.id)!;
+  };
+  const tokensOf = (ctx: Awaited<ReturnType<typeof setup>>) => JSON.parse(decrypt(ctx.store.rows.get(ctx.row.id)!.oauth_enc!)).tokens;
+
+  test("a provider that holds an old refresh token does not wipe the newer one another connection stored", async () => {
+    const ctx = await setup("oauth");
+    const row = await signedIn(ctx);
+    const stale = new RowOAuthProvider(ctx.d, { ...row });
+    const other = new RowOAuthProvider(ctx.d, { ...row });
+    await other.saveTokens({ access_token: "access-2", token_type: "Bearer", refresh_token: "refresh-2" }); // the other one refreshed first
+    await stale.invalidateCredentials("tokens"); // ...and the provider rejected the old token this one held
+    assert.equal(tokensOf(ctx).refresh_token, "refresh-2");
+    assert.equal(stale.tokens()?.refresh_token, "refresh-2", "the stale provider takes the newer tokens and tries again");
+    // Rejection of the tokens that ARE stored does sign the person out.
+    await stale.invalidateCredentials("tokens");
+    assert.equal(tokensOf(ctx), undefined);
+  });
+
+  test("a connection never replaces a sign-in it cannot read, nor the pending sign-in of the person", async () => {
+    const ctx = await setup("oauth", { oauth_enc: "enc:" + Buffer.from("not json").toString("base64") });
+    const before = ctx.store.rows.get(ctx.row.id)!.oauth_enc;
+    await ctx.mcp.reconnect(ctx.store.rows.get(ctx.row.id)!); // 401, no usable blob: registers and tries to start a sign-in on its own
+    assert.equal(ctx.mcp.view(ctx.row).status, "needs_sign_in");
+    assert.equal(ctx.store.rows.get(ctx.row.id)!.oauth_enc, before, "another server's blob is left alone");
+    const { state } = await signIn(ctx); // the person's own sign-in does replace it
+    await ctx.mcp.reconnect(ctx.store.rows.get(ctx.row.id)!); // a background connection while the person is at the provider's page
+    assert.equal(ctx.store.rows.get(ctx.row.id)!.oauth_state, state);
+    assert.equal((await finishSignIn(ctx.d, { state, code: "good-code" })).ok, true);
+  });
+
+  test("403 is not a lost sign-in", () => {
+    assert.equal(reasonOf(Object.assign(new StreamableHTTPError(403, "forbidden"), {}), "oauth").status, "failed");
+    assert.equal(reasonOf(new StreamableHTTPError(401, "no"), "oauth").status, "needs_sign_in");
   });
 });

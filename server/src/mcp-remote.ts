@@ -27,11 +27,16 @@ type Entry = {
   client: Client | null;
   lastUsed: number;
   connecting: Promise<void> | null;
+  /** The sign-in this connection uses (OAuth only). */
+  provider?: RowOAuthProvider;
+  /** When a "sign in needed" that left the tokens stored (the refresh failed for a passing reason) may be tried again. */
+  retryAt?: number;
 };
 
 const CONNECT_MS = 15_000;
 const LIST_MS = 15_000;
 const IDLE_MS = 5 * 60_000;
+const RETRY_MS = 60_000;
 const WINDOW_MS = 10 * 60_000;
 const MAX_TOOLS_LISTED = 400;
 
@@ -40,6 +45,7 @@ const ERR = {
   blocked: "That address is blocked (private or internal network).",
   timeout: "The server did not answer in time.",
   rejected: "The server rejected the token. Replace it and try again.",
+  forbidden: "The server refused access to that.",
   signin: "Sign in needed.",
   notMcp: "That is not an MCP server, or it does not speak a version we support.",
   oauthOff: "OAuth sign-in is not set up on this chat server.",
@@ -53,6 +59,8 @@ export function reasonOf(e: unknown, authKind: RemoteRow["auth_kind"]): { status
   }
   if (e instanceof UnauthorizedError) return authKind === "oauth" ? { status: "needs_sign_in", error: ERR.signin } : { status: "failed", error: ERR.rejected };
   const code = e instanceof StreamableHTTPError ? e.code : undefined;
+  // 403 means signed in but not allowed (a team, a project, a missing permission): signing in again does not change it.
+  if (code === 403 && authKind === "oauth") return { status: "failed", error: ERR.forbidden };
   if (code === 401 || code === 403) return authKind === "oauth" ? { status: "needs_sign_in", error: ERR.signin } : { status: "failed", error: ERR.rejected };
   const msg = e instanceof Error ? e.message : "";
   if (/timed out|timeout|aborted/i.test(msg)) return { status: "failed", error: ERR.timeout };
@@ -103,11 +111,12 @@ export class RemoteMcp {
     this.sweeper.unref();
   }
 
-  private makeTransport(kind: "http" | "sse", row: RemoteRow) {
+  private makeTransport(kind: "http" | "sse", row: RemoteRow, entry: Entry) {
     const url = new URL(row.url);
     const headers: Record<string, string> = {};
     if (row.auth_kind === "header" && row.header_name && row.secret_enc) headers[row.header_name] = this.d.decrypt(row.secret_enc);
-    const opts = { requestInit: { headers }, fetch: this.d.fetch as never, ...(row.auth_kind === "oauth" ? { authProvider: new RowOAuthProvider(this.d, row) } : {}) };
+    if (row.auth_kind === "oauth") entry.provider = new RowOAuthProvider(this.d, row);
+    const opts = { requestInit: { headers }, fetch: this.d.fetch as never, ...(entry.provider ? { authProvider: entry.provider } : {}) };
     return kind === "http" ? new StreamableHTTPClientTransport(url, opts) : new SSEClientTransport(url, opts);
   }
 
@@ -116,7 +125,7 @@ export class RemoteMcp {
     const attempt = async (kind: "http" | "sse") => {
       const client = new Client({ name: "multiuser-chat", version: "0.1.0" }, { capabilities: {} });
       try {
-        await client.connect(this.makeTransport(kind, row), { timeout: CONNECT_MS });
+        await client.connect(this.makeTransport(kind, row, entry), { timeout: CONNECT_MS });
         const listed: unknown[] = [];
         let cursor: string | undefined;
         do {
@@ -156,7 +165,13 @@ export class RemoteMcp {
       entry.error = why.error;
       entry.client = null;
       entry.tools = [];
+      this.maybeRetry(entry);
     }
+  }
+
+  /** "Sign in needed" while the tokens are still stored means the refresh failed for a passing reason: try again soon. */
+  private maybeRetry(entry: Entry) {
+    entry.retryAt = entry.status === "needs_sign_in" && entry.provider?.signedIn ? this.now() + RETRY_MS : undefined;
   }
 
   /** The entry for a row, connecting if needed (one connection attempt at a time per server). */
@@ -173,7 +188,8 @@ export class RemoteMcp {
       this.entries.set(row.id, e);
     }
     const entry = e;
-    const needs = !entry.client && !entry.connecting && (entry.status === "connecting" || entry.status === "ready");
+    const retry = entry.status === "needs_sign_in" && entry.retryAt !== undefined && this.now() >= entry.retryAt;
+    const needs = !entry.client && !entry.connecting && (entry.status === "connecting" || entry.status === "ready" || retry);
     if (needs) {
       entry.status = "connecting";
       entry.connecting = this.open(row, entry).finally(() => {
@@ -263,6 +279,10 @@ export class RemoteMcp {
       if (why.status === "needs_sign_in" || why.error === ERR.rejected) {
         entry.status = why.status;
         entry.error = why.error;
+        const dead = entry.client;
+        entry.client = null; // a new connection (with the sign-in as stored now) on the next try
+        void dead?.close().catch(() => undefined);
+        this.maybeRetry(entry);
         throw new RelayError("host", "The server asked for a sign-in again. Tell the person to sign in under Settings > MCP servers.", "mcp_failed");
       }
       throw new RelayError("host", "The tool server failed to run that tool.", "mcp_failed");

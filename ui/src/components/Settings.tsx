@@ -1,9 +1,10 @@
 import { isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
-import { Copy, ExternalLink, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sun, User } from "lucide-react";
+import { Copy, ExternalLink, Info, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sun, User } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
+import { updateAction, updateBridge, updateLine, useUpdate } from "../lib/update.ts";
 import { McpTab } from "./McpSettings.tsx";
 import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
 import { SmartSetting } from "./SmartSetting.tsx";
@@ -12,7 +13,7 @@ import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
 import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
 
-export type SettingsTab = "account" | "key" | "appearance" | "mcp";
+export type SettingsTab = "account" | "key" | "appearance" | "mcp" | "about";
 
 const messageOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
 
@@ -21,16 +22,19 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "key", label: "AI key", icon: KeyRound },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "mcp", label: "MCP servers", icon: Plug },
+  { id: "about", label: "About", icon: Info },
 ];
 
 export function SettingsDialog({ initialTab = "account", focus, onClose }: { initialTab?: SettingsTab; focus?: string; onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
+  // Updates are the desktop app's own business: the website updates when it reloads, so it has no About tab.
+  const tabs = TABS.filter((t) => t.id !== "about" || updateBridge());
   return (
     <Dialog onClose={onClose} width={680} label="Settings">
       <div className="settings">
         <nav className="settings-nav" aria-label="Settings">
           <h2 className="dialog-title flush">Settings</h2>
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {tabs.map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" className={`settings-tab ${tab === id ? "on" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
               <Icon size={ICON} strokeWidth={STROKE} aria-hidden /> {label}
             </button>
@@ -41,6 +45,7 @@ export function SettingsDialog({ initialTab = "account", focus, onClose }: { ini
           {tab === "key" && <KeyTab />}
           {tab === "appearance" && <AppearanceTab />}
           {tab === "mcp" && <McpTab focus={focus} />}
+          {tab === "about" && <AboutTab />}
           <div className="dialog-actions">
             <Button onClick={onClose}>Close</Button>
           </div>
@@ -428,6 +433,71 @@ function AppearanceTab() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ about
+
+function AboutTab() {
+  const { state, bridge } = useUpdate();
+  const [busy, setBusy] = useState(false);
+  if (!bridge || !state) {
+    return (
+      <div className="col" style={{ gap: 16 }}>
+        <div className="field-label">Nido</div>
+        <p className="small muted">Updates are not available in this build.</p>
+      </div>
+    );
+  }
+  const action = updateAction(state);
+  const working = state.status === "checking" || state.status === "downloading";
+  async function run(step: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await step();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <div>
+        <div className="field-label">Nido {state.current}</div>
+        <p className="small muted" role="status">
+          {updateLine(state)}
+        </p>
+        {state.status === "downloading" && <progress className="update-progress" max={100} value={state.percent ?? 0} aria-label="Download progress" />}
+        {state.status === "ready" && <p className="small muted">Shared folders go offline for a few seconds while it restarts. If you wait, it installs the next time you quit.</p>}
+        {state.status === "available" && state.mode === "manual" && <p className="small muted">This version cannot install itself yet. Download the new one and replace the app.</p>}
+        {state.status === "error" && <p className="small muted">Check your connection and try again.</p>}
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        {action && (
+          <Button variant="primary" busy={busy} onClick={() => void run(action.run === "install" ? bridge.install : bridge.download)}>
+            {action.label}
+          </Button>
+        )}
+        <Button busy={busy || state.status === "checking"} disabled={working || state.status === "ready"} onClick={() => void run(bridge.check)}>
+          Check for updates
+        </Button>
+        {state.notesUrl && (
+          <a className="small" href={state.notesUrl} target="_blank" rel="noreferrer">
+            What is new
+          </a>
+        )}
+      </div>
+      {state.mode === "auto" && (
+        <div className="settings-rows">
+          <div className="setting-row">
+            <div className="grow">
+              <div className="strong">Update automatically</div>
+              <p className="small muted">Download new versions in the background. Off: ask first.</p>
+            </div>
+            <input type="checkbox" className="setting-switch" role="switch" aria-label="Update automatically" checked={state.auto} onChange={(e) => void bridge.setAuto(e.target.checked)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

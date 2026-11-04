@@ -1,5 +1,5 @@
 import { canManagePeople, DEFAULT_CHAT_TITLE, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
-import { ChevronLeft, ChevronRight, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, Users, X } from "lucide-react";
 import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +9,7 @@ import { notifyChanged, useApp } from "../data.tsx";
 import { setPinned } from "../lib/actions.ts";
 import { navigate, openProjectSettings } from "../lib/router.ts";
 import { listTime } from "../lib/time.ts";
+import { updateWaiting, useUpdate } from "../lib/update.ts";
 import { supabase } from "../supabase.ts";
 import { BrandMark } from "./Auth.tsx";
 import {
@@ -399,6 +400,8 @@ function ChatRow({ chat, active, meId, canDelete, onOpen, onRename, onDelete }: 
 function AccountCard() {
   const { me, openSettings } = useApp();
   const mcp = useMcpStatus();
+  const update = useUpdate();
+  const waiting = updateWaiting(update.state);
   return (
     <div className="account-card">
       <Menu
@@ -408,6 +411,7 @@ function AccountCard() {
         width={220}
         className="account-menu"
         items={[
+          ...(waiting ? [{ label: update.state!.status === "ready" ? "Update ready" : "Update available", icon: <Download size={ICON_SM} strokeWidth={STROKE} />, badge: <span className="mdot signin" role="img" aria-label="Update waiting" />, onSelect: () => openSettings("about") }] : []),
           { label: "Settings", icon: <Settings size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("account") },
           { label: "AI key", icon: <KeyRound size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => openSettings("key") },
           { label: "MCP servers", icon: <Plug size={ICON_SM} strokeWidth={STROKE} />, badge: mcp.attention ? <McpAttentionDot /> : undefined, submenu: (close) => <McpFlyout s={mcp} close={close} /> },
@@ -421,6 +425,7 @@ function AccountCard() {
               <span className="row-title truncate block">{me.display_name}</span>
               <span className="small muted truncate block">{me.email}</span>
             </span>
+            {waiting && <span className="mdot signin" role="img" aria-label="Update waiting" />}
             <Settings size={ICON_SM} strokeWidth={STROKE} className="muted" aria-hidden />
           </button>
         )}

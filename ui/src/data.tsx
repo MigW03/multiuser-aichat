@@ -136,7 +136,7 @@ export type AppContextValue = {
   choice: ModelChoice | null;
   setChoice: (c: ModelChoice) => void;
   /** `focus`: with the "mcp" tab, the server to scroll to (a remote server's id, or `local:<name>`). */
-  openSettings: (tab?: "account" | "key" | "appearance" | "mcp", focus?: string) => void;
+  openSettings: (tab?: "account" | "key" | "appearance" | "mcp" | "about", focus?: string) => void;
   openAddKey: () => void;
   /** Open the "invite someone" dialog for a project or a home chat. */
   openInvite: (target: { kind: "project"; projectId: string } | { kind: "chat"; chatId: string }) => void;

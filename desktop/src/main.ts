@@ -6,6 +6,7 @@ import { setupFolderHost } from "./folder-ipc.ts";
 import { setupMcp } from "./mcp-ipc.ts";
 import { setupPreview } from "./preview.ts";
 import { createRunServer } from "./run-server.ts";
+import { setupUpdater } from "./updater.ts";
 
 // Production loads the web build from a private app:// origin (not file://, which would give the page
 // access to the whole disk). Development loads the Vite dev server.
@@ -118,6 +119,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     // A project's own web page, served from this computer, shown in the main panel.
     setupPreview({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
+    // Looks for a newer version of the app and offers (or, on Windows, installs) it.
+    setupUpdater({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -11,8 +11,8 @@
     "build:web": "node scripts/build-web.mjs",
     "test": "tsx --test src/*.test.ts",
     "pack": "npm run build:main && npm run build:web && electron-builder --dir",
-    "dist:mac": "npm run build:main && npm run build:web && electron-builder --mac dmg",
-    "dist:win": "npm run build:main && npm run build:web && electron-builder --win nsis --x64"
+    "dist:mac": "npm run build:main && npm run build:web && electron-builder --mac --publish never",
+    "dist:win": "npm run build:main && npm run build:web && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "@mc/shared": "*",
@@ -22,6 +22,7 @@
     "diff": "^9.0.0",
     "electron": "44.10.0",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.11",
     "esbuild": "^0.28.2",
     "ignore": "^7.0.12",
     "picomatch": "^4.0.7",
@@ -46,6 +47,13 @@
         "to": "web-dist"
       }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "MigW03",
+        "repo": "multiuser-aichat"
+      }
+    ],
     "protocols": [
       {
         "name": "Nido",
@@ -57,7 +65,8 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "identity": "-",
       "hardenedRuntime": false

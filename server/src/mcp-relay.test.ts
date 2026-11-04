@@ -221,3 +221,49 @@ describe("tools and calls", () => {
     assert.equal(await c.closed, 4401);
   });
 });
+
+describe("custom panels", () => {
+  const P = "33333333-3333-4333-8333-333333333333";
+  const draft = { name: "Standup", icon: "list" as const, view: 'root = Stack([Text("x")])', sources: [], functions: [] };
+
+  test("only an app that says it keeps panels is asked; the request goes to that person's socket alone", async () => {
+    const a = await connect("ana-token");
+    await a.first();
+    const b = await connect("ben-token");
+    await b.first();
+    assert.equal(mcp.hasPanels(ANA), false);
+    await assert.rejects(mcp.panel(ANA, { panelOp: "list", projectId: P }, { timeoutMs: 300 }), (e: unknown) => e instanceof RelayError && e.kind === "offline");
+    send(a, { servers: [] });
+    a.ws.send(JSON.stringify({ type: "mcp", panels: true, mcp: { servers: [] } }));
+    await until(() => mcp.hasPanels(ANA));
+    assert.equal(mcp.hasPanels(BEN), false);
+    const seen: Record<string, unknown>[] = [];
+    answerWith(a.ws, (req) => (seen.push(req), { ok: true, result: { text: "[]", isError: false, truncated: false } }));
+    const bSeen: unknown[] = [];
+    b.ws.on("message", (raw) => bSeen.push(JSON.parse(String(raw))));
+    const r = await mcp.panel(ANA, { panelOp: "draft", projectId: P, draft }, { timeoutMs: 300 });
+    assert.equal(r.text, "[]");
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]!.op, "panel");
+    assert.equal(seen[0]!.panelOp, "draft");
+    assert.equal(seen[0]!.projectId, P);
+    assert.equal(bSeen.some((m) => (m as { type?: string }).type === "req"), false, "Ben's app is never asked");
+    await assert.rejects(mcp.panel(BEN, { panelOp: "list", projectId: P }, { timeoutMs: 300 }), (e: unknown) => e instanceof RelayError && e.kind === "offline");
+    a.ws.close();
+    b.ws.close();
+    await Promise.all([a.closed, b.closed]);
+  });
+
+  test("a state message without the flag, or a replaced app, turns panels off again", async () => {
+    const a = await connect("ana-token");
+    await a.first();
+    a.ws.send(JSON.stringify({ type: "mcp", panels: true, mcp: { servers: [] } }));
+    await until(() => mcp.hasPanels(ANA));
+    a.ws.send(JSON.stringify({ type: "mcp", mcp: { servers: [] } }));
+    await until(() => !mcp.hasPanels(ANA));
+    a.ws.send(JSON.stringify({ type: "mcp", panels: "yes", mcp: { servers: [] } }));
+    await until(() => !mcp.hasPanels(ANA));
+    a.ws.close();
+    await a.closed;
+  });
+});

@@ -1,4 +1,4 @@
-import { MCP_LIMITS as ML, type FolderErrorCode, type McpCallResult, type McpState } from "@mc/shared";
+import { MCP_LIMITS as ML, type FolderErrorCode, type McpCallResult, type McpState, type PanelDraft } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -21,6 +21,12 @@ export type McpRelayDeps = {
 
 export type McpRequest = { server: string; tool: string; args: Record<string, unknown> };
 
+/** What the AI may ask the person's own desktop app about their custom panels (never anyone else's). The app answers in JSON text. */
+export type PanelRequest =
+  | { panelOp: "list"; projectId: string }
+  | { panelOp: "draft"; projectId: string; panelId?: string; draft: PanelDraft }
+  | { panelOp: "delete_request"; projectId: string; panelId: string };
+
 export type McpCallOptions = {
   /** How long to wait for the tool. */
   timeoutMs?: number;
@@ -42,6 +48,8 @@ const tool = z.object({
 });
 const stateMsg = z.object({
   type: z.literal("mcp"),
+  /** This app can keep custom panels (a newer app). Without it the AI is offered no panel tools. */
+  panels: z.boolean().optional(),
   mcp: z.object({
     servers: z
       .array(z.object({ name: serverName, tools: z.array(tool).max(ML.tools) }))
@@ -68,6 +76,8 @@ type Conn = {
   pending: Map<string, Pending>;
   /** The tools this person's app says the AI may use. Nothing until the app says so. */
   state: McpState;
+  /** Whether this person's app keeps custom panels. */
+  panels: boolean;
   /** When tools were last called, for the flood limit. */
   called: number[];
 };
@@ -150,7 +160,7 @@ export function createMcpRelay(deps: McpRelayDeps, opts: { tokenMaxMs?: number; 
           clearTimeout(helloTimer);
           authedAt = Date.now();
           const previous = users.get(userId);
-          conn = { ws, userId, pending: new Map(), state: NO_TOOLS, called: [] };
+          conn = { ws, userId, pending: new Map(), state: NO_TOOLS, panels: false, called: [] };
           users.set(userId, conn);
           if (previous) {
             // Another copy of this person's app took over: the older one is dropped.
@@ -179,6 +189,7 @@ export function createMcpRelay(deps: McpRelayDeps, opts: { tokenMaxMs?: number; 
       } else if (type === "mcp") {
         const parsed = stateMsg.safeParse(msg);
         conn.state = parsed.success ? parsed.data.mcp : NO_TOOLS;
+        conn.panels = parsed.success && parsed.data.panels === true;
       } else if (type === "token") {
         // A refreshed access token: it has to belong to the same person.
         const parsed = tokenMsg.safeParse(msg);
@@ -188,6 +199,39 @@ export function createMcpRelay(deps: McpRelayDeps, opts: { tokenMaxMs?: number; 
       }
     });
   });
+
+  function request(userId: string, frame: { op: string } & Record<string, unknown>, o: McpCallOptions): Promise<McpCallResult> {
+    const conn = users.get(userId);
+    if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "Your desktop app is offline."));
+    if (conn.pending.size >= MAX_PENDING) return Promise.reject(new RelayError("busy", "Several tool calls are already running. Try again in a moment."));
+    const now = Date.now();
+    conn.called = conn.called.filter((t) => now - t < WINDOW_MS);
+    if (conn.called.length >= ML.windowCalls) return Promise.reject(new RelayError("busy", "Too many tool calls were made in a short time. Wait a few minutes."));
+    conn.called.push(now);
+    if (o.signal?.aborted) return Promise.reject(new RelayError("cancelled", "Cancelled."));
+    const id = randomUUID();
+    return new Promise((resolve, reject) => {
+      const finish = () => {
+        clearTimeout(timer);
+        o.signal?.removeEventListener("abort", onAbort);
+      };
+      const timer = setTimeout(() => {
+        conn.pending.delete(id);
+        finish();
+        send(conn.ws, { type: "cancel", id });
+        reject(new RelayError("timeout", "The tool did not answer in time."));
+      }, o.timeoutMs ?? ML.callDefaultMs + 15_000);
+      const onAbort = () => {
+        if (!conn.pending.delete(id)) return;
+        finish();
+        send(conn.ws, { type: "cancel", id });
+        reject(new RelayError("cancelled", "Cancelled."));
+      };
+      o.signal?.addEventListener("abort", onAbort, { once: true });
+      conn.pending.set(id, { resolve: (v) => (finish(), resolve(v)), reject: (e) => (finish(), reject(e)), timer });
+      send(conn.ws, { type: "req", req: { id, ...frame } });
+    });
+  }
 
   return {
     /** Takes the upgrade requests for /api/mcp-host. Other paths are left to whoever else listens. */
@@ -208,38 +252,18 @@ export function createMcpRelay(deps: McpRelayDeps, opts: { tokenMaxMs?: number; 
     /** The tools this person's app allows the AI to use right now. Nothing while the app is offline. */
     tools: (userId: string): McpState => users.get(userId)?.state ?? NO_TOOLS,
 
+    /** Whether this person's app is online and keeps custom panels. */
+    hasPanels: (userId: string) => users.get(userId)?.panels === true,
+
+    /** Asks `userId`'s app about their custom panels. Callers pass the asker's own id and nobody else's. */
+    panel(userId: string, req: PanelRequest, o: McpCallOptions = {}): Promise<McpCallResult> {
+      if (users.get(userId)?.panels !== true) return Promise.reject(new RelayError("offline", "Your desktop app is offline, or too old for custom panels."));
+      return request(userId, { op: "panel", ...req }, o);
+    },
+
     /** Calls one of `userId`'s tools. Callers pass the asker's own id and nobody else's. */
     call(userId: string, req: McpRequest, o: McpCallOptions = {}): Promise<McpCallResult> {
-      const conn = users.get(userId);
-      if (!conn || conn.ws.readyState !== conn.ws.OPEN) return Promise.reject(new RelayError("offline", "Your desktop app is offline."));
-      if (conn.pending.size >= MAX_PENDING) return Promise.reject(new RelayError("busy", "Several tool calls are already running. Try again in a moment."));
-      const now = Date.now();
-      conn.called = conn.called.filter((t) => now - t < WINDOW_MS);
-      if (conn.called.length >= ML.windowCalls) return Promise.reject(new RelayError("busy", "Too many tool calls were made in a short time. Wait a few minutes."));
-      conn.called.push(now);
-      if (o.signal?.aborted) return Promise.reject(new RelayError("cancelled", "Cancelled."));
-      const id = randomUUID();
-      return new Promise((resolve, reject) => {
-        const finish = () => {
-          clearTimeout(timer);
-          o.signal?.removeEventListener("abort", onAbort);
-        };
-        const timer = setTimeout(() => {
-          conn.pending.delete(id);
-          finish();
-          send(conn.ws, { type: "cancel", id });
-          reject(new RelayError("timeout", "The tool did not answer in time."));
-        }, o.timeoutMs ?? ML.callDefaultMs + 15_000);
-        const onAbort = () => {
-          if (!conn.pending.delete(id)) return;
-          finish();
-          send(conn.ws, { type: "cancel", id });
-          reject(new RelayError("cancelled", "Cancelled."));
-        };
-        o.signal?.addEventListener("abort", onAbort, { once: true });
-        conn.pending.set(id, { resolve: (v) => (finish(), resolve(v)), reject: (e) => (finish(), reject(e)), timer });
-        send(conn.ws, { type: "req", req: { id, op: "mcp_call", ...req } });
-      });
+      return request(userId, { op: "mcp_call", ...req }, o);
     },
 
     close() {

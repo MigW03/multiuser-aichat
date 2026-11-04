@@ -112,9 +112,10 @@ if (!app.requestSingleInstanceLock()) {
     // Serves shared HTML pages from this computer's disk to the preview ("Run page"); starts only when one runs.
     const run = createRunServer();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
-    const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    let panelRequest: ((userId: string, req: unknown) => Promise<unknown>) | null = null;
+    const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, panelRequest: (userId, req) => (panelRequest ? panelRequest(userId, req) : Promise.reject(new Error("not ready"))) });
     // Custom panels: the AI's tabs for this person, kept in this app's folder only. Signed in = the person the MCP host serves.
-    setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser(), mcp });
+    panelRequest = setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser(), mcp }).request;
     // The window frame (title bar) follows the app's own light/dark choice instead of the computer's.
     ipcMain.on("theme:set", (e, pref: unknown) => {
       if (originOf(e.senderFrame?.url) !== (DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN)) return;

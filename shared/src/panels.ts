@@ -141,3 +141,19 @@ export function readValue(text: string): unknown {
 
 /** A wireframe may not ask for live tool calls or changes of its own: data comes only from the panel's declared sources. */
 export const viewIsAllowed = (view: string): boolean => !/\b(Query|Mutation)\s*\(/.test(view);
+
+// ------------------------------------------------------------------ what the AI proposed, waiting for the person
+
+export type PanelShape = { name: string; icon: PanelIcon; view: string; sources: PanelSource[]; functions: PanelFunction[] };
+export type DraftKind = "new" | "update" | "delete";
+/** What the page sees of a proposal, to draw its card and the review. The app keeps the proposal itself; a click names only its id. */
+export type DraftView = PanelShape & {
+  id: string;
+  kind: DraftKind;
+  projectId: string;
+  /** update and delete: the panel it is about. */
+  panelId?: string;
+  /** update: what the panel is now, for the before and after. delete: the panel as it is. */
+  before?: PanelShape & { rev: number };
+  createdAt: number;
+};

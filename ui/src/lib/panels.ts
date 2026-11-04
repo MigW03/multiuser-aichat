@@ -1,4 +1,4 @@
-import type { PanelFull, PanelListItem, PanelMeta, SourceRead } from "@mc/shared";
+import type { DraftView, PanelFull, PanelListItem, PanelMeta, SourceRead } from "@mc/shared";
 import { useEffect, useState } from "react";
 
 // Custom panels, as the desktop app keeps them on this computer. The page can read and tidy them; making or changing one
@@ -16,6 +16,11 @@ export type PanelsBridge = {
   /** Asks in a window of the app's own; the value is false when the person cancelled. */
   clearState: (projectId: string, panelId: string) => Promise<PanelResult<boolean>>;
   delete: (projectId: string, panelId: string) => Promise<PanelResult<boolean>>;
+  drafts: (projectId: string) => Promise<PanelResult<DraftView[]>>;
+  /** The person's click on Add / Update: the app saves the proposal it kept. */
+  commitDraft: (projectId: string, id: string) => Promise<PanelResult<{ kind: "new" | "update"; meta: PanelMeta }>>;
+  discardDraft: (projectId: string, id: string) => Promise<PanelResult<void>>;
+  onDraftsChange: (callback: (projectId: string) => void) => () => void;
   /** null: the source isn't one of this computer's tool servers; ask the person's remote servers. */
   readSource: (projectId: string, panelId: string, sourceId: string) => Promise<PanelResult<SourceRead | null>>;
   onChange: (callback: (projectId: string) => void) => () => void;
@@ -52,4 +57,26 @@ export function cleanState(state: Record<string, unknown>): Record<string, unkno
   } catch {
     return {};
   }
+}
+
+/** What the AI proposed in this project that the person has not decided. Empty in a browser. */
+export function usePanelDrafts(projectId: string | null): DraftView[] {
+  const [list, setList] = useState<DraftView[]>([]);
+  const bridge = panelsBridge();
+  useEffect(() => {
+    if (!bridge || !projectId || !bridge.drafts) return setList([]);
+    let live = true;
+    const load = () =>
+      void bridge.drafts(projectId).then(
+        (r) => live && setList(r.ok ? r.value : []),
+        () => undefined,
+      );
+    load();
+    const off = bridge.onDraftsChange((id) => id === projectId && load());
+    return () => {
+      live = false;
+      off();
+    };
+  }, [bridge, projectId]);
+  return list;
 }

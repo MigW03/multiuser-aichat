@@ -12,3 +12,7 @@ for (const [file, library] of [
   writeFileSync(out, `${JSON.stringify(library.toSpec(), null, 2)}\n`);
   console.log(`wrote ${out.pathname}`);
 }
+// The server checks a panel's wireframe against this before it reaches the person, so the AI hears at once what does not parse.
+const schema = new URL("../../shared/src/panel-schema.json", import.meta.url);
+writeFileSync(schema, `${JSON.stringify(panelLibrary.toJSONSchema(), null, 2)}\n`);
+console.log(`wrote ${schema.pathname}`);

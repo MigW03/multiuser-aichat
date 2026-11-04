@@ -30,7 +30,7 @@ export type McpInfo = McpView & {
 
 type Session = { serverUrl: string; token: string; userId: string };
 
-export function setupMcp(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null }) {
+export function setupMcp(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; /** What the chat server may ask about this person's custom panels. */ panelRequest?: (userId: string, req: unknown) => Promise<unknown> }) {
   let session: Session | null = null;
   let conn: McpConn | null = null;
   let connUser: string | null = null;
@@ -77,7 +77,13 @@ export function setupMcp(opts: { allowedOrigin: string; getWindow: () => Browser
         getToken: () => session?.token ?? "",
         getState: () => host.state(),
         call: async (req, signal) => {
-          const r = req as { id: string; server?: unknown; tool?: unknown; args?: unknown };
+          const r = req as { id: string; op?: unknown; server?: unknown; tool?: unknown; args?: unknown };
+          if (r.op === "panel") {
+            const user = host.currentUser();
+            if (!user || !opts.panelRequest) return { id: r.id, ok: false, code: "mcp_unavailable", message: "Custom panels are not available in this app." };
+            // The answer is JSON text; it carries a plain refusal ({ ok: false, error }) rather than failing the call.
+            return { id: r.id, ok: true, result: { text: JSON.stringify(await opts.panelRequest(user, req)), isError: false, truncated: false } };
+          }
           try {
             return { id: r.id, ok: true, result: await host.call(r, signal) };
           } catch (err) {

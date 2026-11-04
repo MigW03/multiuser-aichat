@@ -114,9 +114,9 @@ export class McpConn {
     }
   }
 
-  /** Tells the server which tools the AI may use for this person. */
+  /** Tells the server which tools the AI may use for this person, and that this app keeps custom panels. */
   stateChanged() {
-    if (this.ws?.readyState === WebSocket.OPEN && this.link === "connected") this.ws.send(JSON.stringify({ type: "mcp", mcp: this.o.getState() }));
+    if (this.ws?.readyState === WebSocket.OPEN && this.link === "connected") this.ws.send(JSON.stringify({ type: "mcp", panels: true, mcp: this.o.getState() }));
   }
 
   private run(req: unknown) {

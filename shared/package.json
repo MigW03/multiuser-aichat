@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./genui-spec.json": "./src/genui-spec.json",
-    "./panel-spec.json": "./src/panel-spec.json"
+    "./panel-spec.json": "./src/panel-spec.json",
+    "./panel-schema.json": "./src/panel-schema.json"
   }
 }

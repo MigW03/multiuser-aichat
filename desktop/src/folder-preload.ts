@@ -183,6 +183,16 @@ export const panelsApi = {
   undo: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:undo", projectId, panelId),
   clearState: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:clear-state", projectId, panelId),
   delete: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:delete", projectId, panelId),
+  /** What the AI proposed and the person has not decided: new panels, new versions, delete requests. */
+  drafts: (projectId: string): Promise<unknown> => ipcRenderer.invoke("panels:drafts", projectId),
+  /** The person's click on Add / Update: the app saves the proposal it kept (the page sends only its id). */
+  commitDraft: (projectId: string, id: string): Promise<unknown> => ipcRenderer.invoke("panels:draft-commit", projectId, id),
+  discardDraft: (projectId: string, id: string): Promise<unknown> => ipcRenderer.invoke("panels:draft-discard", projectId, id),
+  onDraftsChange: (callback: (projectId: string) => void): (() => void) => {
+    const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
+    ipcRenderer.on("panels:drafts-changed", listener);
+    return () => void ipcRenderer.removeListener("panels:drafts-changed", listener);
+  },
   /** One read of a panel's source on this computer's tool servers. Resolves to null when the source isn't a server on this computer. */
   readSource: (projectId: string, panelId: string, sourceId: string): Promise<unknown> => ipcRenderer.invoke("panels:read-source", projectId, panelId, sourceId),
   onChange: (callback: (projectId: string) => void): (() => void) => {

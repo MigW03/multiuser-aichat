@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { folderApi, mcpApi, panelsApi, previewApi } from "./folder-preload.ts";
+import { eraseApi, folderApi, mcpApi, panelsApi, previewApi } from "./folder-preload.ts";
 import { updateApi } from "./update-preload.ts";
 
 // The renderer is the same React app as the web version. Only expose what it needs, as plain data.
@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("desktop", {
   folder: folderApi,
   mcp: mcpApi,
   panels: panelsApi,
+  erase: eraseApi,
   preview: previewApi,
   update: updateApi,
   ...(deepLinks ? { authRedirect: "multiuserchat://auth", shareBase: "multiuserchat://open" } : {}),

@@ -68,6 +68,21 @@ a `.zip`, a `.blockmap` or a `latest*.yml` (Mac: `latest-mac.yml`, `Nido-<versio
 the app refuses a download whose sha512 differs from `latest*.yml`. Keep the release account's 2FA on: whoever can publish a release
 can ship code to every desktop app.
 
+**Where Nido keeps your data, and removing it.** The desktop app keeps your sign-in, the list of shared folders and files,
+connected tool servers (local ones may hold environment values, encrypted with the system keychain), always-allowed
+commands and custom panels (with what they saved) in one folder. The folder keeps the app's old name:
+
+| System | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Multiuser Chat/` |
+| Windows | `%APPDATA%\Multiuser Chat\` |
+
+Uninstalling keeps it by default, so a reinstall or a new version finds your panels and settings again. To remove it: in the
+app, account menu > **Erase Nido data on this computer…** (asks first, signs you out, deletes the folder, quits); on Windows
+the uninstaller also asks once, default No; or delete the folder by hand. The keychain entry the app created (named after
+Nido / Multiuser Chat, in Keychain Access on a Mac) is not removed by any of these. Nothing on the server or in your
+shared folders changes.
+
 **Email links.** The app registers `multiuserchat://`. Confirmation and password-reset emails sent from the desktop
 app point to `multiuserchat://auth`, which opens the app and signs in. Add `multiuserchat://auth` to Supabase >
 Authentication > URL Configuration > Redirect URLs. Until it is listed, Supabase falls back to the Site URL (the

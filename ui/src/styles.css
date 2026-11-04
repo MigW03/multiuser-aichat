@@ -863,7 +863,10 @@ h1, h2, h3, p { margin: 0; }
 .allowed-list code { display: block; }
 
 /* Scripts tab (the Files card): tabs in the card head, one row per package.json script with Run / Stop, and its log. */
-.files-tabs { padding: 0; gap: 2px; }
+.files-tabs { padding: 0; gap: 2px; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.files-tabs::-webkit-scrollbar { display: none; }
+.files-tabs > * { flex: none; }
+.files-tabs .add-wrap { position: sticky; right: 0; background: var(--card); }
 .files-tabs .notes-tab { display: inline-flex; align-items: center; gap: 5px; }
 .files-tabs .notes-tab .tab-dot { margin-left: 0; }
 .notes-tab .tab-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: 1px; }

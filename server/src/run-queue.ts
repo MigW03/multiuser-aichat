@@ -27,7 +27,9 @@ import { loadProjectRules, projectRulesInstructions } from "./project-rules.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
-import { panelInstructions, panelsOffInstructions, panelTools } from "./panel-tools.ts";
+import { panelInstructions, panelsOffInstructions, panelTools, withoutPastedDraft, type PanelLinks, type PanelStats } from "./panel-tools.ts";
+import { supabaseLinkStore } from "./supabase-links.ts";
+import { vercelLinkStore } from "./vercel-links.ts";
 import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
 import { mcpRelay } from "./mcp.ts";
 import { remoteMcp } from "./mcp-servers.ts";
@@ -284,6 +286,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     /** The asker's custom panels: tools when their desktop app keeps panels, a plain "only in the desktop app" note when it does not. */
     let panelling: ToolSet | null = null;
     let panelsOff = false;
+    let panelLinks: PanelLinks = {};
+    const panelStats: PanelStats = { sent: 0, lastError: null };
     /** What this answer read and changed, for the note under it. Shared by the folder and the design tools. */
     const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
     let runSeconds = LOCK_SECONDS;
@@ -393,7 +397,10 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       // Everything they cause goes to that app alone; nobody else in the chat sees a card.
       if (projectId) {
         if (mcpRelay.hasPanels(authorId)) {
-          panelling = panelTools((req, opts) => mcpRelay.panel(authorId, req, opts), { projectId, signal: controller.signal, connected: connected?.state ?? { servers: [] } }) as ToolSet;
+          panelling = panelTools((req, opts) => mcpRelay.panel(authorId, req, opts), { projectId, signal: controller.signal, connected: connected?.state ?? { servers: [] }, stats: panelStats }) as ToolSet;
+          // What the project is linked to (public ids and names only), so a Vercel or Supabase panel gets the right arguments.
+          const [vercel, supabase] = await Promise.all([vercelLinkStore.get(projectId).catch(() => null), supabaseLinkStore.get(projectId).catch(() => null)]);
+          panelLinks = { vercel: vercel ? { projectId: vercel.projectId, teamId: vercel.teamId, teamSlug: vercel.teamSlug, name: vercel.name } : null, supabase: supabase ? { ref: supabase.ref, name: supabase.name } : null };
           if (runSeconds < LOCK_SECONDS_EDIT) {
             runSeconds = LOCK_SECONDS_EDIT;
             await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
@@ -421,7 +428,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker, panelLinks)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
@@ -463,6 +470,8 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (controller.signal.aborted) throw new UserFacing("stopped", "Stopped.");
     if (streamError) throw streamError;
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
+    // A draft written out as JSON for the person to paste is replaced by what really happened (nothing can be pasted anywhere).
+    if (panelling) text = withoutPastedDraft(text, panelStats);
     if (folder || designing || mcpUsed.size) meta = { ...meta, ...fitFiles(use) };
     if (auto.chosen) meta = { ...meta, smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);

@@ -175,7 +175,7 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
         const list = await Promise.all(
           all.map(async (p) => {
             if ("broken" in p) return { id: p.id, unreadable: true };
-            return { id: p.id, name: p.name, rev: p.rev, sources: p.sources.map((s) => ({ id: s.id, label: s.label, server: s.server, tool: s.tool })), functions: p.functions.map((f) => ({ id: f.id, label: f.label, kind: f.kind })) };
+            return { id: p.id, name: p.name, rev: p.rev, ...(p.replaces ? { replaces: p.replaces } : {}), sources: p.sources.map((s) => ({ id: s.id, label: s.label, server: s.server, tool: s.tool })), functions: p.functions.map((f) => ({ id: f.id, label: f.label, kind: f.kind })) };
           }),
         );
         return { ok: true, list };

@@ -1,4 +1,4 @@
-import { FOLDER_LIMITS, isDesignPath, PANEL_LIMITS, showSupabaseTab, showVercelTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
+import { FOLDER_LIMITS, isDesignPath, PANEL_LIMITS, type PanelReplaces, showSupabaseTab, showVercelTab, type AiEditState, type FolderListResult, type GitStatusResult, type ProjectSummary } from "@mc/shared";
 import { Check, ChevronDown, Database, File, FilePlus, Folder, FolderOpen, FolderPlus, GitBranch, Home, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RefreshCw, Shapes, Sparkles, Triangle, TriangleAlert, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../api.ts";
@@ -94,19 +94,21 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
   const canScripts = !!scriptsApi && !!local?.items.some((i) => i.kind === "dir" && i.status === "active");
   const scripts = useScripts(project.id, canScripts);
   const hasScripts = canScripts && showScriptsTab(scripts.info);
-  // The Supabase tab: for everyone in a project linked to a Supabase project, once they have Supabase set up themselves.
-  const sup = useSupabaseState(project.id);
-  const hasSupabase = !!sup.state && showSupabaseTab(sup.state);
-  // The Vercel tab: the same, for a project linked to a Vercel project. Its first read also gives the dot on the tab.
-  const ver = useVercelState(project.id);
-  const hasVercel = !!ver.state && showVercelTab(ver.state);
-  const [verVersion, setVerVersion] = useState(0);
-  const verOverview = useVercelOverview(project.id, hasVercel && ver.state?.mine.state === "ready", verVersion);
   // Custom panels: tabs the AI built for this person, kept on this computer, so only the desktop app has them. Only the open
-  // panel shows its name; after three the rest go behind "▾ n".
+  // panel shows its name; after three the rest go behind "▾ n". A panel can stand in for the Supabase or Vercel tab (that is how
+  // the AI changes them): the shipped tab is hidden while it exists.
   const toast = useToast();
   const panelsOn = !!panelsBridge();
   const panelList = usePanels(panelsOn ? project.id : null) ?? [];
+  const standsIn = (kind: PanelReplaces) => panelList.some((p) => !("broken" in p) && p.replaces === kind);
+  // The Supabase tab: for everyone in a project linked to a Supabase project, once they have Supabase set up themselves.
+  const sup = useSupabaseState(project.id);
+  const hasSupabase = !!sup.state && showSupabaseTab(sup.state) && !standsIn("supabase");
+  // The Vercel tab: the same, for a project linked to a Vercel project. Its first read also gives the dot on the tab.
+  const ver = useVercelState(project.id);
+  const hasVercel = !!ver.state && showVercelTab(ver.state) && !standsIn("vercel");
+  const [verVersion, setVerVersion] = useState(0);
+  const verOverview = useVercelOverview(project.id, hasVercel && ver.state?.mine.state === "ready", verVersion);
   // Designs belong to the project, so their tab is always there, shared folder or not.
   const shown: FilesTab[] = ["files", "designs", ...(hasScripts ? (["scripts"] as const) : []), ...(hasSupabase ? (["supabase"] as const) : []), ...(hasVercel ? (["vercel"] as const) : []), ...panelList.map((p) => panelTab(p.id))];
   type Tab = FilesTab;
@@ -117,6 +119,11 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
     writePref(PREF.filesTab(me.id), next);
   };
   const activePanel = panelIdOf(tab);
+  // The strip scrolls sideways when the tabs do not fit; the open tab is kept in view.
+  const strip = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    strip.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+  }, [tab, panelList.length]);
   const panelTabs = splitPanelTabs(panelList.map((p) => p.id), activePanel);
   const crashUnseen = tab === "scripts" && !!scripts.info?.runs.some((r) => r.unseen);
   useEffect(() => {
@@ -163,7 +170,7 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
     <section className="side-card folder-card" aria-label="Files" {...dragProps}>
       <header className="side-card-head">
         <span className="side-card-title grow">
-          <span className="notes-filter files-tabs" role="tablist" aria-label="Files, designs, scripts and services">
+          <span ref={strip} className="notes-filter files-tabs" role="tablist" aria-label="Files, designs, scripts and services">
             <button type="button" role="tab" aria-selected={tab === "files"} className={`notes-tab ${tab === "files" ? "on" : ""}`} onClick={() => pickTab("files")}>
               Files
             </button>
@@ -206,6 +213,7 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
               <Menu
                 label="More panels"
                 align="end"
+                portal
                 items={panelTabs.hidden.map((id) => {
                   const p = panelList.find((x) => x.id === id);
                   return { label: !p || "broken" in p ? "Unreadable panel" : p.name, onSelect: () => pickTab(panelTab(id)) };
@@ -220,7 +228,9 @@ function FolderCard({ project, onClose }: { project: ProjectSummary; onClose: ()
             {panelsOn && (
               <Menu
                 label="Panels"
-                align="start"
+                align="end"
+                portal
+                className="add-wrap"
                 items={[
                   { label: "New panel with AI…", icon: <Sparkles size={ICON_SM} strokeWidth={STROKE} />, disabled: panelList.length >= PANEL_LIMITS.perProject, hint: panelList.length >= PANEL_LIMITS.perProject ? `${PANEL_LIMITS.perProject} of ${PANEL_LIMITS.perProject}` : undefined, onSelect: () => startInChat(NEW_PANEL_STARTER, toast) },
                   ...(panelList.length ? (["divider"] as const) : []),

@@ -340,3 +340,42 @@ describe("damaged and planted files", () => {
     assert.deepEqual((await s.list(U, P)).map((p) => p.id), [m.id]);
   });
 });
+
+describe("panels that stand in for one of Nido's own tabs", () => {
+  test("only the tabs Nido ships can be named", () => {
+    assert.equal(checkDraft(draft({ replaces: "vercel" })).replaces, "vercel");
+    assert.equal(checkDraft(draft({ replaces: "supabase" })).replaces, "supabase");
+    assert.equal(checkDraft(draft()).replaces, undefined);
+    assert.equal("replaces" in checkDraft(draft({ replaces: null })), false);
+    for (const bad of ["files", "designs", "Vercel", "", "../x", 5, {}]) assert.throws(() => checkDraft(draft({ replaces: bad })), PanelError, JSON.stringify(bad));
+  });
+  test("it is kept, shown in the list, carried through an update, and dropped when the update drops it", async () => {
+    const s = fresh();
+    const m = await s.create(U, P, draft({ name: "Vercel", replaces: "vercel" }));
+    assert.equal(m.replaces, "vercel");
+    assert.equal(((await s.list(U, P))[0] as { replaces?: string }).replaces, "vercel");
+    assert.equal((await s.get(U, P, m.id)).meta.replaces, "vercel");
+    const v2 = await s.update(U, P, m.id, draft({ name: "Vercel", view: "v2", replaces: "vercel" }));
+    assert.equal(v2.replaces, "vercel");
+    const v3 = await s.update(U, P, m.id, draft({ name: "Vercel", view: "v3" }));
+    assert.equal(v3.replaces, undefined);
+    const back = await s.undo(U, P, m.id);
+    assert.equal(back.replaces, "vercel", "undo brings the earlier version back as it was");
+  });
+  test("one panel at a time stands in for each tab", async () => {
+    const s = fresh();
+    const a = await s.create(U, P, draft({ name: "Vercel", replaces: "vercel" }));
+    await refused(s.create(U, P, draft({ name: "Vercel 2", replaces: "vercel" })), "bad_request");
+    await s.create(U, P, draft({ name: "Supabase", replaces: "supabase" })); // another tab is fine
+    const other = await s.create(U, P, draft({ name: "Other" }));
+    await refused(s.update(U, P, other.id, draft({ name: "Other", replaces: "vercel" })), "bad_request");
+    await s.update(U, P, a.id, draft({ name: "Vercel", view: "again", replaces: "vercel" })); // itself is fine
+  });
+  test("a panel.json with an unknown tab is unreadable, not half-trusted", async () => {
+    const s = fresh();
+    const m = await s.create(U, P, draft({ replaces: "vercel" }));
+    const file = join(root, `panels-${n}`, U, P, m.id, "panel.json");
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), replaces: "files" }));
+    assert.deepEqual(await s.list(U, P), [{ id: m.id, broken: true }]);
+  });
+});

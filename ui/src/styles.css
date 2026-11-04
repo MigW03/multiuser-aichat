@@ -804,6 +804,7 @@ h1, h2, h3, p { margin: 0; }
 .setting-row { display: flex; gap: 16px; align-items: flex-start; padding: 14px 16px; }
 .setting-row + .setting-row { border-top: 1px solid var(--border); }
 .auto-setting .segmented { margin-top: 6px; flex-wrap: wrap; }
+.update-progress { display: block; width: 100%; max-width: 320px; height: 8px; margin-top: 8px; accent-color: var(--p); }
 .setting-note { margin-top: 6px; color: var(--warning); }
 .setting-switch {
   appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 2px 0 0; width: 36px; height: 20px; padding: 0;

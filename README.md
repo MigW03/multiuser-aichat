@@ -55,6 +55,19 @@ copy shows "Apple could not verify..." or "is damaged": right-click the app > Op
 Security > Open Anyway, or run `xattr -dr com.apple.quarantine "/Applications/Nido.app"` once. A copy you
 built yourself opens without that. Windows shows a SmartScreen "unknown publisher" warning the same way.
 
+**Updates (OTA).** The installed desktop app checks the project's GitHub releases 10 seconds after start and every 4 hours
+(Settings > About has "Check for updates" and an "Update automatically" switch; an account-menu entry shows when one waits).
+Windows downloads and installs by itself (restart, or on next quit). A Mac build can only swap itself once it is signed with
+an Apple Developer ID and notarized; until then it finds the update and sends you to the release page. When the Mac build is
+signed, set `MAC_SIGNED = true` in `desktop/src/updater.ts`. Dev runs and the website show nothing.
+
+To ship a version: raise `version` in `desktop/package.json`, run `npm run dist:mac -w desktop` and `npm run dist:win -w desktop`,
+then create a GitHub release tagged `v<version>` and upload everything the build wrote to `desktop/release/` that is an installer,
+a `.zip`, a `.blockmap` or a `latest*.yml` (Mac: `latest-mac.yml`, `Nido-<version>-arm64-mac.zip`, `.dmg`; Windows: `latest.yml`,
+`Nido Setup <version>.exe`). Publish it (not a draft or pre-release): that is what makes people get it. The feed is public and https;
+the app refuses a download whose sha512 differs from `latest*.yml`. Keep the release account's 2FA on: whoever can publish a release
+can ship code to every desktop app.
+
 **Email links.** The app registers `multiuserchat://`. Confirmation and password-reset emails sent from the desktop
 app point to `multiuserchat://auth`, which opens the app and signs in. Add `multiuserchat://auth` to Supabase >
 Authentication > URL Configuration > Redirect URLs. Until it is listed, Supabase falls back to the Site URL (the

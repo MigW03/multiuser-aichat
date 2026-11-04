@@ -30,18 +30,26 @@ export class OAuthUnavailable extends Error {}
 /** The provider the MCP SDK drives for one server row. */
 export class RowOAuthProvider implements OAuthClientProvider {
   private blob: Blob;
+  /** The stored blob could not be read (encrypted with another secret). Only a sign-in the person starts may replace it. */
+  private unreadable = false;
   /** Set when the SDK asks us to send the person to the provider. */
   authUrl: URL | null = null;
 
+  /**
+   * `signIn`: this provider belongs to a sign-in the person started (start or callback). A provider that only keeps a
+   * connection alive never replaces a blob it cannot read, and never touches the pending sign-in (state, verifier).
+   */
   constructor(
     private readonly d: OAuthDeps,
     private readonly row: RemoteRow,
+    private readonly signIn = false,
   ) {
     if (!d.serverUrl) throw new OAuthUnavailable("OAuth is not set up on this chat server.");
     try {
       this.blob = row.oauth_enc ? (JSON.parse(d.decrypt(row.oauth_enc)) as Blob) : {};
     } catch {
       this.blob = {}; // encrypted with another secret: the person signs in again
+      this.unreadable = true;
     }
   }
 
@@ -59,13 +67,34 @@ export class RowOAuthProvider implements OAuthClientProvider {
     };
   }
 
-  private async save() {
-    await this.d.store.update(this.row.user_id, this.row.id, { oauth_enc: this.d.encrypt(JSON.stringify(this.blob)) });
+  /**
+   * Changes the blob as it is stored NOW, not as this provider read it when it was made. Another connection (or another
+   * copy of the server on the same database) may have refreshed the tokens since, and providers that overwrite each
+   * other lose a refresh token the provider has already used up: the person is signed out.
+   */
+  private async change(fn: (stored: Blob, held: Blob) => void) {
+    const held = this.blob;
+    const fresh = await this.d.store.get(this.row.user_id, this.row.id);
+    if (!fresh || fresh.auth_kind !== "oauth") return; // removed or changed meanwhile: nothing to keep
+    let stored: Blob;
+    try {
+      stored = fresh.oauth_enc ? (JSON.parse(this.d.decrypt(fresh.oauth_enc)) as Blob) : {};
+    } catch {
+      if (!this.signIn) return; // not ours to replace
+      stored = {};
+    }
+    if (!fresh.oauth_enc && !this.signIn && held.tokens) return; // signed out while this connection was open
+    fn(stored, held);
+    this.blob = stored;
+    this.unreadable = false;
+    await this.d.store.update(this.row.user_id, this.row.id, { oauth_enc: this.d.encrypt(JSON.stringify(stored)) });
   }
 
   /** A fresh single-use state for the sign-in that is starting, kept on the row for ten minutes. */
   async state(): Promise<string> {
     const state = randomBytes(32).toString("hex");
+    // A connection that is only trying to stay alive must not replace the state of a sign-in the person started.
+    if (!this.signIn) return state;
     const now = (this.d.now ?? Date.now)();
     await this.d.store.update(this.row.user_id, this.row.id, { oauth_state: state, oauth_state_expires: new Date(now + STATE_MS).toISOString() });
     return state;
@@ -76,31 +105,41 @@ export class RowOAuthProvider implements OAuthClientProvider {
   }
   async saveClientInformation(info: OAuthClientInformationMixed) {
     this.blob.client = info;
-    await this.save();
+    // A registration that is already stored stays: the tokens and a sign-in in progress belong to that client.
+    await this.change((stored) => void (stored.client ??= info));
   }
   tokens() {
     return this.blob.tokens;
   }
   async saveTokens(tokens: OAuthTokens) {
     this.blob.tokens = tokens;
-    await this.save();
+    await this.change((stored) => void (stored.tokens = tokens));
   }
   redirectToAuthorization(url: URL) {
     this.authUrl = url;
   }
   async saveCodeVerifier(v: string) {
     this.blob.verifier = v;
-    await this.save();
+    if (!this.signIn) return; // only a sign-in the person started keeps its verifier
+    await this.change((stored) => void (stored.verifier = v));
   }
   codeVerifier() {
     if (!this.blob.verifier) throw new Error("no code verifier");
     return this.blob.verifier;
   }
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery") {
-    if (scope === "all" || scope === "client") delete this.blob.client;
-    if (scope === "all" || scope === "tokens") delete this.blob.tokens;
-    if (scope === "all" || scope === "verifier") delete this.blob.verifier;
-    await this.save();
+    if (scope === "discovery") return;
+    const heldRefresh = this.blob.tokens?.refresh_token;
+    const heldClient = this.blob.client?.client_id;
+    await this.change((stored) => {
+      // The provider rejected what THIS provider held. If the stored copy is newer (another connection refreshed first),
+      // keep it: it is not the one that was rejected.
+      const tokensNewer = !!stored.tokens?.refresh_token && !!heldRefresh && stored.tokens.refresh_token !== heldRefresh;
+      const clientNewer = !!stored.client?.client_id && !!heldClient && stored.client.client_id !== heldClient;
+      if ((scope === "all" || scope === "client") && !clientNewer) delete stored.client;
+      if ((scope === "all" || scope === "tokens") && !tokensNewer) delete stored.tokens;
+      if (scope === "all" || scope === "verifier") delete stored.verifier;
+    });
   }
 
   /** Whether tokens are stored (the person has signed in). */
@@ -111,7 +150,7 @@ export class RowOAuthProvider implements OAuthClientProvider {
 
 /** Starts a sign-in. Returns the provider's page to send the person to, or null when they are already signed in. */
 export async function startSignIn(d: OAuthDeps, row: RemoteRow): Promise<string | null> {
-  const provider = new RowOAuthProvider(d, row);
+  const provider = new RowOAuthProvider(d, row, true);
   const result = await auth(provider, { serverUrl: row.url, fetchFn: d.fetch });
   if (result === "AUTHORIZED") return null;
   const url = provider.authUrl;
@@ -133,7 +172,7 @@ export async function finishSignIn(d: OAuthDeps, input: { state: string; code?: 
   if (!row.oauth_state_expires || Date.parse(row.oauth_state_expires) < now) return { ok: false, reason: "expired" };
   if (input.denied || !input.code) return { ok: false, reason: "denied" };
   try {
-    const provider = new RowOAuthProvider(d, cleared);
+    const provider = new RowOAuthProvider(d, cleared, true);
     await auth(provider, { serverUrl: cleared.url, authorizationCode: input.code, fetchFn: d.fetch });
     // The provider saved the tokens on the row while it worked: hand back the row as it is now, not the snapshot from before.
     const fresh = await d.store.get(cleared.user_id, cleared.id);

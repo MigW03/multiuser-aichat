@@ -1,5 +1,5 @@
 import { canManagePeople, DEFAULT_CHAT_TITLE, LIMITS, ROLE_LABELS, type ChatSummary, type ProjectMember, type ProjectSummary } from "@mc/shared";
-import { ChevronLeft, ChevronRight, Download, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eraser, KeyRound, Link2, LogOut, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plug, Plus, Search, Settings, Trash2, Users, X } from "lucide-react";
 import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +11,7 @@ import { navigate, openProjectSettings } from "../lib/router.ts";
 import { listTime } from "../lib/time.ts";
 import { updateWaiting, useUpdate } from "../lib/update.ts";
 import { supabase } from "../supabase.ts";
+import { eraseBridge, eraseThisComputer } from "../lib/erase.ts";
 import { BrandMark } from "./Auth.tsx";
 import {
   CreateProjectDialog,
@@ -402,6 +403,7 @@ function AccountCard() {
   const mcp = useMcpStatus();
   const update = useUpdate();
   const waiting = updateWaiting(update.state);
+  const eraseApi = eraseBridge();
   return (
     <div className="account-card">
       <Menu
@@ -417,6 +419,8 @@ function AccountCard() {
           { label: "MCP servers", icon: <Plug size={ICON_SM} strokeWidth={STROKE} />, badge: mcp.attention ? <McpAttentionDot /> : undefined, submenu: (close) => <McpFlyout s={mcp} close={close} /> },
           "divider",
           { label: "Log out", icon: <LogOut size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => void supabase.auth.signOut() },
+          // Desktop app only: it keeps data on this computer (session, shared folders, tool servers, panels). Nothing on the server changes.
+          ...(eraseApi ? [{ label: "Erase Nido data on this computer…", icon: <Eraser size={ICON_SM} strokeWidth={STROKE} />, danger: true, onSelect: () => void eraseThisComputer(eraseApi, () => supabase.auth.signOut()) }] : []),
         ]}
         trigger={({ toggle, open }) => (
           <button type="button" className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open}>

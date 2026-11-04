@@ -201,3 +201,9 @@ export const panelsApi = {
     return () => void ipcRenderer.removeListener("panels:changed", listener);
   },
 };
+
+// "Erase Nido data on this computer". confirm asks in a window of the app's own; run only works right after a yes, and quits the app.
+export const eraseApi = {
+  confirm: (): Promise<boolean> => ipcRenderer.invoke("erase:confirm"),
+  run: (): Promise<boolean> => ipcRenderer.invoke("erase:run"),
+};

@@ -2,7 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "el
 import { join } from "node:path";
 import { originOf } from "./folder-host.ts";
 import { PanelError, PanelStore } from "./panels-store.ts";
-import type { PanelFull, PanelListItem } from "@mc/shared";
+import { isReadTool, PANEL_LIMITS, type PanelFull, type PanelListItem, type SourceRead } from "@mc/shared";
+import { FolderError } from "./folder-fs.ts";
+import type { McpHost } from "./mcp-host.ts";
 
 // Wires custom panels to the app window. Panels belong to the signed-in person and one project, and live only in this app's
 // folder on this computer. The page may list, read, rename, reorder and save a panel's own data. Deleting a panel or its
@@ -11,7 +13,7 @@ import type { PanelFull, PanelListItem } from "@mc/shared";
 
 export type PanelResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export function setupPanels(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; currentUser: () => string | null }) {
+export function setupPanels(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; currentUser: () => string | null; /** The person's own tool servers on this computer. */ mcp: McpHost }) {
   const store = new PanelStore(join(app.getPath("userData"), "panels"));
   void store.ensureRoot().catch(() => undefined);
 
@@ -104,6 +106,36 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
       await store.delete(u, str(projectId), str(panelId));
       changed(str(projectId));
       return true;
+    }),
+  );
+
+  // A panel's number comes from one read of one of the person's own tool servers. The page names the panel and the source;
+  // the app looks up what that source is (saved when the person approved the panel), checks it is a read, and calls it.
+  // null: it isn't a server on this computer, so the page asks the person's remote servers instead.
+  ipcMain.handle("panels:read-source", (e, projectId: unknown, panelId: unknown, sourceId: unknown): Promise<PanelResult<SourceRead | null>> =>
+    run(e, async (u) => {
+      const full = await store.get(u, str(projectId), str(panelId));
+      const src = full.meta.sources.find((s) => s.id === sourceId);
+      if (!src) throw new PanelError("not_found", "That panel has no such source.");
+      if (!isReadTool(src.tool)) throw new PanelError("bad_request", "Panels can only read.");
+      const server = (await opts.mcp.view(u)).servers.find((s) => s.name === src.server);
+      if (!server) return null;
+      const need = (n: Exclude<SourceRead, { ok: true }>["need"]): SourceRead => ({ ok: false, need: n, server: src.server });
+      if (!server.enabled) return need("setup");
+      if (server.status === "starting") await opts.mcp.idle();
+      const now = (await opts.mcp.view(u)).servers.find((s) => s.name === src.server);
+      if (!now || now.status === "failed" || now.status === "off") return need("retry");
+      const tool = now.tools.find((t) => t.name === src.tool);
+      if (!tool || !tool.usable || !tool.enabled) return need("unavailable");
+      try {
+        const r = await opts.mcp.call({ server: src.server, tool: src.tool, args: src.args });
+        // What a tool returns is text from whatever ran: capped here, drawn as plain text, never sent to the AI.
+        const text = r.text.length > PANEL_LIMITS.resultChars ? r.text.slice(0, PANEL_LIMITS.resultChars) : r.text;
+        return r.isError ? need("retry") : { ok: true, text, truncated: r.truncated || text.length < r.text.length };
+      } catch (err) {
+        if (err instanceof FolderError) return need(err.code === "busy" ? "busy" : err.code === "mcp_unavailable" ? "unavailable" : "retry");
+        throw err;
+      }
     }),
   );
 

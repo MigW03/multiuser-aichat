@@ -1130,3 +1130,12 @@ h1, h2, h3, p { margin: 0; }
 .dz-versions li:hover { background: var(--hover-row); }
 .dz-versions-text { min-width: 0; gap: 1px; }
 .dz-versions-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--muted); flex: none; }
+
+/* ---- custom panels: what the person has to do (calm, never red), ticks, and greyed old data */
+.gen-need { background: var(--warning-tint); border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.gen-need-text { font: var(--text-small); color: var(--fg); }
+.gen-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.gen-check input { margin-top: 3px; accent-color: var(--p); }
+.gen-loading { font: var(--text-small); color: var(--muted-fg); padding: 6px 0; }
+.gen-stat.stale, .gen-table-wrap.stale, .gen-checklist.stale { opacity: 0.55; }
+.gen-source-list li { flex-direction: column; gap: 0; }

@@ -75,7 +75,7 @@ function GenBlock({ code, streaming, onDraft }: { code: string; streaming: boole
 const quiet = () => undefined;
 
 /** Only web links open, in the browser (the desktop app opens https only). */
-function safeUrl(raw: unknown): string | null {
+export function safeUrl(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   try {
     const url = new URL(raw);
@@ -86,7 +86,7 @@ function safeUrl(raw: unknown): string | null {
 }
 
 /** A piece that fails to draw never takes the chat down with it. */
-class BlockBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+export class BlockBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };

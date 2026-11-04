@@ -27,7 +27,7 @@ const draft = (over: Record<string, unknown> = {}) => ({
   name: "Standup",
   icon: "list",
   view: 'root = Stack([Text("hello")])',
-  sources: [{ id: "prs", label: "Open PRs", server: "github", tool: "list_pull_requests", purpose: "List pull requests" }],
+  sources: [{ id: "prs", label: "Open PRs", server: "github", tool: "list_pull_requests", purpose: "List pull requests", args: { state: "open" } }],
   functions: [{ id: "plan", label: "Plan today", kind: "checklist", description: "Ticks saved on this computer." }],
   ...over,
 });
@@ -63,6 +63,17 @@ describe("checking a draft", () => {
     assert.throws(() => checkDraft(draft({ sources: "x" })), PanelError);
     assert.deepEqual(checkDraft(draft({ sources: undefined })).sources, []);
   });
+  test("sources: only reads, arguments are plain data", () => {
+    const src = (o: Record<string, unknown>) => ({ id: "a", label: "L", server: "github", tool: "list_issues", purpose: "P", ...o });
+    for (const tool of ["delete_project", "execute_sql", "create_issue", "get_or_create_user", "list_and_delete_all", "run", "merge_pull_request"]) assert.throws(() => checkDraft(draft({ sources: [src({ tool })] })), PanelError, tool);
+    for (const tool of ["list_pull_requests", "get_project", "search_issues", "list_deployments", "get_runtime_logs"]) assert.doesNotThrow(() => checkDraft(draft({ sources: [src({ tool })] })), tool);
+    assert.deepEqual(checkDraft(draft({ sources: [src({})] })).sources[0]!.args, {});
+    assert.deepEqual(checkDraft(draft({ sources: [src({ args: { state: "open", n: 3, tags: ["a"] } })] })).sources[0]!.args, { state: "open", n: 3, tags: ["a"] });
+    for (const args of [[1], "x", null, { a: "x".repeat(L.argChars) }, JSON.parse('{"__proto__": {"x": 1}}'), JSON.parse('{"a": {"constructor": 1}}')]) assert.throws(() => checkDraft(draft({ sources: [src({ args })] })), PanelError, JSON.stringify(args));
+  });
+  test("the wireframe can't make tool calls of its own", () => {
+    for (const view of ['x = Query("list_pull_requests", {})', 'y = Mutation ("delete", {})']) assert.throws(() => checkDraft(draft({ view })), PanelError);
+  });
   test("functions: only kinds Nido has", () => {
     const fn = (o: Record<string, unknown>) => ({ id: "f", label: "L", kind: "checklist", description: "D", ...o });
     assert.throws(() => checkDraft(draft({ functions: [fn({ kind: "run_script" })] })), PanelError);
@@ -72,7 +83,7 @@ describe("checking a draft", () => {
 });
 
 describe("checking saved data", () => {
-  test("plain values pass", () => assert.doesNotThrow(() => checkState({ ticks: { plan: true }, notes: "hi", count: 3, list: [1, "a", null] })));
+  test("plain values pass", () => assert.doesNotThrow(() => checkState({ ticks: { plan: true }, notes: "hi", count: 3, list: [1, "a", null], $notes: "variable" })));
   test("odd keys, odd values, depth, size and count are refused", () => {
     assert.throws(() => checkState(JSON.parse('{"__proto__": 1}')), PanelError);
     assert.throws(() => checkState(JSON.parse('{"a": {"__proto__": 1}}')), PanelError);

@@ -18,8 +18,13 @@ export type Fixture = {
   close: () => Promise<void>;
 };
 
-function mcpServer() {
+function mcpServer(reads = false) {
   const s = new McpServer({ name: "remote-fake", version: "1.0.0" });
+  if (reads) {
+    s.registerTool("list_items", { description: "Items as JSON.", inputSchema: { state: z.string().optional() } }, async ({ state }) => ({ content: [{ type: "text", text: JSON.stringify({ state: state ?? "all", items: [{ title: "a" }, { title: "b" }, { title: "c" }] }) }] }));
+    s.registerTool("list_broken", { description: "Always fails." }, async () => ({ isError: true, content: [{ type: "text", text: "it broke" }] }));
+    s.registerTool("list_big", { description: "A very long answer." }, async () => ({ content: [{ type: "text", text: "x".repeat(80_000) }] }));
+  }
   s.registerTool("echo", { description: "Echo text back.", inputSchema: { text: z.string() } }, async ({ text }) => ({ content: [{ type: "text", text: `echo: ${text}` }] }));
   s.registerTool("big", { description: "A very long answer." }, async () => ({ content: [{ type: "text", text: "x".repeat(80_000) }] }));
   s.registerTool("boom", { description: "Always fails." }, async () => ({ isError: true, content: [{ type: "text", text: "it broke" }] }));
@@ -37,7 +42,7 @@ const body = (req: IncomingMessage) =>
     req.on("end", () => resolve(b));
   });
 
-export async function startFixture(opts: { auth?: "none" | "header" | "oauth"; headerName?: string; secret?: string } = {}): Promise<Fixture> {
+export async function startFixture(opts: { auth?: "none" | "header" | "oauth"; headerName?: string; secret?: string; /** Also offers read-only tools (list_items, list_broken, list_big). */ reads?: boolean } = {}): Promise<Fixture> {
   const kind = opts.auth ?? "none";
   const headerName = (opts.headerName ?? "x-api-key").toLowerCase();
   const secret = opts.secret ?? "s3cret";
@@ -80,7 +85,7 @@ export async function startFixture(opts: { auth?: "none" | "header" | "oauth"; h
       if (kind === "oauth" && !(auth && fx.tokens.includes(auth.replace(/^Bearer /, "")))) return json(res, 401, { error: "unauthorized" }, { "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"` });
       const raw = await body(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const s = mcpServer();
+      const s = mcpServer(opts.reads);
       res.on("close", () => void transport.close().then(() => s.close()));
       await s.connect(transport);
       return void (await transport.handleRequest(req, res, raw ? JSON.parse(raw) : undefined));

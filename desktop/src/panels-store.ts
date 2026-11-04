@@ -1,4 +1,4 @@
-import { PANEL_FUNCTION_KINDS, PANEL_ICONS, PANEL_LIMITS as L, type PanelDraft, type PanelErrorCode, type PanelFull, type PanelFunction, type PanelListItem, type PanelMeta, type PanelSource } from "@mc/shared";
+import { isReadTool, PANEL_FUNCTION_KINDS, PANEL_ICONS, PANEL_LIMITS as L, viewIsAllowed, type PanelDraft, type PanelErrorCode, type PanelFull, type PanelFunction, type PanelListItem, type PanelMeta, type PanelSource } from "@mc/shared";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -31,7 +31,8 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u20
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
 const SERVER = /^[A-Za-z0-9_-]{1,32}$/;
 const TOOL = /^[A-Za-z0-9_.:-]{1,64}$/;
-const STATE_KEY = /^[A-Za-z0-9_.-]{1,64}$/;
+// A "$" first is how the renderer names a variable ($notes); the rest is plain.
+const STATE_KEY = /^\$?[A-Za-z0-9_.-]{1,64}$/;
 const BAD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const ICONS = new Set<string>(PANEL_ICONS);
 const KINDS = new Set<string>(PANEL_FUNCTION_KINDS);
@@ -65,6 +66,16 @@ function ident(value: unknown, what: string): string {
   return value;
 }
 
+/** A source's fixed arguments: plain data of limited size. */
+function args(value: unknown): Record<string, unknown> {
+  if (value === undefined) return {};
+  const plain = typeof value === "object" && value !== null && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+  if (!plain) return fail("bad_request", "A source's arguments must be a set of named values.");
+  const json = JSON.stringify(value);
+  if (json.length > L.argChars || /"(__proto__|constructor|prototype)"\s*:/.test(json) || json.includes("\\u0000")) return fail("bad_request", `A source's arguments must be plain data under ${L.argChars} characters.`);
+  return JSON.parse(json) as Record<string, unknown>;
+}
+
 function sources(value: unknown): PanelSource[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > L.sources) return fail("bad_request", `A panel reads from at most ${L.sources} sources.`);
@@ -76,7 +87,8 @@ function sources(value: unknown): PanelSource[] {
     seen.add(id);
     if (typeof s.server !== "string" || !SERVER.test(s.server)) return fail("bad_request", "A source needs the name of one of your connected servers.");
     if (typeof s.tool !== "string" || !TOOL.test(s.tool)) return fail("bad_request", "A source needs the name of one of that server's tools.");
-    return { id, label: text(s.label, "A source label", L.labelChars), server: s.server, tool: s.tool, purpose: text(s.purpose, "A source purpose", L.descChars) };
+    if (!isReadTool(s.tool)) return fail("bad_request", `"${s.tool}" doesn't look like a read-only tool. Panels can only read.`);
+    return { id, label: text(s.label, "A source label", L.labelChars), server: s.server, tool: s.tool, purpose: text(s.purpose, "A source purpose", L.descChars), args: args(s.args) };
   });
 }
 
@@ -98,6 +110,7 @@ function view(value: unknown): string {
   if (typeof value !== "string" || value.includes("\u0000")) return fail("bad_request", "The wireframe must be text.");
   if (value.trim() === "") return fail("bad_request", "The wireframe is empty.");
   if (bytes(value) > L.viewBytes) return fail("too_big", `The wireframe is over ${Math.round(L.viewBytes / 1000)} KB.`);
+  if (!viewIsAllowed(value)) return fail("bad_request", "A wireframe can't ask for tool calls of its own. Data comes from the panel's sources.");
   return value;
 }
 

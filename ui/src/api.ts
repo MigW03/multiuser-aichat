@@ -21,6 +21,7 @@ import type {
   KeysResponse,
   McpRemoteAuthInput,
   McpRemoteList,
+  SourceRead,
   McpRemoteServer,
   ModelsResponse,
   PendingInvite,
@@ -104,6 +105,8 @@ export const api = {
   mcpDelete: (id: string) => call<{ ok: true }>("DELETE", `/api/mcp/servers/${id}`),
   mcpRetry: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/retry`),
   mcpSignIn: (id: string) => call<{ url: string | null }>("POST", `/api/mcp/servers/${id}/oauth/start`),
+  /** One read for a panel: the person's own remote server, one read-only tool. A refusal comes back as `{ ok: false, need }`. */
+  mcpRead: (body: { server: string; tool: string; args: Record<string, unknown> }) => call<SourceRead>("POST", "/api/mcp/read", body),
   mcpSignOut: (id: string) => call<McpRemoteServer>("POST", `/api/mcp/servers/${id}/signout`),
   keys: () => call<KeysResponse>("GET", "/api/keys"),
   saveKey: (provider: ProviderId, apiKey: string) => call<{ hint: string }>("PUT", `/api/keys/${provider}`, { apiKey }),

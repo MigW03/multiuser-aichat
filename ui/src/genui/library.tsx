@@ -320,30 +320,40 @@ const Form = defineComponent({
   },
 });
 
-const contentBlocks = [Text, Stat, Table, BarChart, Checklist, Callout, Choice, Buttons, Form, Input, Select] as const;
-const Content = z.union(contentBlocks.map((c) => c.ref) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]);
+export const contentBlocks = [Text, Stat, Table, BarChart, Checklist, Callout, Choice, Buttons, Form, Input, Select] as const;
 
-const Card = defineComponent({
-  name: "Card",
-  description: "A titled box that groups related blocks, such as one option of several or one person's part.",
-  props: z.object({ title: z.string(), children: z.array(Content), subtitle: z.string().optional() }),
-  component: ({ props, renderNode }) => (
-    <section className="gen-card">
-      <header>
-        <div className="gen-title">{props.title}</div>
-        {props.subtitle && <div className="gen-subtitle">{props.subtitle}</div>}
-      </header>
-      <div className="gen-stack">{renderNode(props.children ?? [])}</div>
-    </section>
-  ),
-});
+/** The two containers, built over a set of content blocks: a panel's library adds blocks of its own and so gets its own pair. */
+export function layout(blocks: readonly { ref: unknown }[]) {
+  const Content = z.union(blocks.map((c) => c.ref) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]);
 
-const Stack = defineComponent({
-  name: "Stack",
-  description: "The top-level container. Blocks go one under the other, or side by side with direction \"row\" (they wrap on narrow screens).",
-  props: z.object({ children: z.array(z.union([Card.ref, Content])), direction: z.enum(["column", "row"]).optional() }),
-  component: ({ props, renderNode }) => <div className={`gen-stack ${props.direction === "row" ? "row" : ""}`}>{renderNode(props.children ?? [])}</div>,
-});
+  const Card = defineComponent({
+    name: "Card",
+    description: "A titled box that groups related blocks, such as one option of several or one person's part.",
+    props: z.object({ title: z.string(), children: z.array(Content), subtitle: z.string().optional() }),
+    component: ({ props, renderNode }) => (
+      <section className="gen-card">
+        <header>
+          <div className="gen-title">{props.title}</div>
+          {props.subtitle && <div className="gen-subtitle">{props.subtitle}</div>}
+        </header>
+        <div className="gen-stack">{renderNode(props.children ?? [])}</div>
+      </section>
+    ),
+  });
+
+  const Stack = defineComponent({
+    name: "Stack",
+    description: "The top-level container. Blocks go one under the other, or side by side with direction \"row\" (they wrap on narrow screens).",
+    props: z.object({ children: z.array(z.union([Card.ref, Content])), direction: z.enum(["column", "row"]).optional() }),
+    component: ({ props, renderNode }) => <div className={`gen-stack ${props.direction === "row" ? "row" : ""}`}>{renderNode(props.children ?? [])}</div>,
+  });
+  return { Card, Stack };
+}
+
+const { Card, Stack } = layout(contentBlocks);
+
+/** Pieces a panel's library builds on. */
+export const pieces = { Text, Stat, Table, BarChart, Series, Checklist, Task, Callout, Choice, Option, Buttons, Button, Form, Input, Select, Card, Stack };
 
 /** Copies text for the reader, such as a command or a message to paste elsewhere. */
 export const CopyText = defineAction({

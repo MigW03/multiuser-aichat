@@ -1,8 +1,9 @@
-import { mcpPresetFor, type McpRemoteList, type McpRemoteServer } from "@mc/shared";
+import { isReadTool, mcpPresetFor, PANEL_LIMITS, type McpRemoteList, type McpRemoteServer, type SourceNeed, type SourceRead } from "@mc/shared";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
+import { RelayError } from "../folder-relay.ts";
 import { encrypt } from "../crypto.ts";
 import { finishSignIn, OAuthUnavailable, signOut, startSignIn, type OAuthDeps } from "../mcp-oauth.ts";
 import type { RemoteMcp } from "../mcp-remote.ts";
@@ -42,6 +43,23 @@ const status = (e: unknown) => (e instanceof BlockedAddress ? 400 : e instanceof
 const page = (title: string, text: string) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${title}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:28rem;margin:18vh auto;padding:0 1rem;color:#222}h1{font-size:1.25rem}</style></head><body><h1>${title}</h1><p>${text}</p></body></html>`;
 
+/** Why a panel's read of a remote server did not give data, as something the person can do. The server's own words are never passed on. */
+export function readNeed(err: unknown, view: Pick<McpRemoteServer, "status" | "authKind" | "error">): SourceNeed {
+  if (view.status === "off") return "setup";
+  if (view.status === "needs_sign_in" || (view.status === "failed" && view.authKind === "header" && /rejected the token/i.test(view.error ?? ""))) return "signin";
+  if (err instanceof RelayError) {
+    if (err.kind === "busy") return "busy";
+    if (err.code === "mcp_unavailable" && view.status === "ready") return "unavailable";
+  }
+  return "retry";
+}
+
+const readBody = z.object({
+  server: name,
+  tool: z.string().regex(/^[A-Za-z0-9_.:-]{1,64}$/),
+  args: z.record(z.string(), z.unknown()).default({}),
+});
+
 export function createMcpRoutes(deps: { store: RemoteStore; remoteMcp: RemoteMcp; oauth: OAuthDeps; /** Tests only: the routes are called many times in a row. */ noRateLimits?: boolean; /** Tests only: accept an address on this machine (a fixture). Never set in production. */ allowPrivateAddresses?: boolean }) {
   const limit = (name: string, max: number, windowMs: number, by: "user" | "ip" = "user") => (deps.noRateLimits ? createMiddleware(async (_c, next) => next()) : rateLimit(name, max, windowMs, by));
   const mcpServers = new Hono<AuthVars>();
@@ -73,6 +91,33 @@ export function createMcpRoutes(deps: { store: RemoteStore; remoteMcp: RemoteMcp
       });
       void deps.remoteMcp.reconnect(row); // the page sees "connecting" and polls
       return c.json(viewOf(row), 201);
+    } catch (e) {
+      return c.json({ error: message(e) }, status(e));
+    }
+  });
+
+  // One read for a panel's data block: the person's own remote server, one read-only tool, fixed arguments. Nothing is stored here;
+  // the answer goes straight back to the person's app. A refusal is data ({ ok: false, need }), not an error: the page shows a card.
+  mcpServers.post("/read", limit("mcp-read", 120, 60_000), async (c) => {
+    const parsed = readBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+    const { server, tool, args } = parsed.data;
+    if (!isReadTool(tool)) return c.json({ error: "Panels can only read." }, 400);
+    if (JSON.stringify(args).length > PANEL_LIMITS.argChars) return c.json({ error: "The arguments are too large." }, 400);
+    const userId = c.get("userId");
+    const need = (n: SourceNeed) => c.json({ ok: false, need: n, server } satisfies SourceRead);
+    try {
+      const row = (await deps.store.list(userId)).find((r) => r.name === server);
+      if (!row || !row.enabled) return need("setup");
+      try {
+        const r = await deps.remoteMcp.call(userId, { server, tool, args });
+        if (r.isError) return need("retry");
+        const text = r.text.length > PANEL_LIMITS.resultChars ? r.text.slice(0, PANEL_LIMITS.resultChars) : r.text;
+        return c.json({ ok: true, text, truncated: r.truncated || text.length < r.text.length } satisfies SourceRead);
+      } catch (e) {
+        if (!(e instanceof RelayError)) console.error("[mcp-read]", e instanceof Error ? e.message : e);
+        return need(readNeed(e, viewOf(row)));
+      }
     } catch (e) {
       return c.json({ error: message(e) }, status(e));
     }

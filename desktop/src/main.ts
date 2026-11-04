@@ -114,7 +114,7 @@ if (!app.requestSingleInstanceLock()) {
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
     const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
     // Custom panels: the AI's tabs for this person, kept in this app's folder only. Signed in = the person the MCP host serves.
-    setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser() });
+    setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser(), mcp });
     // The window frame (title bar) follows the app's own light/dark choice instead of the computer's.
     ipcMain.on("theme:set", (e, pref: unknown) => {
       if (originOf(e.senderFrame?.url) !== (DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN)) return;

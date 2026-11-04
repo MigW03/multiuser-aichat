@@ -1,4 +1,4 @@
-import type { PanelFull, PanelListItem, PanelMeta } from "@mc/shared";
+import type { PanelFull, PanelListItem, PanelMeta, SourceRead } from "@mc/shared";
 import { useEffect, useState } from "react";
 
 // Custom panels, as the desktop app keeps them on this computer. The page can read and tidy them; making or changing one
@@ -16,6 +16,8 @@ export type PanelsBridge = {
   /** Asks in a window of the app's own; the value is false when the person cancelled. */
   clearState: (projectId: string, panelId: string) => Promise<PanelResult<boolean>>;
   delete: (projectId: string, panelId: string) => Promise<PanelResult<boolean>>;
+  /** null: the source isn't one of this computer's tool servers; ask the person's remote servers. */
+  readSource: (projectId: string, panelId: string, sourceId: string) => Promise<PanelResult<SourceRead | null>>;
   onChange: (callback: (projectId: string) => void) => () => void;
 };
 
@@ -41,4 +43,13 @@ export function usePanels(projectId: string | null): PanelListItem[] | null {
     };
   }, [bridge, projectId]);
   return list;
+}
+
+/** What the renderer keeps, as plain data the app's folder accepts: no `undefined`, no functions. */
+export function cleanState(state: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }

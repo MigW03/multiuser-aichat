@@ -183,6 +183,8 @@ export const panelsApi = {
   undo: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:undo", projectId, panelId),
   clearState: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:clear-state", projectId, panelId),
   delete: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:delete", projectId, panelId),
+  /** One read of a panel's source on this computer's tool servers. Resolves to null when the source isn't a server on this computer. */
+  readSource: (projectId: string, panelId: string, sourceId: string): Promise<unknown> => ipcRenderer.invoke("panels:read-source", projectId, panelId, sourceId),
   onChange: (callback: (projectId: string) => void): (() => void) => {
     const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
     ipcRenderer.on("panels:changed", listener);

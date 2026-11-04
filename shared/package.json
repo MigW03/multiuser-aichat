@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./genui-spec.json": "./src/genui-spec.json"
+    "./genui-spec.json": "./src/genui-spec.json",
+    "./panel-spec.json": "./src/panel-spec.json"
   }
 }

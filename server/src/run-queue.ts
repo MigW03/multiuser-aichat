@@ -27,6 +27,7 @@ import { loadProjectRules, projectRulesInstructions } from "./project-rules.ts";
 import { genUiInstructions } from "./genui.ts";
 import { loadImages } from "./images.ts";
 import { mcpInstructions, mcpTools } from "./mcp-tools.ts";
+import { panelInstructions, panelsOffInstructions, panelTools } from "./panel-tools.ts";
 import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
 import { mcpRelay } from "./mcp.ts";
 import { remoteMcp } from "./mcp-servers.ts";
@@ -280,6 +281,9 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let designing: ReturnType<typeof designTools> | null = null;
     /** A project chat on a server without design storage: the AI is told designs can't be saved here. */
     let designsOff = false;
+    /** The asker's custom panels: tools when their desktop app keeps panels, a plain "only in the desktop app" note when it does not. */
+    let panelling: ToolSet | null = null;
+    let panelsOff = false;
     /** What this answer read and changed, for the note under it. Shared by the folder and the design tools. */
     const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
     let runSeconds = LOCK_SECONDS;
@@ -375,7 +379,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         return { servers: [] } as McpState;
       });
       if (localState.servers.length || remoteState.servers.length) {
-        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {})];
+        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {}), "panel_list", "panel_draft", "panel_request_delete"];
         const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
         const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
         connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
@@ -383,6 +387,18 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           runSeconds = LOCK_SECONDS_EDIT;
           await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
         }
+      }
+
+      // Custom panels (project chats): offered only to the asker, and only when their own desktop app is online and keeps panels.
+      // Everything they cause goes to that app alone; nobody else in the chat sees a card.
+      if (projectId) {
+        if (mcpRelay.hasPanels(authorId)) {
+          panelling = panelTools((req, opts) => mcpRelay.panel(authorId, req, opts), { projectId, signal: controller.signal, connected: connected?.state ?? { servers: [] } }) as ToolSet;
+          if (runSeconds < LOCK_SECONDS_EDIT) {
+            runSeconds = LOCK_SECONDS_EDIT;
+            await db.from("chats").update({ run_lock_until: new Date(Date.now() + runSeconds * 1000).toISOString() }).eq("id", chatId);
+          }
+        } else panelsOff = true;
       }
     }
 
@@ -405,11 +421,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected || noting || designing) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
+        ...(withTools && (folder || connected || noting || designing || panelling) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting, ...panelling }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
@@ -436,7 +452,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let streamError = await attempt(true);
     // Some connections refuse tools (a model without tool support, or a ChatGPT plan backend that changed). Rather than
     // fail the answer, answer once more without the folder, and say why.
-    if (streamError && (folder || connected || noting || designing) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
+    if (streamError && (folder || connected || noting || designing || panelling) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
       console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder and connected tools (${streamError.statusCode})`);
       streamError = await attempt(false);
       if (!streamError) {

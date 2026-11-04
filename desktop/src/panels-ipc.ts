@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
 import { originOf } from "./folder-host.ts";
+import { PanelDrafts, type DraftView } from "./panels-drafts.ts";
 import { PanelError, PanelStore } from "./panels-store.ts";
 import { isReadTool, PANEL_LIMITS, type PanelFull, type PanelListItem, type SourceRead } from "@mc/shared";
 import { FolderError } from "./folder-fs.ts";
@@ -18,6 +19,10 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
   void store.ensureRoot().catch(() => undefined);
 
   const changed = (projectId: string) => opts.getWindow()?.webContents.send("panels:changed", projectId);
+  // What the AI proposes waits here for the person's click. Told to the page only for the person who is signed in.
+  const drafts = new PanelDrafts(store, (userId, projectId) => {
+    if (opts.currentUser() === userId) opts.getWindow()?.webContents.send("panels:drafts-changed", projectId);
+  });
   const trusted = (e: IpcMainInvokeEvent) => originOf(e.senderFrame?.url) === opts.allowedOrigin;
   /** The signed-in person, when the caller is the app's own page. */
   const me = (e: IpcMainInvokeEvent): string | null => (trusted(e) ? opts.currentUser() : null);
@@ -104,6 +109,7 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
       if (!(await confirm(`Delete ${name}?`, "Removes the panel and its saved ticks and notes from this computer. This cannot be undone.", "Delete"))) return false;
       if (opts.currentUser() !== u) throw new PanelError("bad_request", "You were signed out.");
       await store.delete(u, str(projectId), str(panelId));
+      drafts.forgetPanel(u, str(projectId), str(panelId));
       changed(str(projectId));
       return true;
     }),
@@ -139,5 +145,55 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
     }),
   );
 
-  return store;
+  ipcMain.handle("panels:drafts", (e, projectId: unknown): Promise<PanelResult<DraftView[]>> => run(e, async (u) => drafts.list(u, str(projectId))));
+
+  // The person's click on Add / Update. The app saves the draft it kept; the page names only the draft.
+  ipcMain.handle("panels:draft-commit", (e, projectId: unknown, id: unknown) =>
+    run(e, async (u) => {
+      const r = await drafts.commit(u, str(projectId), str(id));
+      changed(str(projectId));
+      return r;
+    }),
+  );
+
+  ipcMain.handle("panels:draft-discard", (e, projectId: unknown, id: unknown) =>
+    run(e, async (u) => {
+      drafts.discard(u, str(projectId), str(id));
+    }),
+  );
+
+  /**
+   * What the chat server may ask about THIS person's panels, for an answer they asked for. It can list them and put a proposal in
+   * front of the person; that is all. Nothing it asks makes, changes or deletes a panel.
+   */
+  async function request(userId: string, raw: unknown): Promise<unknown> {
+    const r = (raw ?? {}) as { panelOp?: unknown; projectId?: unknown; panelId?: unknown; draft?: unknown };
+    const projectId = str(r.projectId);
+    try {
+      if (r.panelOp === "list") {
+        const all = await store.list(userId, projectId);
+        const list = await Promise.all(
+          all.map(async (p) => {
+            if ("broken" in p) return { id: p.id, unreadable: true };
+            return { id: p.id, name: p.name, rev: p.rev, sources: p.sources.map((s) => ({ id: s.id, label: s.label, server: s.server, tool: s.tool })), functions: p.functions.map((f) => ({ id: f.id, label: f.label, kind: f.kind })) };
+          }),
+        );
+        return { ok: true, list };
+      }
+      if (r.panelOp === "draft") {
+        const d = await drafts.propose(userId, projectId, r.panelId === undefined ? undefined : str(r.panelId), r.draft);
+        return { ok: true, draftId: d.id, kind: d.kind };
+      }
+      if (r.panelOp === "delete_request") {
+        const d = await drafts.proposeDelete(userId, projectId, str(r.panelId));
+        return { ok: true, draftId: d.id };
+      }
+      return { ok: false, error: "Unknown request." };
+    } catch (err) {
+      if (err instanceof PanelError) return { ok: false, error: err.message.slice(0, 280) };
+      throw err;
+    }
+  }
+
+  return { store, request, signedOut: (userId: string) => drafts.clearUser(userId) };
 }

@@ -75,6 +75,11 @@ describe("the panel library", () => {
     assert.equal(committed, `${JSON.stringify(panelLibrary.toSpec(), null, 2)}\n`);
   });
 
+  test("the committed schema matches the library (the server checks drafts with it)", () => {
+    const committed = readFileSync(new URL("../../../shared/src/panel-schema.json", import.meta.url), "utf8");
+    assert.equal(committed, `${JSON.stringify(panelLibrary.toJSONSchema(), null, 2)}\n`);
+  });
+
   test("a panel as the board draws it parses", () => {
     const program = `root = Stack([stats, todo, notes, drafts])
 stats = Stack([SourceStat("Open PRs", "prs", "items.length"), SourceStat("Waiting", "prs", "total", "needs review")], "row")

@@ -1,6 +1,6 @@
 import { classifyCommand, RISKY_FILE, type ChangePreview } from "@mc/shared";
 import { Check, FilePen, FilePlus, GitBranch, Hourglass, Maximize2, Minimize2, ShieldCheck, Terminal, TriangleAlert, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { folderBridge, useAutoRan, useHostApprovals, type AutoRan, type PendingChange } from "../lib/folder.ts";
 import { createPortal } from "react-dom";
 import { Button, ICON_SM, IconButton, STROKE } from "./kit.tsx";
@@ -307,11 +307,11 @@ function AutoRanRow({ ran, projectName, dismiss }: { ran: AutoRan; projectName: 
 }
 
 /** The host's approval panel (desktop app only). Shows every change waiting on this computer, whichever chat it came from. */
-export function ApprovalDock({ projectName }: { projectName: (id: string) => string }) {
+export function ApprovalDock({ projectName, extra }: { projectName: (id: string) => string; /** More things waiting for the person on this computer (the AI's custom panel proposals). */ extra?: ReactNode }) {
   const pending = useHostApprovals();
   const ran = useAutoRan();
   const [views, setViews] = useState<Record<string, View>>({});
-  if (pending.length === 0 && ran.rows.length === 0) return null;
+  if (pending.length === 0 && ran.rows.length === 0 && !extra) return null;
   const keyOf = (p: PendingChange) => `${p.projectId}:${p.id}`;
   return (
     <aside className="approval-dock" role="region" aria-label="AI changes waiting for you" aria-live="polite">
@@ -327,6 +327,7 @@ export function ApprovalDock({ projectName }: { projectName: (id: string) => str
       {ran.rows.map((r) => (
         <AutoRanRow key={r.id} ran={r} projectName={projectName(r.projectId)} dismiss={() => ran.dismiss(r.id)} />
       ))}
+      {extra}
     </aside>
   );
 }

@@ -21,6 +21,8 @@ const CELL_CHARS = 200;
 
 export type SourceState = { label: string } & (
   | { status: "loading" }
+  /** A proposal's wireframe: the block is drawn as a placeholder, because nothing has been read yet. */
+  | { status: "sample" }
   | { status: "ok"; value: unknown; truncated: boolean; /** The read failed after a good one: the last data is shown, greyed. */ stale?: boolean; at?: number }
   | { status: "need"; need: SourceNeed; server: string }
 );
@@ -84,6 +86,12 @@ function Source({ id, children }: { id: string; children: (value: unknown, stale
   if (!s) return <Undrawn what={id} />;
   if (s.status === "need") return <NeedCard need={s.need} server={s.server} label={s.label} />;
   if (s.status === "loading") return <div className="gen-loading">Loading…</div>;
+  if (s.status === "sample")
+    return (
+      <div className="gen-sample">
+        <span>{s.label}</span> <mark>sample</mark>
+      </div>
+    );
   return <>{children(s.value, s.stale === true)}</>;
 }
 

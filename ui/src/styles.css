@@ -1171,3 +1171,6 @@ h1, h2, h3, p { margin: 0; }
 .panel-icon { height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--fg); display: grid; place-items: center; cursor: pointer; }
 .panel-icon:hover { background: var(--hover-row); }
 .panel-icon.on { background: var(--t8); color: var(--p-text); border-color: var(--p); }
+
+/* ---- the AI's panel proposals sit in the chat, under the last message */
+.panel-draft-tail { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; max-width: 560px; }

@@ -48,23 +48,23 @@ export class PanelDrafts {
   }
 
   /** A proposal for a new panel, or a new version of `panelId`. Checked here; the page never gets to change it. */
-  async propose(userId: string, projectId: string, panelId: string | undefined, rawDraft: unknown): Promise<DraftView> {
+  async propose(userId: string, projectId: string, panelId: string | undefined, rawDraft: unknown, chatId?: string): Promise<DraftView> {
     const draft: PanelDraft = checkDraft(rawDraft);
     if (panelId === undefined) {
       const all = await this.store.list(userId, projectId);
       if (all.some((p) => !("broken" in p) && p.name.toLowerCase() === draft.name.toLowerCase())) throw new PanelError("name_taken", `A panel called "${draft.name}" already exists. To change it, update it (panel_list, then panel_draft with its panel_id).`);
-      return this.put({ id: randomUUID(), userId, projectId, kind: "new", createdAt: this.now(), ...draft });
+      return this.put({ id: randomUUID(), userId, projectId, kind: "new", createdAt: this.now(), ...(chatId ? { chatId } : {}), ...draft });
     }
     const current = await this.store.get(userId, projectId, panelId);
     const { name, icon, sources, functions, replaces } = current.meta;
-    return this.put({ id: randomUUID(), userId, projectId, kind: "update", panelId: current.meta.id, createdAt: this.now(), ...draft, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev, ...(replaces ? { replaces } : {}) } });
+    return this.put({ id: randomUUID(), userId, projectId, kind: "update", panelId: current.meta.id, createdAt: this.now(), ...(chatId ? { chatId } : {}), ...draft, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev, ...(replaces ? { replaces } : {}) } });
   }
 
   /** The AI asked to delete a panel: a card with a button the person presses. It deletes nothing. */
-  async proposeDelete(userId: string, projectId: string, panelId: string): Promise<DraftView> {
+  async proposeDelete(userId: string, projectId: string, panelId: string, chatId?: string): Promise<DraftView> {
     const current = await this.store.get(userId, projectId, panelId);
     const { name, icon, sources, functions } = current.meta;
-    return this.put({ id: randomUUID(), userId, projectId, kind: "delete", panelId: current.meta.id, createdAt: this.now(), name, icon, view: "", sources, functions, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev } });
+    return this.put({ id: randomUUID(), userId, projectId, kind: "delete", panelId: current.meta.id, createdAt: this.now(), ...(chatId ? { chatId } : {}), name, icon, view: "", sources, functions, before: { name, icon, view: current.view, sources, functions, rev: current.meta.rev } });
   }
 
   list(userId: string, projectId: string): DraftView[] {

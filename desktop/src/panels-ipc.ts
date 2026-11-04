@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
-import { originOf } from "./folder-host.ts";
+import { isUuid, originOf } from "./folder-host.ts";
 import { PanelDrafts, type DraftView } from "./panels-drafts.ts";
 import { PanelError, PanelStore } from "./panels-store.ts";
 import { isReadTool, PANEL_LIMITS, type PanelFull, type PanelListItem, type SourceRead } from "@mc/shared";
@@ -167,7 +167,9 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
    * front of the person; that is all. Nothing it asks makes, changes or deletes a panel.
    */
   async function request(userId: string, raw: unknown): Promise<unknown> {
-    const r = (raw ?? {}) as { panelOp?: unknown; projectId?: unknown; panelId?: unknown; draft?: unknown };
+    const r = (raw ?? {}) as { panelOp?: unknown; projectId?: unknown; chatId?: unknown; panelId?: unknown; draft?: unknown };
+    // Which chat the person asked in (only a real chat id is kept; anything else just means "any chat of the project").
+    const chatId = isUuid(r.chatId) ? r.chatId : undefined;
     const projectId = str(r.projectId);
     try {
       if (r.panelOp === "list") {
@@ -181,11 +183,11 @@ export function setupPanels(opts: { allowedOrigin: string; getWindow: () => Brow
         return { ok: true, list };
       }
       if (r.panelOp === "draft") {
-        const d = await drafts.propose(userId, projectId, r.panelId === undefined ? undefined : str(r.panelId), r.draft);
+        const d = await drafts.propose(userId, projectId, r.panelId === undefined ? undefined : str(r.panelId), r.draft, chatId);
         return { ok: true, draftId: d.id, kind: d.kind };
       }
       if (r.panelOp === "delete_request") {
-        const d = await drafts.proposeDelete(userId, projectId, str(r.panelId));
+        const d = await drafts.proposeDelete(userId, projectId, str(r.panelId), chatId);
         return { ok: true, draftId: d.id };
       }
       return { ok: false, error: "Unknown request." };

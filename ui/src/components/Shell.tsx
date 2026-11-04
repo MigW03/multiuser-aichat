@@ -27,8 +27,6 @@ import { ChatView } from "./ChatView.tsx";
 import { InviteDialog, type InviteTarget } from "./Dialogs.tsx";
 import { Landing } from "./EmptyStates.tsx";
 import { ApprovalDock } from "./Changes.tsx";
-import { PanelDraftCards } from "./PanelDraftCards.tsx";
-import { usePanelDrafts } from "../lib/panels.ts";
 import { DesignPanel } from "./design/DesignPanel.tsx";
 import { useDesignMode } from "./design/useDesignMode.tsx";
 import { FilePanel, type FileRequest } from "./FilePanel.tsx";
@@ -137,8 +135,6 @@ export function Shell({ userId }: { userId: string }) {
   const chats = useLive(() => fetchChats(projectId), [projectId]);
   const members = useLive(() => (projectId ? fetchProjectMembers(projectId) : Promise.resolve(undefined)), [projectId]);
   const online = useProjectPresence(projectId, userId);
-  /** What the AI proposed for this person's custom panels in this project (desktop app only). */
-  const panelDrafts = usePanelDrafts(projectId);
   // The desktop app serves what this person shares in the projects they belong to.
   useFolderHost(userId, projects.data?.map((p) => p.id));
   // And it runs this person's own connected tools (MCP servers) for the answers they ask for.
@@ -546,7 +542,7 @@ export function Shell({ userId }: { userId: string }) {
       {addKey && <AddKeyDialog onClose={() => setAddKey(false)} />}
       {inviteReq && <InviteHost req={inviteReq} projects={projects.data} chats={chats.data} meId={userId} onClose={() => setInviteReq(null)} />}
       {design.dialogs}
-      <ApprovalDock projectName={(id) => projects.data?.find((p) => p.id === id)?.name ?? "a project"} extra={panelDrafts.length ? <PanelDraftCards drafts={panelDrafts} /> : null} />
+      <ApprovalDock projectName={(id) => projects.data?.find((p) => p.id === id)?.name ?? "a project"} />
     </AppContext.Provider>
   );
 }

@@ -40,6 +40,9 @@ export type MessageListProps = {
   /** A click in an answer's generated UI drafts a reply to that answer. */
   onDraft?: (m: ChatMessage, text: string) => void;
   emptyState: ReactNode;
+  /** Things waiting for the person, shown under the last message (the AI's panel proposals). `tailKey` changes when they do. */
+  tail?: ReactNode;
+  tailKey?: string;
 };
 
 function TypingDots() {
@@ -82,7 +85,7 @@ export function MessageList(props: MessageListProps) {
   // Follow new messages unless the person scrolled up to read.
   useEffect(() => {
     if (pinnedToBottom.current) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, streams]);
+  }, [messages, streams, props.tailKey]);
   const lastLen = useRef(0);
   useEffect(() => {
     // first render of a chat: jump to the end
@@ -132,6 +135,7 @@ export function MessageList(props: MessageListProps) {
             </Fragment>
           );
         })}
+        {props.tail}
         <div ref={bottomRef} />
       </div>
       <SelectionRespond onRespond={(id, quote) => { const m = byId.get(id); if (m) props.onReply(m, quote); }} />

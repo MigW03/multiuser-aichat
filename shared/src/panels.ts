@@ -159,6 +159,8 @@ export type DraftView = PanelShape & {
   id: string;
   kind: DraftKind;
   projectId: string;
+  /** The chat the person asked in: its card shows in that chat. */
+  chatId?: string;
   /** update and delete: the panel it is about. */
   panelId?: string;
   /** update: what the panel is now, for the before and after. delete: the panel as it is. */

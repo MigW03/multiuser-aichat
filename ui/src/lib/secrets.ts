@@ -27,3 +27,13 @@ export function maskSecret(match: string): string {
   const keep = Math.min(12, Math.floor(match.length / 3));
   return `${match.slice(0, keep)}${"•".repeat(16)}`;
 }
+
+const ENV_LINE = /^(\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIAL)[A-Z0-9_]*\s*=\s*).+$/gm;
+const REMOVED = "[removed]";
+
+/** The text with everything findSecret would flag replaced, plus env-style lines (NAME_KEY=value), for text that leaves the person's computer unreviewed. */
+export function redactSecrets(text: string): string {
+  let out = text.replace(ENV_LINE, `$1${REMOVED}`);
+  for (const { re } of PATTERNS) out = out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), REMOVED);
+  return out;
+}

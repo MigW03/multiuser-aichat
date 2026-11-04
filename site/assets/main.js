@@ -11,6 +11,7 @@
   const root = document.documentElement;
   root.classList.add('js');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) root.classList.add('reduce');
 
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -557,6 +558,55 @@
     closing.addEventListener('pointerdown', light, { passive: true });
     closing.addEventListener('pointerleave', () => closing.style.setProperty('--x', '-999px'));
   }
+
+  // ------------------------------------------------------------------ project tools
+  // Tabs for the side-panel preview: click or arrow keys to pick one. It moves on by itself until the visitor interacts,
+  // only while on screen, and never with reduced motion or on small screens.
+  (() => {
+    const box = document.querySelector('[data-tools]');
+    if (!box) return;
+    const tabs = [...box.querySelectorAll('[role="tab"]')];
+    const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')));
+    let current = 0;
+    let touched = false;
+    let timer = 0;
+    const show = (i, focus) => {
+      current = (i + tabs.length) % tabs.length;
+      tabs.forEach((t, k) => {
+        const on = k === current;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        panels[k].hidden = !on;
+        panels[k].classList.toggle('is-active', on);
+      });
+      if (focus) tabs[current].focus();
+    };
+    const stop = () => { touched = true; clearTimeout(timer); };
+    const small = window.matchMedia('(max-width: 860px)');
+    const canRun = () => !touched && !reduceMotion && !small.matches;
+    let visible = false;
+    const next = () => {
+      clearTimeout(timer);
+      if (!visible || !canRun()) return;
+      timer = setTimeout(() => { show(current + 1, false); next(); }, 4500);
+    };
+    tabs.forEach((t, k) => {
+      t.addEventListener('click', () => { stop(); show(k, false); });
+      t.addEventListener('keydown', (e) => {
+        const move = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+        if (move) { e.preventDefault(); stop(); show(current + move, true); }
+        else if (e.key === 'Home') { e.preventDefault(); stop(); show(0, true); }
+        else if (e.key === 'End') { e.preventDefault(); stop(); show(tabs.length - 1, true); }
+      });
+    });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        visible = entries[0].isIntersecting;
+        if (visible) next(); else clearTimeout(timer);
+      }, { threshold: 0.4 }).observe(box);
+    }
+    if (small.addEventListener) small.addEventListener('change', () => { clearTimeout(timer); next(); });
+  })();
 
   // The nav mark's ring doubles as a scroll progress bar; the hero ring turns slowly. Both stay still with reduced motion.
   const navRing = nav.querySelector('.mark-nav');

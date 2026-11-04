@@ -646,3 +646,4 @@ export * from "./mcp-presets.ts";
 export * from "./design.ts";
 export * from "./edit-match.ts";
 export * from "./files.ts";
+export * from "./panels.ts";

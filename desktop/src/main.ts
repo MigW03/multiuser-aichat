@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parseDeepLink, SCHEME } from "./deeplink.ts";
 import { setupFolderHost } from "./folder-ipc.ts";
 import { setupMcp } from "./mcp-ipc.ts";
+import { setupPanels } from "./panels-ipc.ts";
 import { setupPreview } from "./preview.ts";
 import { createRunServer } from "./run-server.ts";
 import { setupUpdater } from "./updater.ts";
@@ -111,7 +112,9 @@ if (!app.requestSingleInstanceLock()) {
     // Serves shared HTML pages from this computer's disk to the preview ("Run page"); starts only when one runs.
     const run = createRunServer();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
-    setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    // Custom panels: the AI's tabs for this person, kept in this app's folder only. Signed in = the person the MCP host serves.
+    setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser() });
     // The window frame (title bar) follows the app's own light/dark choice instead of the computer's.
     ipcMain.on("theme:set", (e, pref: unknown) => {
       if (originOf(e.senderFrame?.url) !== (DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN)) return;

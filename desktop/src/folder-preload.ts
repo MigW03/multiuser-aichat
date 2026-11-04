@@ -169,3 +169,23 @@ export const previewApi = {
     return () => void ipcRenderer.removeListener("preview:state", listener);
   },
 };
+
+// Custom panels: the AI's tabs for this person, kept in this app's folder on this computer. The page can list, read, rename,
+// reorder and save a panel's own data. Deleting a panel or clearing its data asks in a window of the app's own. Making or
+// changing a panel is not here: that comes only from a draft the person approves.
+export const panelsApi = {
+  list: (projectId: string): Promise<unknown> => ipcRenderer.invoke("panels:list", projectId),
+  get: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:get", projectId, panelId),
+  saveState: (projectId: string, panelId: string, state: unknown): Promise<unknown> => ipcRenderer.invoke("panels:save-state", projectId, panelId, state),
+  rename: (projectId: string, panelId: string, name: string): Promise<unknown> => ipcRenderer.invoke("panels:rename", projectId, panelId, name),
+  setIcon: (projectId: string, panelId: string, icon: string): Promise<unknown> => ipcRenderer.invoke("panels:set-icon", projectId, panelId, icon),
+  move: (projectId: string, panelId: string, delta: -1 | 1): Promise<unknown> => ipcRenderer.invoke("panels:move", projectId, panelId, delta),
+  undo: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:undo", projectId, panelId),
+  clearState: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:clear-state", projectId, panelId),
+  delete: (projectId: string, panelId: string): Promise<unknown> => ipcRenderer.invoke("panels:delete", projectId, panelId),
+  onChange: (callback: (projectId: string) => void): (() => void) => {
+    const listener = (_event: unknown, projectId: unknown) => typeof projectId === "string" && callback(projectId);
+    ipcRenderer.on("panels:changed", listener);
+    return () => void ipcRenderer.removeListener("panels:changed", listener);
+  },
+};

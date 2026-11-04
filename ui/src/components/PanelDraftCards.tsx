@@ -36,7 +36,7 @@ function Wireframe({ shape }: { shape: PanelShape }) {
 }
 
 /** "Data & functions": what the panel reads, what it does, what it cannot do. Words, no code. */
-function Details({ shape }: { shape: PanelShape }) {
+export function Details({ shape }: { shape: PanelShape }) {
   const servers = [...new Set(shape.sources.map((s) => s.server))];
   // Read from the program itself: a description written by the AI could say anything, the buttons' real targets can't.
   const actions = buttonActions(shape.view);

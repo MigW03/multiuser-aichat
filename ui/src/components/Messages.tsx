@@ -1,12 +1,14 @@
 import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
-import { Code2, Copy, CornerUpLeft, File, FileText, Monitor, RotateCcw, Shapes, Sparkles } from "lucide-react";
+import { Code2, Copy, CornerUpLeft, File, FilePen, FileText, Monitor, Plug, RotateCcw, Shapes, Sparkles, X } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
 import { designChanged, designRunEnded } from "../lib/designBus.ts";
 import { sameDesignPath } from "../lib/designEditor.ts";
 import { findFilePaths } from "../lib/fileKind.ts";
+import { chipFileNames, TOOL_CHIPS_SHOWN, toolChips } from "../lib/toolChips.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
+import { EggLoader, useElapsed } from "./EggLoader.tsx";
 import { AnswerBody } from "../genui/AnswerBody.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PictureGrid } from "./Pictures.tsx";
@@ -45,13 +47,54 @@ export type MessageListProps = {
   tailKey?: string;
 };
 
-function TypingDots() {
+/** Under the first words of an answer: the Nido eggs, who it answers, and after a few seconds how long it has taken. */
+function Answering({ who }: { who: string }) {
+  const seconds = useElapsed();
   return (
-    <span className="dots" aria-hidden>
-      <i />
-      <i />
-      <i />
-    </span>
+    <div className="answering" role="status">
+      <EggLoader />
+      <span className="muted small">
+        Answering {who}
+        {seconds !== null ? ` · ${seconds}s` : ""}
+      </span>
+    </div>
+  );
+}
+
+const CHIP_ICON = { read: File, edit: FilePen, failed: X, mcp: Plug } as const;
+
+/** What the AI did for this answer: files read and changed, connected tools used. Files open in the file panel. The first few show; the rest follow "+N more". */
+function ToolChips({ meta }: { meta: ChatMessage["meta"] }) {
+  const files = useContext(AppContext)?.files;
+  const [all, setAll] = useState(false);
+  const chips = useMemo(() => toolChips(meta), [meta]);
+  if (chips.length === 0) return null;
+  const shown = all ? chips : chips.slice(0, TOOL_CHIPS_SHOWN);
+  return (
+    <div className="tool-chips">
+      {shown.map((c) => {
+        const Icon = CHIP_ICON[c.kind];
+        const inner = (
+          <>
+            <Icon size={12} strokeWidth={STROKE} aria-hidden /> <span className="truncate">{c.label}</span>
+          </>
+        );
+        return c.path && files?.hasAny ? (
+          <button key={c.key} type="button" className={`tool-chip ${c.kind}`} title={c.title} onClick={() => c.path && files.open(c.path, true)}>
+            {inner}
+          </button>
+        ) : (
+          <span key={c.key} className={`tool-chip ${c.kind}`} title={c.title}>
+            {inner}
+          </span>
+        );
+      })}
+      {!all && chips.length > TOOL_CHIPS_SHOWN && (
+        <button type="button" className="tool-chip more" onClick={() => setAll(true)}>
+          +{chips.length - TOOL_CHIPS_SHOWN} more
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -319,8 +362,10 @@ function FileChips({ text, except }: { text: string; except?: ChatMessage }) {
     if (!files?.hasAny) return [];
     // Designs the answer saved have their own card.
     const saved = new Set((except?.meta.edits ?? []).filter((e) => isDesignPath(e.p)).map((e) => e.p.split("/").at(-1)));
-    return findFilePaths(text).filter((p) => !saved.has(p.split("/").at(-1)));
-  }, [files?.hasAny, text, except?.meta.edits]);
+    // Files the tool chips above the answer already show are not offered again.
+    const chipped = except ? chipFileNames(toolChips(except.meta)) : new Set<string>();
+    return findFilePaths(text).filter((p) => !saved.has(p.split("/").at(-1)) && !chipped.has(p.split("/").at(-1) ?? ""));
+  }, [files?.hasAny, text, except?.meta]);
   if (paths.length === 0 || !files) return null;
   const shown = all ? paths : paths.slice(0, FILE_CHIPS);
   return (
@@ -370,11 +415,9 @@ function AssistantMessage(props: RowProps) {
                 </span>
               </div>
             )}
+            <ToolChips meta={m.meta} />
             {streaming && !text ? (
-              <div className="answering">
-                <TypingDots />
-                <span className="muted small">Answering {forMe ? "you" : (asker ?? "")}</span>
-              </div>
+              <Answering who={forMe ? "you" : (asker ?? "")} />
             ) : (
               <AnswerBody text={text} streaming={streaming} {...(props.onDraft ? { onDraft: (draft: string) => props.onDraft?.(m, draft) } : {})} />
             )}

@@ -1,9 +1,12 @@
 import { parsePreviewUrl } from "@mc/shared";
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
+import { Children, createContext, isValidElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AppContext } from "../data.tsx";
+import { codeLines, showLineNumbers } from "../lib/codeLines.ts";
 import { looksLikeFilePath, resolveRelative } from "../lib/fileKind.ts";
+import { ICON_SM, STROKE } from "./kit.tsx";
 
 // AI output is untrusted. Raw HTML in the text is shown as text (no rehype-raw), unsafe link schemes are dropped
 // by defaultUrlTransform, links open outside the app, and remote images are shown as links instead of loaded.
@@ -40,6 +43,48 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
   );
 }
 
+/** A fenced block: language and a Copy button on top, line numbers past a few lines, added and removed lines of a diff in green and red. */
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const code = Children.toArray(children).find(isValidElement) as { props: { className?: string; children?: ReactNode } } | undefined;
+  const raw = code?.props.children;
+  const text = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.filter((x) => typeof x === "string").join("") : "";
+  const lang = /language-([\w+-]+)/.exec(code?.props.className ?? "")?.[1];
+  const lines = useMemo(() => codeLines(text, lang), [text, lang]);
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = () => {
+    void navigator.clipboard?.writeText(lines.map((l) => l.text).join("\n")).then(
+      () => {
+        setCopied(true);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      },
+      () => undefined,
+    );
+  };
+  return (
+    <div className={`code-block ${showLineNumbers(lines.length) ? "numbered" : ""}`}>
+      <div className="code-head">
+        <span className="code-lang">{lang ?? "text"}</span>
+        <button type="button" className="code-copy" onClick={copy} aria-label="Copy code">
+          {copied ? <Check size={ICON_SM} strokeWidth={STROKE} aria-hidden /> : <Copy size={ICON_SM} strokeWidth={STROKE} aria-hidden />} {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre>
+        <code className={code?.props.className}>
+          {lines.map((l, i) => (
+            <span key={i} className={`cl ${l.kind === "add" ? "diff-add" : l.kind === "del" ? "diff-del" : ""}`}>
+              {l.text || " "}
+              {"\n"}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
 const components: Components = {
   a: Link,
   img: ({ src, alt }) =>
@@ -48,26 +93,10 @@ const components: Components = {
         {alt || src}
       </a>
     ) : null,
-  // A diff block shows added and removed lines in green and red, like the composer does while typing.
   code: ({ className, children }) => {
-    const lang = /language-(\w+)/.exec(className ?? "")?.[1];
-    if ((lang === "diff" || lang === "patch") && typeof children === "string") {
-      return (
-        <code className={className}>
-          {children
-            .replace(/\n$/, "")
-            .split("\n")
-            .map((line, i) => (
-              <span key={i} className={line.startsWith("+") && !line.startsWith("+++") ? "diff-add" : line.startsWith("-") && !line.startsWith("---") ? "diff-del" : "diff-line"}>
-                {line || " "}
-                {"\n"}
-              </span>
-            ))}
-        </code>
-      );
-    }
     return <FileCode className={className}>{children}</FileCode>;
   },
+  pre: CodeBlock,
 };
 
 /**

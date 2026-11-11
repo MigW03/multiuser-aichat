@@ -5,6 +5,7 @@ import { useApp } from "../data.tsx";
 import { CLAUDE_INSTALL_URL, CLAUDE_LOGIN_COMMAND, claudeCodeBridge, useClaudeCode, type ClaudeCodeResult } from "../lib/claudeCode.ts";
 import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
+import { ClaudeCodeUsageBlock } from "./PlanUsage.tsx";
 import { Button, ErrorLine, ICON_SM, STROKE, useToast } from "./kit.tsx";
 
 const LINK = { off: "Not connected to the chat yet", connecting: "Connecting to the chat…", connected: "Connected to the chat", auth: "Sign-in needs refreshing" } as const;
@@ -87,6 +88,8 @@ export function ClaudeCodeConnect() {
           </div>
         )}
       </div>
+
+      {status.enabled && status.login !== "signed_out" && <ClaudeCodeUsageBlock />}
 
       {!found && (
         <p className="small muted">

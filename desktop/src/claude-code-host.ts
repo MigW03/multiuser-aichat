@@ -1,7 +1,8 @@
-import { CLAUDE_CODE_LIMITS as CC, isClaudeCodeModel, type ClaudeCodeEffort, type ClaudeCodeEvent, type ClaudeCodeReport, type ClaudeCodeRequest, type ClaudeCodeStatus } from "@mc/shared";
+import { CLAUDE_CODE_LIMITS as CC, isClaudeCodeModel, type ClaudeCodeUsage, type ClaudeCodeEffort, type ClaudeCodeEvent, type ClaudeCodeReport, type ClaudeCodeRequest, type ClaudeCodeStatus } from "@mc/shared";
 import { homedir } from "node:os";
 import { claudeEnv, findClaude, loginState, type LoginState } from "./claude-code-bin.ts";
-import { runStep, StepError, type QueryFn, type StepDeps } from "./claude-code-run.ts";
+import { askPlanUsage, runStep, StepError, type QueryFn, type StepDeps } from "./claude-code-run.ts";
+import { UsageTracker } from "./claude-code-usage.ts";
 
 // The person's own Claude Code login, as far as this app is concerned: whether it is switched on, which `claude` program
 // it would run, and whether that program says it is signed in. Switched OFF by default, per person on this computer. The
@@ -61,6 +62,9 @@ export class ClaudeCodeHost {
   private error: string | null = null;
   private checking: Promise<void> | null = null;
   private runs = 0;
+  private readonly usage = new UsageTracker();
+  private usageAsk: Promise<void> | null = null;
+  private usageAskedAt = 0;
   /** Told after every change (the connection to the chat server reports `report()` again). */
   readonly listeners = new Set<() => void>();
   private notify() {
@@ -88,6 +92,7 @@ export class ClaudeCodeHost {
     await this.loaded;
     if (this.active === userId) return;
     this.active = userId;
+    this.usage.clear();
     this.bin = null;
     this.login = { login: "unknown", account: null };
     this.error = null;
@@ -166,6 +171,7 @@ export class ClaudeCodeHost {
       if (enabled) await this.refresh();
       else {
         this.bin = null;
+        this.usage.clear();
         this.login = { login: "unknown", account: null };
         this.error = null;
       }
@@ -185,6 +191,36 @@ export class ClaudeCodeHost {
     this.notify();
   }
 
+  /**
+   * The person's plan limits as `claude` last said them. With `refresh`, `claude` is asked directly first (at most every 30 s, one
+   * question at a time); an answer that does not come leaves what the answers reported. null: nothing known (not switched on, an
+   * API-key login, or nothing reported yet).
+   */
+  async getUsage(refresh: boolean): Promise<ClaudeCodeUsage | null> {
+    await this.loaded;
+    if (!this.report().ready || !this.bin) return null;
+    if (refresh && Date.now() - this.usageAskedAt > 30_000) {
+      this.usageAskedAt = Date.now();
+      this.usageAsk ??= this.askUsage().finally(() => {
+        this.usageAsk = null;
+      });
+    }
+    if (this.usageAsk) await this.usageAsk;
+    return this.usage.snapshot();
+  }
+
+  private async askUsage() {
+    const bin = this.bin;
+    const userId = this.active;
+    if (!bin || !userId) return;
+    try {
+      const answer = await askPlanUsage({ query: await this.d.query(), bin, cwd: await this.d.workDir(), env: claudeEnv() }, new AbortController().signal);
+      if (this.active === userId && this.usage.applyUsage(answer)) this.notify();
+    } catch {
+      /* no answer: the usage from answers stays */
+    }
+  }
+
   /** Runs one AI step the chat server asked for. Throws a StepError. */
   async run(req: unknown, signal: AbortSignal, emit: (e: ClaudeCodeEvent) => void): Promise<void> {
     await this.loaded;
@@ -194,7 +230,11 @@ export class ClaudeCodeHost {
     this.runs++;
     try {
       const cwd = await this.d.workDir();
-      await runStep(r, { query: await this.d.query(), makeTools: this.d.makeTools, bin: this.bin, cwd, env: claudeEnv() }, emit, signal);
+      const userId = this.active;
+      const onRateLimit = (info: unknown) => {
+        if (this.active === userId && this.usage.applyEvent(info)) this.notify();
+      };
+      await runStep(r, { query: await this.d.query(), makeTools: this.d.makeTools, bin: this.bin, cwd, env: claudeEnv(), onRateLimit }, emit, signal);
     } finally {
       this.runs--;
     }

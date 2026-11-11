@@ -1,6 +1,7 @@
-import type { ChatGptUsage, OpenRouterUsage, ProviderId, UsageLimit } from "@mc/shared";
+import type { ChatGptUsage, ClaudeCodeUsage, OpenRouterUsage, ProviderId, UsageLimit } from "@mc/shared";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api.ts";
+import { claudeCodeBridge } from "../lib/claudeCode.ts";
 import { Button, Popover } from "./kit.tsx";
 
 // How much of the signed-in ChatGPT plan, or of the OpenRouter key's budget, is used. Fetched through our server and
@@ -55,6 +56,19 @@ function useUsage<T>(fetcher: (refresh: boolean) => Promise<T>, enabled: boolean
 
 const fetchChatGpt = (refresh: boolean) => api.chatgptUsage(refresh);
 const fetchOpenRouter = (refresh: boolean) => api.openrouterUsage(refresh);
+/** The login's limits come from the desktop app, which asks the person's own `claude`; `value` null means none are known yet. */
+type ClaudeValue = { value: ClaudeCodeUsage | null };
+const fetchClaudeCode = async (refresh: boolean): Promise<ClaudeValue> => ({ value: (await claudeCodeBridge()?.usage(refresh)) ?? null });
+const useClaudeCodeUsage = (enabled: boolean) => {
+  const state = useUsage<ClaudeValue>(fetchClaudeCode, enabled);
+  // The app tells the page when `claude` reports new numbers (after an answer).
+  const { load } = state;
+  useEffect(() => {
+    if (!enabled) return;
+    return claudeCodeBridge()?.onChange(() => void load(false));
+  }, [enabled, load]);
+  return state;
+};
 const usePlanUsage = (enabled: boolean) => useUsage<ChatGptUsage>(fetchChatGpt, enabled);
 const useOpenRouterUsage = (enabled: boolean) => useUsage<OpenRouterUsage>(fetchOpenRouter, enabled);
 
@@ -124,6 +138,41 @@ function mostUsed(usage: ChatGptUsage | null): number | null {
   return values.length ? Math.max(...values) : null;
 }
 
+// ------------------------------------------------------------------ Claude login
+
+const when = (unix: number | null) => (unix === null ? null : <span className="muted"> · resets {resetsIn(unix)}</span>);
+const cap = (s: string) => `${s[0]!.toUpperCase()}${s.slice(1)}`;
+
+function ClaudeCodeBody({ usage, error, busy, load }: State<ClaudeValue>) {
+  if (error) return <div className="small muted">Usage unavailable: {error}</div>;
+  if (!usage) return <div className="small muted">Checking your plan usage…</div>;
+  const u = usage.value;
+  return (
+    <div className="usage">
+      <div className="small muted">{u?.plan ? `${cap(u.plan)} plan · ` : ""}usage from your own Claude Code, shown only to you</div>
+      {u && u.reached && <div className="small">A limit is reached.</div>}
+      {u && u.warning && <div className="small">A limit is close.</div>}
+      {u?.windows.map((w) => (
+        <div key={w.key} className="usage-row">
+          <div className="small">
+            <b>{w.label}</b> · {w.usedPercent === null ? "usage unknown" : `${Math.round(w.usedPercent)}% used`}
+            {when(w.resetsAt)}
+          </div>
+          {w.usedPercent !== null && <Bar percent={w.usedPercent} label={`${w.label} usage`} />}
+        </div>
+      ))}
+      {u?.extra?.enabled && (
+        <div className="small">
+          <b>Extra usage</b> · {u.extra.used !== null ? money(u.extra.used) : "?"}
+          {u.extra.limit !== null ? ` of ${money(u.extra.limit)}` : ""} this month
+        </div>
+      )}
+      {(!u || u.windows.length === 0) && <div className="small muted">Nothing reported yet. It fills in as you use the AI, or press Refresh. API-key logins report nothing.</div>}
+      <RefreshButton busy={busy} load={load} />
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ OpenRouter
 
 /** "daily" -> "every day (UTC)". Only the intervals OpenRouter documents get a nicer name. */
@@ -175,6 +224,15 @@ function OpenRouterBody({ usage, error, busy, load }: State<OpenRouterUsage>) {
 /** The ChatGPT usage block in Settings, under the connected account. */
 export function PlanUsage() {
   return <ChatGptBody {...usePlanUsage(true)} />;
+}
+
+/** The Claude login's usage block in Settings. */
+export function ClaudeCodeUsageBlock() {
+  const state = useClaudeCodeUsage(true);
+  // Opening the page is the one time `claude` is asked directly (the app limits how often); after that, answers keep it current.
+  const { load } = state;
+  useEffect(() => void load(true), [load]);
+  return <ClaudeCodeBody {...state} />;
 }
 
 /** The OpenRouter usage block in Settings, under the saved key. */
@@ -283,9 +341,25 @@ function OpenRouterRing({ answering }: { answering: boolean }) {
   );
 }
 
+function ClaudeCodeRing({ answering }: { answering: boolean }) {
+  const state = useClaudeCodeUsage(true);
+  const { load } = state;
+  const u = state.usage?.value ?? null;
+  const values = (u?.windows ?? []).map((w) => w.usedPercent).filter((p): p is number => p !== null);
+  const used = values.length ? Math.max(...values) : null;
+  const label = used === null ? (state.error ? "Plan usage unavailable" : "Plan usage") : `Plan usage: ${Math.round(used)}% used`;
+  // The answer that just ended already carried the new numbers, so looking again asks nothing of `claude`.
+  return (
+    <Ring used={used} reached={u?.reached === true || (used !== null && used >= 100)} label={label} answering={answering} reload={() => void load(false)}>
+      <ClaudeCodeBody {...state} />
+    </Ring>
+  );
+}
+
 /** The ring beside the model picker for the provider in use. Providers with no usage report show nothing. */
 export function UsageRing({ provider, answering }: { provider: ProviderId | null; answering: boolean }) {
   if (provider === "chatgpt") return <ChatGptRing answering={answering} />;
   if (provider === "openrouter") return <OpenRouterRing answering={answering} />;
+  if (provider === "claudecode" && claudeCodeBridge()) return <ClaudeCodeRing answering={answering} />;
   return null;
 }

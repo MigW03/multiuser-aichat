@@ -1,5 +1,5 @@
 import { isLocalProvider, isPlanProvider, KEY_PROVIDER_IDS, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
-import { Copy, ExternalLink, Info, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sun, User } from "lucide-react";
+import { Copy, ExternalLink, Info, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sparkles, Sun, User } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { copyText } from "../lib/actions.ts";
@@ -9,13 +9,14 @@ import { claudeCodeBridge } from "../lib/claudeCode.ts";
 import { ClaudeCodeConnect } from "./ClaudeCodeConnect.tsx";
 import { McpTab } from "./McpSettings.tsx";
 import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
+import { SkillsManager } from "./SkillsUi.tsx";
 import { SmartSetting } from "./SmartSetting.tsx";
 import { notifyChanged, useApp } from "../data.tsx";
 import { setThemePref, getThemePref, type ThemePref } from "../theme.ts";
 import { supabase } from "../supabase.ts";
 import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, STROKE, TextInput, useToast } from "./kit.tsx";
 
-export type SettingsTab = "account" | "key" | "appearance" | "mcp" | "about";
+export type SettingsTab = "account" | "key" | "appearance" | "mcp" | "skills" | "about";
 
 const messageOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
 
@@ -24,6 +25,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "key", label: "AI key", icon: KeyRound },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "mcp", label: "MCP servers", icon: Plug },
+  { id: "skills", label: "Skills", icon: Sparkles },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -47,6 +49,7 @@ export function SettingsDialog({ initialTab = "account", focus, onClose }: { ini
           {tab === "key" && <KeyTab />}
           {tab === "appearance" && <AppearanceTab />}
           {tab === "mcp" && <McpTab focus={focus} />}
+          {tab === "skills" && <SkillsTab />}
           {tab === "about" && <AboutTab />}
           <div className="dialog-actions">
             <Button onClick={onClose}>Close</Button>
@@ -54,6 +57,20 @@ export function SettingsDialog({ initialTab = "account", focus, onClose }: { ini
         </div>
       </div>
     </Dialog>
+  );
+}
+
+// ------------------------------------------------------------------ skills
+
+function SkillsTab() {
+  return (
+    <div className="col" style={{ gap: 20 }}>
+      <h3 className="dialog-title flush">Skills</h3>
+      <p className="small muted">
+        A skill is a saved set of instructions the AI follows for a task, like "write release notes our way". Type <strong>/</strong> in the message box to use one, or let the AI pick it when it fits. Plugins bring several skills at once. Skill text goes to your AI provider whenever it is used.
+      </p>
+      <SkillsManager />
+    </div>
   );
 }
 

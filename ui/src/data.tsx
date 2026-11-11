@@ -150,6 +150,8 @@ export type AppContextValue = {
    */
   files: {
     hasAny: boolean;
+    /** The shared folders' names: where a file name written in a note or an answer is looked for. */
+    folders: string[];
     path: string | null;
     open: (path: string, guess?: boolean) => void;
     close: () => void;

@@ -5,6 +5,7 @@ import { findSecret, maskSecret } from "../lib/secrets.ts";
 import { SecretWarning } from "./Dialogs.tsx";
 import { IMAGE_ACCEPT, preparePicture, type Picture } from "../lib/images.ts";
 import { useModelReasoning, useModelVision } from "../lib/models.ts";
+import { matchSkills, slashToken, type MenuSkill } from "../lib/skillsText.ts";
 import { MarkdownBackdrop } from "./MarkdownBackdrop.tsx";
 import { ModelPicker, ReasoningPicker } from "./Pickers.tsx";
 import { UsageRing } from "./PlanUsage.tsx";
@@ -40,6 +41,8 @@ type Props = {
    * picked with "Ask AI", or a request for a new design), shown as a chip; "+" can ask for a design.
    */
   design?: { chip: DesignRef | null; onClear: () => void; onNew: () => void; onOpen: (path: string) => void };
+  /** The skills this chat can use (switched on): typing "/" lists them, and "/name" in the text is marked. */
+  skills?: MenuSkill[];
 };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -51,7 +54,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
     .map((p) => p.id);
 }
 
-export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft, design }: Props) {
+export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft, design, skills }: Props) {
   const thinking = useModelReasoning(choice);
   const vision = useModelVision(choice);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -113,6 +116,20 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
     return people.filter((p) => p.display_name.toLowerCase().includes(q)).slice(0, 6);
   }, [token, people, dismissedAt]);
   useEffect(() => setHighlight(0), [token?.query]);
+
+  // "/rel" typed at the caret opens the list of skills (only where no person is being tagged).
+  const slash = useMemo(() => slashToken(text, caret), [text, caret]);
+  const skillSuggestions = useMemo(() => (!slash || suggestions.length > 0 || dismissedAt === -1 - slash.start || !skills?.length ? [] : matchSkills(skills, slash.query)), [slash, skills, dismissedAt, suggestions.length]);
+  useEffect(() => setHighlight(0), [slash?.query]);
+  const skillNames = useMemo(() => new Set((skills ?? []).map((s) => s.name)), [skills]);
+
+  function pickSkill(s: MenuSkill) {
+    if (!slash) return;
+    const before = text.slice(0, slash.start);
+    const after = text.slice(caret);
+    setText(`${before}/${s.name} ${after}`);
+    pendingCaret.current = before.length + s.name.length + 2;
+  }
 
   function pick(p: Person) {
     if (!token) return;
@@ -229,6 +246,23 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
         return;
       }
     }
+    if (skillSuggestions.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlight((h) => (h + (e.key === "ArrowDown" ? 1 : skillSuggestions.length - 1)) % skillSuggestions.length);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        pickSkill(skillSuggestions[Math.min(highlight, skillSuggestions.length - 1)]!);
+        return;
+      }
+      if (e.key === "Escape" && slash) {
+        e.preventDefault();
+        setDismissedAt(-1 - slash.start);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -278,6 +312,27 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
                 >
                   <Avatar id={p.id} name={p.display_name} src={p.avatar_url} size={22} />
                   <span className="truncate">{p.display_name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {skillSuggestions.length > 0 && (
+            <div className="mention-list skill-list" role="listbox" aria-label="Skills">
+              {skillSuggestions.map((sk, i) => (
+                <button
+                  key={sk.name}
+                  type="button"
+                  role="option"
+                  aria-selected={i === highlight}
+                  className={`mention-item ${i === highlight ? "on" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pickSkill(sk);
+                  }}
+                >
+                  <span className="skill-item-name">/{sk.name}</span>
+                  <span className="small muted truncate grow">{sk.description}</span>
+                  <span className="small muted">{sk.from}</span>
                 </button>
               ))}
             </div>
@@ -382,7 +437,7 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
                   }
                 }}
               />
-              <MarkdownBackdrop text={text} innerRef={backdrop} />
+              <MarkdownBackdrop text={text} innerRef={backdrop} skills={skillNames} />
             </div>
             {showStop ? (
               <button type="button" className="send-btn stop" aria-label="Stop answering" title="Stop" onClick={onStop}>

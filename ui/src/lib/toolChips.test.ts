@@ -23,3 +23,8 @@ test("a file read and edited shows once, repeated entries collapse", () => {
 test("file names for dedupe", () => {
   assert.deepEqual([...chipFileNames(toolChips({ files: ["src/a.ts"], mcp: ["s: t"] }))], ["a.ts"]);
 });
+
+test("a skill the AI followed shows as a chip, before the connected tools", () => {
+  const chips = toolChips({ skills: ["release-notes", "kit:seo", "release-notes"], mcp: ["Vercel: list_deployments"] });
+  assert.deepEqual(chips.map((c) => [c.kind, c.label]), [["skill", "Skill: release-notes"], ["skill", "Skill: kit:seo"], ["mcp", "Vercel: list_deployments"]]);
+});

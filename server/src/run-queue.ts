@@ -33,6 +33,7 @@ import { supabaseLinkStore } from "./supabase-links.ts";
 import { vercelLinkStore } from "./vercel-links.ts";
 import { NOTES_LISTED, NOTE_PREVIEW_CHARS, noteInstructions, noteTools, type NoteStore } from "./notes-tools.ts";
 import { mcpRelay } from "./mcp.ts";
+import { activeSkills, pickTyped, skillMenuInstructions, skillTools, typedSkillInstructions } from "./skills.ts";
 import { remoteMcp } from "./mcp-servers.ts";
 import { folderAccess, hub } from "./folders.ts";
 import type { CallOptions, RelayRequest } from "./folder-relay.ts";
@@ -274,6 +275,12 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let messages: ModelMessage[];
     let meta: MessageMeta = {};
     let projectRules = "";
+    /** Skills (saved instructions): the ones the asker typed after "/" are given whole; the rest are a menu the AI loads from. */
+    let skilling: ToolSet | null = null;
+    let skillMenu = "";
+    let typedSkills = "";
+    const typedNames = new Set<string>();
+    const skillsUsed = new Set<string>();
     let folder: { tools: ToolSet; use: FolderUse; caps: { edit: boolean; git: boolean; exec: boolean }; editState: AiEditState } | null = null;
     /** The asker's own connected tools (MCP), if their desktop app is online and has any switched on. */
     let connected: { tools: ToolSet; state: McpState } | null = null;
@@ -291,7 +298,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let panelLinks: PanelLinks = {};
     const panelStats: PanelStats = { sent: 0, lastError: null };
     /** What this answer read and changed, for the note under it. Shared by the folder and the design tools. */
-    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed };
+    const use: FolderUse = { files: new Set(), offline: false, edits: [], mcp: mcpUsed, skills: skillsUsed };
     let runSeconds = LOCK_SECONDS;
     let folderName = "";
     if (summary) {
@@ -337,6 +344,19 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
       // A project chat can read the project's shared folder, if one is shared. The check is the asker's own membership.
       const { data: chatRow } = await db.from("chats").select("project_id").eq("id", chatId).maybeSingle();
       const projectId = (chatRow?.project_id as string | null | undefined) ?? null;
+      // The asker's own skills (and the project's, in a project chat). Read for each answer, so a switched-off skill stops at once.
+      const skills = await activeSkills(db, authorId, projectId);
+      if (skills.length) {
+        const typed = pickTyped(mine.map((r) => r.content).join("\n"), skills);
+        for (const t of typed) {
+          typedNames.add(t.name);
+          skillsUsed.add(t.name);
+        }
+        typedSkills = typedSkillInstructions(typed);
+        skillMenu = skillMenuInstructions(skills);
+        const tools = skillTools(skills, skillsUsed, typedNames);
+        if (Object.keys(tools).length) skilling = tools;
+      }
       if (projectId) {
         noting = noteTools(notesFor(db, chatId, projectId, authorId));
         // Designs are saved without approval (the server accepts only inert HTML in them). Drafting one takes several
@@ -385,7 +405,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         return { servers: [] } as McpState;
       });
       if (localState.servers.length || remoteState.servers.length) {
-        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {}), "panel_list", "panel_draft", "panel_request_delete"];
+        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {}), ...Object.keys(skilling ?? {}), "panel_list", "panel_draft", "panel_request_delete"];
         const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
         const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
         connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
@@ -430,11 +450,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker, panelLinks)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${typedSkills ? `\n\n${typedSkills}` : ""}${withTools && skilling ? `\n\n${skillMenu}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker, panelLinks)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected || noting || designing || panelling) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting, ...panelling }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
+        ...(withTools && (folder || connected || noting || designing || panelling || skilling) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting, ...panelling, ...skilling }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });
@@ -461,12 +481,15 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let streamError = await attempt(true);
     // Some connections refuse tools (a model without tool support, or a ChatGPT plan backend that changed). Rather than
     // fail the answer, answer once more without the folder, and say why.
-    if (streamError && (folder || connected || noting || designing || panelling) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
+    if (streamError && (folder || connected || noting || designing || panelling || skilling) && !text && !controller.signal.aborted && APICallError.isInstance(streamError) && [400, 404, 422].includes(streamError.statusCode ?? 0)) {
       console.error(`[run] chat ${chatId}: tools refused, answering without the shared folder and connected tools (${streamError.statusCode})`);
       streamError = await attempt(false);
       if (!streamError) {
         use.files.clear();
         mcpUsed.clear();
+        // Only the skills the person typed were still given (as text); one the AI loaded with a tool was not.
+        skillsUsed.clear();
+        for (const n of typedNames) skillsUsed.add(n);
       }
     }
     if (controller.signal.aborted) throw new UserFacing("stopped", "Stopped.");
@@ -474,7 +497,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     if (!text.trim()) throw new UserFacing("other", "The model returned an empty reply.");
     // A draft written out as JSON for the person to paste is replaced by what really happened (nothing can be pasted anywhere).
     if (panelling) text = withoutPastedDraft(text, panelStats);
-    if (folder || designing || mcpUsed.size) meta = { ...meta, ...fitFiles(use) };
+    if (folder || designing || mcpUsed.size || skillsUsed.size) meta = { ...meta, ...fitFiles(use) };
     if (auto.chosen) meta = { ...meta, smart: true, ...(auto.fallback ? { smart_fallback: auto.fallback } : {}) };
     await db.from("messages").update({ content: text, status: "done", meta }).eq("id", assistant.id);
     await db.from("messages").update({ status: "done" }).in("id", batchIds);

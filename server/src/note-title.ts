@@ -1,4 +1,4 @@
-import { isSmartModel, type ProviderId } from "@mc/shared";
+import { isLocalProvider, isSmartModel, type ProviderId } from "@mc/shared";
 import { askModel, cleanTitle, type TitleModel } from "./chat-title.ts";
 import { getUserKey } from "./keys.ts";
 import { admin } from "./supabase.ts";
@@ -50,7 +50,8 @@ async function saveIfUnchanged(noteId: string, from: string, title: string): Pro
   if (error) console.error(`[note-title] note ${noteId}: could not save the title:`, error.message);
 }
 
-const defaultDeps: NoteTitleDeps = { source: sourceOf, getKey: getUserKey, ask: askModel, save: saveIfUnchanged };
+// A note title is not worth a run on someone's own Claude Code login.
+const defaultDeps: NoteTitleDeps = { source: sourceOf, getKey: (userId, provider) => (isLocalProvider(provider) ? Promise.resolve(null) : getUserKey(userId, provider)), ask: askModel, save: saveIfUnchanged };
 
 /**
  * Titles a note saved from a chat message, from that message's question and answer, with the saver's own key and model.

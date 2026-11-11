@@ -1,10 +1,12 @@
-import { isPlanProvider, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
+import { isLocalProvider, isPlanProvider, KEY_PROVIDER_IDS, LIMITS, PROVIDER_IDS, PROVIDER_KEY_URLS, PROVIDER_LABELS, type ChatGptStartResponse, type ProviderId } from "@mc/shared";
 import { Copy, ExternalLink, Info, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldAlert, Sun, User } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { copyText } from "../lib/actions.ts";
 import { forgetModels } from "../lib/models.ts";
 import { updateAction, updateBridge, updateLine, useUpdate } from "../lib/update.ts";
+import { claudeCodeBridge } from "../lib/claudeCode.ts";
+import { ClaudeCodeConnect } from "./ClaudeCodeConnect.tsx";
 import { McpTab } from "./McpSettings.tsx";
 import { OpenRouterKeyUsage, PlanUsage } from "./PlanUsage.tsx";
 import { SmartSetting } from "./SmartSetting.tsx";
@@ -266,7 +268,9 @@ function ChatGptConnect({ existingHint, onConnected }: { existingHint?: string; 
 export function KeyForm({ initialProvider, onSaved }: { initialProvider?: ProviderId; onSaved?: (provider: ProviderId) => void }) {
   const { keys, reloadKeys } = useApp();
   const toast = useToast();
-  const [provider, setProvider] = useState<ProviderId>(initialProvider ?? PROVIDER_IDS[0]);
+  const [provider, setProvider] = useState<ProviderId>(initialProvider ?? KEY_PROVIDER_IDS[0]!);
+  // "Claude Code login" runs on this computer, so it is offered only in the desktop app.
+  const providers = claudeCodeBridge() ? PROVIDER_IDS : KEY_PROVIDER_IDS;
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -294,13 +298,22 @@ export function KeyForm({ initialProvider, onSaved }: { initialProvider?: Provid
 
   const tiles = (
     <div className="segmented" role="radiogroup" aria-label="Provider">
-      {PROVIDER_IDS.map((p) => (
+      {providers.map((p) => (
         <button key={p} type="button" role="radio" aria-checked={provider === p} className={`seg ${provider === p ? "on" : ""}`} onClick={() => setProvider(p)}>
           {PROVIDER_LABELS[p]}
         </button>
       ))}
     </div>
   );
+
+  if (isLocalProvider(provider)) {
+    return (
+      <div className="col" style={{ gap: 14 }}>
+        {tiles}
+        <ClaudeCodeConnect />
+      </div>
+    );
+  }
 
   if (isPlanProvider(provider)) {
     return (
@@ -347,10 +360,11 @@ function KeyTab() {
   async function remove(provider: ProviderId) {
     setBusy(provider);
     try {
-      await api.deleteKey(provider);
+      if (isLocalProvider(provider)) await claudeCodeBridge()?.setEnabled(false);
+      else await api.deleteKey(provider);
       forgetModels(provider);
       reloadKeys();
-      toast.push(isPlanProvider(provider) ? `${PROVIDER_LABELS[provider]} disconnected` : `${PROVIDER_LABELS[provider]} key removed`);
+      toast.push(isLocalProvider(provider) ? `${PROVIDER_LABELS[provider]} switched off` : isPlanProvider(provider) ? `${PROVIDER_LABELS[provider]} disconnected` : `${PROVIDER_LABELS[provider]} key removed`);
     } catch (e) {
       toast.push(messageOf(e), "error");
     } finally {
@@ -360,7 +374,7 @@ function KeyTab() {
 
   return (
     <div className="col" style={{ gap: 20 }}>
-      <p className="lead">The AI answers with your own account. Add a key from Anthropic, OpenAI or OpenRouter, or connect your ChatGPT plan. Without one you can still chat with people.</p>
+      <p className="lead">The AI answers with your own account. Add a key from Anthropic, OpenAI or OpenRouter, or connect your ChatGPT plan (in the desktop app, also your own Claude Code login). Without one you can still chat with people.</p>
       {keys && keys.length > 0 && (
         <ul className="key-list">
           {keys.map((k) => (
@@ -368,12 +382,12 @@ function KeyTab() {
               <KeyRound size={ICON} strokeWidth={STROKE} aria-hidden />
               <div className="grow">
                 <b>{PROVIDER_LABELS[k.provider]}</b>
-                <div className="small muted">{isPlanProvider(k.provider) ? `Connected · ${k.hint}` : `Saved · ends in ${k.hint}`}</div>
+                <div className="small muted">{isLocalProvider(k.provider) ? `Switched on · ${k.hint}` : isPlanProvider(k.provider) ? `Connected · ${k.hint}` : `Saved · ends in ${k.hint}`}</div>
                 {isPlanProvider(k.provider) && <PlanUsage />}
                 {k.provider === "openrouter" && <OpenRouterKeyUsage />}
               </div>
               <Button size="sm" variant="ghost" busy={busy === k.provider} onClick={() => void remove(k.provider)}>
-                {isPlanProvider(k.provider) ? "Disconnect" : "Remove"}
+                {isLocalProvider(k.provider) ? "Switch off" : isPlanProvider(k.provider) ? "Disconnect" : "Remove"}
               </Button>
             </li>
           ))}

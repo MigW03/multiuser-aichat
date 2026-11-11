@@ -1,4 +1,4 @@
-import { isPlanProvider, isProvider, PROVIDER_LABELS, type ChatGptPollResponse, type ChatGptStartResponse, type KeysResponse, type ModelsResponse } from "@mc/shared";
+import { isLocalProvider, isPlanProvider, isProvider, PROVIDER_LABELS, type ChatGptPollResponse, type ChatGptStartResponse, type KeysResponse, type ModelsResponse } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
@@ -68,6 +68,7 @@ keys.put("/keys/:provider", rateLimit("keys", 10, 60_000), async (c) => {
   const provider = c.req.param("provider");
   const parsed = keyBody.safeParse(await c.req.json().catch(() => null));
   if (!isProvider(provider) || !parsed.success) return c.json({ error: "Invalid key" }, 400);
+  if (isLocalProvider(provider)) return c.json({ error: `${PROVIDER_LABELS[provider]} is switched on in the Nido desktop app, not with a key.` }, 400);
   if (isPlanProvider(provider)) return c.json({ error: `${PROVIDER_LABELS[provider]} is connected by signing in, not with a key.` }, 400);
   try {
     await verifyKey(provider, parsed.data.apiKey);
@@ -90,7 +91,7 @@ keys.get("/models/:provider", rateLimit("models", 20, 60_000), async (c) => {
   if (!isProvider(provider)) return c.json({ error: "Unknown provider" }, 400);
   try {
     const apiKey = await getUserKey(c.get("userId"), provider);
-    if (!apiKey) return c.json({ error: isPlanProvider(provider) ? "Connect your ChatGPT plan first." : `Add your ${PROVIDER_LABELS[provider]} API key first.` }, 400);
+    if (!apiKey) return c.json({ error: isLocalProvider(provider) ? "Switch on Claude Code login in the Nido desktop app first (and keep the app open)." : isPlanProvider(provider) ? "Connect your ChatGPT plan first." : `Add your ${PROVIDER_LABELS[provider]} API key first.` }, 400);
     return c.json({ models: await listModels(provider, apiKey) } satisfies ModelsResponse);
   } catch (e) {
     return c.json({ error: e instanceof ProviderError ? e.message : "Could not load models" }, 502);

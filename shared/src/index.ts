@@ -1,6 +1,6 @@
 // Types and constants shared by the server and both clients.
 
-export const PROVIDER_IDS = ["anthropic", "openai", "openrouter", "chatgpt"] as const;
+export const PROVIDER_IDS = ["anthropic", "openai", "openrouter", "chatgpt", "claudecode"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -8,6 +8,7 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   chatgpt: "ChatGPT plan",
+  claudecode: "Claude Code login",
 };
 
 /** Where a user creates an API key for each provider. ChatGPT plan has no key: the user signs in instead. */
@@ -16,6 +17,7 @@ export const PROVIDER_KEY_URLS: Record<ProviderId, string> = {
   openai: "https://platform.openai.com/api-keys",
   openrouter: "https://openrouter.ai/keys",
   chatgpt: "https://chatgpt.com/",
+  claudecode: "https://code.claude.com/docs/en/quickstart",
 };
 
 /** Where a user adds credit (or checks plan usage), for the "out of credit" error. */
@@ -24,6 +26,7 @@ export const PROVIDER_BILLING_URLS: Record<ProviderId, string> = {
   openai: "https://platform.openai.com/settings/organization/billing/overview",
   openrouter: "https://openrouter.ai/settings/credits",
   chatgpt: "https://chatgpt.com/",
+  claudecode: "https://claude.ai/settings/usage",
 };
 
 export function isProvider(value: unknown): value is ProviderId {
@@ -32,6 +35,15 @@ export function isProvider(value: unknown): value is ProviderId {
 
 /** Providers the user connects by signing in to their own subscription, not by pasting an API key. */
 export const isPlanProvider = (provider: ProviderId): boolean => provider === "chatgpt";
+
+/**
+ * A provider that runs on the asker's own computer through a program they signed in to themselves (see claude-code.ts).
+ * It has no key and nothing is stored on the server; it is available only while the asker's desktop app is online and has it on.
+ */
+export const isLocalProvider = (provider: ProviderId): boolean => provider === "claudecode";
+
+/** The providers a person connects with an API key or a plan sign-in in Settings > Keys. */
+export const KEY_PROVIDER_IDS: readonly ProviderId[] = PROVIDER_IDS.filter((p) => !isLocalProvider(p));
 
 // Lowest to highest. Which of these a model offers comes from the provider (see ModelInfo.reasoning).
 export const REASONING_LEVELS = ["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -516,6 +528,7 @@ export type FolderResponse = { id: string; ok: true; result: unknown } | { id: s
 // on, the AI uses its tools without asking each time: the person decided when they added it.
 
 export { MCP_LIMITS } from "./mcp-limits.ts";
+export * from "./claude-code.ts";
 
 export type McpToolInfo = { name: string; description: string; inputSchema: Record<string, unknown> };
 /** What the host's app reports once a server is running: its name and the tools the host left switched on. */

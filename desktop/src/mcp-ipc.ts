@@ -6,6 +6,7 @@ import { isUuid, originOf, serverSocketUrl } from "./folder-host.ts";
 import { McpConn, type McpLink } from "./mcp-conn.ts";
 import { parseCommandLine, parseConfig, parseEnvText, serializeConfig, showCommand, validateName, type McpConfig, type Vault } from "./mcp-config.ts";
 import { McpHost, type McpView } from "./mcp-host.ts";
+import type { ClaudeCodeHost } from "./claude-code-host.ts";
 
 // Wires connected tools (MCP) to the app window. They belong to the signed-in person, not to a project: the page tells the
 // app who is signed in, and the app keeps one connection to the chat server for that person. The page can read the setup
@@ -30,7 +31,7 @@ export type McpInfo = McpView & {
 
 type Session = { serverUrl: string; token: string; userId: string };
 
-export function setupMcp(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; /** What the chat server may ask about this person's custom panels. */ panelRequest?: (userId: string, req: unknown) => Promise<unknown> }) {
+export function setupMcp(opts: { allowedOrigin: string; getWindow: () => BrowserWindow | null; /** What the chat server may ask about this person's custom panels. */ panelRequest?: (userId: string, req: unknown) => Promise<unknown>; /** The person's own Claude Code login, if this app offers it. */ claudeCode?: ClaudeCodeHost }) {
   let session: Session | null = null;
   let conn: McpConn | null = null;
   let connUser: string | null = null;
@@ -39,6 +40,8 @@ export function setupMcp(opts: { allowedOrigin: string; getWindow: () => Browser
     opts.getWindow()?.webContents.send("mcp:changed");
     conn?.stateChanged();
   };
+
+  opts.claudeCode?.listeners.add(() => conn?.stateChanged());
 
   const host = new McpHost(
     {
@@ -76,6 +79,12 @@ export function setupMcp(opts: { allowedOrigin: string; getWindow: () => Browser
         wsUrl,
         getToken: () => session?.token ?? "",
         getState: () => host.state(),
+        ...(opts.claudeCode
+          ? {
+              getClaudeCode: () => opts.claudeCode!.report(),
+              llm: (req: unknown, signal: AbortSignal, emit: (e: import("@mc/shared").ClaudeCodeEvent) => void) => opts.claudeCode!.run(req, signal, emit),
+            }
+          : {}),
         call: async (req, signal) => {
           const r = req as { id: string; op?: unknown; server?: unknown; tool?: unknown; args?: unknown };
           if (r.op === "panel") {
@@ -95,6 +104,10 @@ export function setupMcp(opts: { allowedOrigin: string; getWindow: () => Browser
       });
     }
     void host.setUser(userId);
+    if (opts.claudeCode) {
+      opts.claudeCode.getLink = () => conn?.link ?? "off";
+      void opts.claudeCode.setUser(userId);
+    }
   }
 
   const trusted = (e: IpcMainInvokeEvent) => originOf(e.senderFrame?.url) === opts.allowedOrigin;

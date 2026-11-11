@@ -1,5 +1,6 @@
 import type { KeyHint, ProviderId } from "@mc/shared";
 import { disconnect, getAccessToken } from "./chatgpt.ts";
+import { claudeCodeKeyFor, claudeCodeReady } from "./claude-code.ts";
 import { supabaseLoginStore } from "./chatgpt-store.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { forgetOpenRouterUsage } from "./openrouter-usage.ts";
@@ -20,11 +21,15 @@ export async function listKeyHints(userId: string): Promise<KeyHint[]> {
   if (plan.error) console.error("[keys] could not read the ChatGPT plan sign-in:", plan.error.message);
   const hints = (keys.data ?? []).map((r) => ({ provider: r.provider as ProviderId, hint: r.key_hint as string }));
   if (plan.data) hints.push({ provider: "chatgpt", hint: plan.data.hint as string });
+  // Not stored anywhere: it is listed only while this person's own desktop app says it can run their Claude Code login.
+  if (claudeCodeReady(userId)) hints.push({ provider: "claudecode", hint: "this computer" });
   return hints;
 }
 
 /** The credential to call `provider` with: an API key, or for ChatGPT plan a fresh access token. Null when not connected. */
 export async function getUserKey(userId: string, provider: ProviderId): Promise<string | null> {
+  // Claude Code login has no key: the "credential" only says whose desktop app to ask, and exists only while it is ready.
+  if (provider === "claudecode") return claudeCodeReady(userId) ? claudeCodeKeyFor(userId) : null;
   if (provider === "chatgpt") return getAccessToken(supabaseLoginStore, userId);
   const { data } = await admin
     .from("user_api_keys")
@@ -55,6 +60,7 @@ export async function saveUserKey(userId: string, provider: ProviderId, apiKey: 
 }
 
 export async function deleteUserKey(userId: string, provider: ProviderId): Promise<void> {
+  if (provider === "claudecode") return; // nothing is stored here; it is switched off in the desktop app
   if (provider === "chatgpt") return disconnect(supabaseLoginStore, userId);
   if (provider === "openrouter") forgetOpenRouterUsage(userId);
   await admin.from("user_api_keys").delete().eq("user_id", userId).eq("provider", provider);

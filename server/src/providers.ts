@@ -1,9 +1,10 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { isReasoning, PROVIDER_LABELS, REASONING_LEVELS, type ModelInfo, type ProviderId, type Reasoning } from "@mc/shared";
+import { CLAUDE_CODE_MODELS, isReasoning, PROVIDER_LABELS, REASONING_LEVELS, type ModelInfo, type ProviderId, type Reasoning } from "@mc/shared";
 import type { LanguageModel } from "ai";
 import { chatgptModel, listChatGptModels } from "./chatgpt.ts";
+import { claudeCodeModel, claudeCodeUserOf } from "./claude-code.ts";
 import { ProviderError } from "./provider-error.ts";
 
 export { ProviderError };
@@ -11,6 +12,11 @@ export { ProviderError };
 /** `apiKey` is the credential from getUserKey: an API key, or for ChatGPT plan the current access token. */
 export function languageModel(provider: ProviderId, apiKey: string, modelId: string): LanguageModel {
   switch (provider) {
+    case "claudecode": {
+      const userId = claudeCodeUserOf(apiKey);
+      if (!userId) throw new ProviderError("Claude Code login is not available.");
+      return claudeCodeModel(userId, modelId);
+    }
     case "chatgpt":
       return chatgptModel(apiKey, modelId);
     case "openrouter":
@@ -25,6 +31,7 @@ export function languageModel(provider: ProviderId, apiKey: string, modelId: str
 /** The thinking part of a streamText call. OpenRouter models differ too much for one effort name, so its own `reasoning` object is sent. */
 export function reasoningOptions(provider: ProviderId, level: Reasoning | null) {
   if (!level) return {};
+  if (provider === "claudecode") return { reasoning: level === "off" ? ("none" as const) : level === "on" ? ("medium" as const) : level };
   if (provider === "openrouter") {
     const reasoning = level === "off" ? { effort: "none" } : level === "on" ? { enabled: true } : { effort: level };
     return { providerOptions: { openrouter: { reasoning } } };
@@ -128,6 +135,7 @@ const OPENAI_NOT_CHAT = /(audio|realtime|transcribe|tts|image|embedding|moderati
 /** The models this key can use. Also works as the key check for Anthropic and OpenAI. */
 export async function listModels(provider: ProviderId, apiKey: string): Promise<ModelInfo[]> {
   if (provider === "chatgpt") return listChatGptModels(apiKey);
+  if (provider === "claudecode") return CLAUDE_CODE_MODELS;
   if (provider === "anthropic") {
     const json = await getJson("https://api.anthropic.com/v1/models?limit=1000", { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, provider);
     return ((json.data ?? []) as AnthropicModel[]).map((m) => ({ id: m.id, name: m.display_name ?? m.id, reasoning: anthropicLevels(m.capabilities), vision: anthropicVision(m.capabilities) }));
@@ -154,6 +162,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
 /** OpenRouter's model list is public, so it can't tell whether a key works; /key can. */
 export async function verifyKey(provider: ProviderId, apiKey: string): Promise<void> {
   if (provider === "chatgpt") throw new ProviderError("ChatGPT plan is connected by signing in, not with a key.");
+  if (provider === "claudecode") throw new ProviderError("Claude Code login is switched on in the desktop app, not with a key.");
   if (provider === "openrouter") {
     await getJson("https://openrouter.ai/api/v1/key", { authorization: `Bearer ${apiKey}` }, provider);
     return;

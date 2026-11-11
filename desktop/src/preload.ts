@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { eraseApi, folderApi, mcpApi, panelsApi, previewApi } from "./folder-preload.ts";
+import { claudeCodeApi, eraseApi, folderApi, mcpApi, panelsApi, previewApi } from "./folder-preload.ts";
 import { updateApi } from "./update-preload.ts";
 
 // The renderer is the same React app as the web version. Only expose what it needs, as plain data.
@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("desktop", {
   setTheme: (pref: "system" | "light" | "dark") => ipcRenderer.send("theme:set", pref),
   folder: folderApi,
   mcp: mcpApi,
+  claudeCode: claudeCodeApi,
   panels: panelsApi,
   erase: eraseApi,
   preview: previewApi,

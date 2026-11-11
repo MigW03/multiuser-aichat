@@ -1,4 +1,5 @@
 import {
+  isLocalProvider,
   isPlanProvider,
   isProvider,
   isReasoning,
@@ -37,6 +38,7 @@ import { folderAccess, hub } from "./folders.ts";
 import type { CallOptions, RelayRequest } from "./folder-relay.ts";
 import type { McpCallOptions, McpRequest } from "./mcp-relay.ts";
 import { chatgptProviderOptions } from "./chatgpt.ts";
+import { ClaudeCodeError } from "./claude-code-error.ts";
 import { getUserKey } from "./keys.ts";
 import { newestPictureIds, promptName, toModelMessages, transcriptText, withinBudget, type Row } from "./model-messages.ts";
 import { languageModel, ProviderError, reasoningOptions } from "./providers.ts";
@@ -241,7 +243,7 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     const asker = names.get(authorId ?? "") ?? "Someone";
     if (!authorId || !provider || !modelId) throw new UserFacing("no_key", "This message was sent without a model selected.");
     apiKey = await getUserKey(authorId, provider);
-    if (!apiKey) throw new UserFacing("no_key", isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
+    if (!apiKey) throw new UserFacing("no_key", isLocalProvider(provider) ? `${asker}'s Claude Code login is not available right now: their desktop app has to be open, signed in to Claude Code, and have it switched on.` : isPlanProvider(provider) ? `${asker} has not connected a ${PROVIDER_LABELS[provider]}.` : `${asker} has no ${PROVIDER_LABELS[provider]} API key saved.`);
     // With Auto the model list (cached, but slow when cold) is fetched beside the rest; the choice then waits for it only briefly.
     const startedAt = Date.now();
     const infoLoad = smart ? smartModelInfo(authorId, apiKey) : null;
@@ -535,6 +537,11 @@ function describeFailure(err: unknown, provider: ProviderId | null, aborted: boo
   const name = provider ? PROVIDER_LABELS[provider] : "The AI provider";
   if (err instanceof UserFacing) return { code: err.code, text: err.code === "no_key" ? `${err.message} They can ${provider && isPlanProvider(provider) ? "connect it" : "add one"} under Settings.` : err.message };
   if (err instanceof ProviderError) return { code: "other", text: err.message }; // written to be shown
+  if (err instanceof ClaudeCodeError) {
+    // The message was written to be shown and holds nothing from Claude Code's own output.
+    const code: AiErrorCode = err.code === "cc_limit" ? "rate_limit" : err.code === "cc_unavailable" || err.code === "cc_not_found" || err.code === "cc_not_signed_in" ? "no_key" : "other";
+    return { code, text: err.message };
+  }
   if (APICallError.isInstance(err) && provider && isPlanProvider(provider)) {
     // A ChatGPT plan has no credit to top up: a 429 means the plan's own usage limit.
     if (err.statusCode === 401 || err.statusCode === 403) return { code: "invalid_key", text: `${name} rejected the connection. It may have been revoked, or this account isn't allowed to use it. Reconnect it in Settings, then retry.` };
@@ -551,5 +558,6 @@ function describeFailure(err: unknown, provider: ProviderId | null, aborted: boo
   if (aborted || (err instanceof Error && /abort|timeout|timed out/i.test(`${err.name} ${err.message}`))) {
     return { code: "timeout", text: "The AI took too long to answer. The connection dropped. Nothing was lost. Try again." };
   }
+  if (provider && isLocalProvider(provider)) return { code: "other", text: `The ${name} request failed. Check that Claude Code still works in a terminal, then retry.` };
   return { code: "other", text: `The ${name} request failed. Check the API key and model, then retry.` };
 }

@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isPlanProvider, LIMITS, parseDesignMarker, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isLocalProvider, isPlanProvider, LIMITS, parseDesignMarker, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
@@ -196,7 +196,7 @@ chats.post("/:id/summarize", rateLimit("summarize", 10, 60_000), async (c) => {
   const { id, scope, provider, model, reasoning } = parsed.data;
   if (!(await canAccess(userId, chatId))) return c.json({ error: NOT_FOUND }, 404);
   if (!(await listKeyHints(userId)).some((k) => k.provider === provider)) {
-    return c.json({ error: isPlanProvider(provider) ? `Connect your ${PROVIDER_LABELS[provider]} in Settings to summarize.` : `Add your ${PROVIDER_LABELS[provider]} API key in Settings to summarize.` }, 400);
+    return c.json({ error: isLocalProvider(provider) ? `Switch on ${PROVIDER_LABELS[provider]} in the desktop app to summarize.` : isPlanProvider(provider) ? `Connect your ${PROVIDER_LABELS[provider]} in Settings to summarize.` : `Add your ${PROVIDER_LABELS[provider]} API key in Settings to summarize.` }, 400);
   }
 
   let fromSeq = 0;

@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, isPlanProvider, type ProviderId } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, isLocalProvider, isPlanProvider, type ProviderId } from "@mc/shared";
 import { streamText } from "ai";
 import { chatgptProviderOptions } from "./chatgpt.ts";
 import { getUserKey } from "./keys.ts";
@@ -73,7 +73,8 @@ export type NameDeps = {
   generate: typeof generateTitle;
   save: (chatId: string, title: string) => Promise<void>;
 };
-const defaultDeps: NameDeps = { getKey: getUserKey, generate: generateTitle, save: setTitleIfUnnamed };
+// A chat name is not worth a run on someone's own Claude Code login: that provider falls back to the first words.
+const defaultDeps: NameDeps = { getKey: (userId, provider) => (isLocalProvider(provider) ? Promise.resolve(null) : getUserKey(userId, provider)), generate: generateTitle, save: setTitleIfUnnamed };
 
 /**
  * Names a new chat from its first message with the sender's own key and model, without making anyone wait.

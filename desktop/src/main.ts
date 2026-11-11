@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parseDeepLink, SCHEME } from "./deeplink.ts";
 import { setupErase } from "./erase-ipc.ts";
 import { setupFolderHost } from "./folder-ipc.ts";
+import { setupClaudeCode } from "./claude-code-ipc.ts";
 import { setupMcp } from "./mcp-ipc.ts";
 import { setupPanels } from "./panels-ipc.ts";
 import { setupPreview } from "./preview.ts";
@@ -114,7 +115,9 @@ if (!app.requestSingleInstanceLock()) {
     const run = createRunServer();
     setupFolderHost({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, run });
     let panelRequest: ((userId: string, req: unknown) => Promise<unknown>) | null = null;
-    const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, panelRequest: (userId, req) => (panelRequest ? panelRequest(userId, req) : Promise.reject(new Error("not ready"))) });
+    // The person's own Claude Code login: off until they switch it on. Its readiness is reported to the chat server over the MCP connection.
+    const claudeCode = setupClaudeCode({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow });
+    const mcp = setupMcp({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, claudeCode, panelRequest: (userId, req) => (panelRequest ? panelRequest(userId, req) : Promise.reject(new Error("not ready"))) });
     // Custom panels: the AI's tabs for this person, kept in this app's folder only. Signed in = the person the MCP host serves.
     panelRequest = setupPanels({ allowedOrigin: DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN, getWindow: () => mainWindow, currentUser: () => mcp.currentUser(), mcp }).request;
     // "Erase Nido data on this computer": a confirmation in the app's own window, then the data folder goes as the app quits.

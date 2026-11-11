@@ -836,6 +836,9 @@ button.tool-chip:hover { background: var(--t20); }
 .mcp-url { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .mcp-url-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
 .mcp-url-copy { flex: none; font-size: inherit; }
+.cc-warning { border: 1px solid var(--danger); background: var(--danger-tint); border-radius: 10px; padding: 12px 14px; font: var(--text-small); display: flex; flex-direction: column; gap: 6px; }
+.cc-warning ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.cc-status { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .mcp-status { margin-left: 6px; font: var(--text-small); font-weight: 500; color: var(--muted-fg); }
 .mcp-status.ready { color: var(--p-text); }
 .mcp-status.failed { color: var(--danger); }

@@ -1,4 +1,4 @@
-import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
+import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isLocalProvider, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
 import { Code2, Copy, CornerUpLeft, File, FilePen, FileText, Monitor, Plug, RotateCcw, Shapes, Sparkles, X } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
@@ -468,6 +468,11 @@ function FailedAnswer({ m, meId, onRetry, onUpdateKey }: RowProps) {
           {code === "invalid_key" && (
             <Button size="sm" variant="primary" onClick={onUpdateKey}>
               {provider && isPlanProvider(provider) ? "Reconnect" : "Update key"}
+            </Button>
+          )}
+          {(code === "no_key" || code === "rate_limit") && provider && isLocalProvider(provider) && (
+            <Button size="sm" variant="primary" onClick={onUpdateKey}>
+              Claude Code login settings
             </Button>
           )}
           {code === "rate_limit" && provider && isPlanProvider(provider) && (

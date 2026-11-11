@@ -142,6 +142,22 @@ export const mcpApi = {
   },
 };
 
+// "Use my Claude Code login": the page can read the status, ask to switch it on or off (the app asks in a window of its own),
+// and ask to pick the `claude` program in the system's dialog. It names no path and reads no sign-in.
+export const claudeCodeApi = {
+  get: (): Promise<unknown> => ipcRenderer.invoke("claudecode:get"),
+  /** Looks for `claude` again and asks it whether it is signed in. */
+  refresh: (): Promise<unknown> => ipcRenderer.invoke("claudecode:refresh"),
+  setEnabled: (enabled: boolean): Promise<unknown> => ipcRenderer.invoke("claudecode:set-enabled", enabled),
+  chooseBinary: (): Promise<unknown> => ipcRenderer.invoke("claudecode:choose-binary"),
+  resetBinary: (): Promise<unknown> => ipcRenderer.invoke("claudecode:reset-binary"),
+  onChange: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("claudecode:changed", listener);
+    return () => void ipcRenderer.removeListener("claudecode:changed", listener);
+  },
+};
+
 // The preview of a web page from this computer (localhost), shown by the app in a browser view of its own over the space the
 // page reserves for it. The page sends addresses and rectangles; the app checks the address again and is the only one that
 // ever loads the previewed page, which has no connection back to the app.

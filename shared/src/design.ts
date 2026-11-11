@@ -137,11 +137,13 @@ export function emptyDesign(board: "desktop" | "phone" = "desktop"): string {
 }
 
 // ---- The chat marker: a design reference at the start of a message, drawn as a chip. The AI reads it as text.
-// ⟦design path="project:a.design.html" sel="n6,n4" names="Hero › Button" edits="..." action="build" boards="Home"⟧
+// ⟦design path="project:a.design.html" page="Flows" sel="n6,n4" names="Hero › Button" edits="..." action="build" boards="Home"⟧
 
 export type DesignAction = "new" | "build" | "update-code";
 export type DesignRef = {
   path?: string;
+  /** The page on screen, when the design has more than one. */
+  page?: string;
   /** Selected layers' data-nid values. */
   sel?: string[];
   /** What the selected layers are called, for the chip. */
@@ -163,6 +165,7 @@ export function designMarker(ref: DesignRef): string {
   const parts: string[] = [];
   const add = (k: string, v: string | undefined) => v && parts.push(`${k}="${attr(clip(v, DESIGN_LIMITS.markerChars))}"`);
   add("path", ref.path);
+  add("page", ref.page);
   add("sel", ref.sel?.join(","));
   add("names", ref.names);
   add("action", ref.action);
@@ -182,6 +185,7 @@ export function parseDesignMarker(text: string): { ref: DesignRef; rest: string 
   for (const m of body.matchAll(/(\w+)="([^"]*)"/g)) {
     const [, k, v] = m as unknown as [string, string, string];
     if (k === "path" && isDesignPath(v)) ref.path = v;
+    else if (k === "page") ref.page = v.slice(0, 40);
     else if (k === "sel") ref.sel = v.split(",").filter((x) => /^[\w-]{1,40}$/.test(x)).slice(0, 50);
     else if (k === "names") ref.names = v;
     else if (k === "edits") ref.edits = v;

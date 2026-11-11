@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import createDOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
-import { boardHash, boardsOf, byNid, changedLayers, cleanStyle, layerName, layerPath, parseDesign, parseStyle, serializeDesign, styleGet, styleSet } from "./designModel.ts";
+import { addPage, allBoardsOf, boardHash, boardsOf, createBoard, deletePage, duplicatePage, moveBoardsToPage, movePage, pageCounts, pagesOf, renamePage, setViewPage, byNid, changedLayers, cleanStyle, layerName, layerPath, parseDesign, parseStyle, serializeDesign, styleGet, styleSet } from "./designModel.ts";
 
 const win = new JSDOM("").window as unknown as Window & typeof globalThis;
 const purify = createDOMPurify(win);
@@ -97,5 +97,82 @@ describe("layers", () => {
     const before = parse(DESIGN).root;
     const after = parse(DESIGN.replace("Start", "Begin").replace("gap: 16px", "gap: 24px")).root;
     assert.deepEqual(changedLayers(before, after).sort(), ["n2", "n4"]);
+  });
+});
+
+const TWO = `<section data-board="Home" data-nid="b1" data-x="0" data-y="0" data-w="400"><p data-nid="n2">a</p></section>
+<section data-board="Pricing" data-nid="b3" data-x="480" data-y="0" data-w="400"></section>
+`;
+
+describe("pages", () => {
+  it("a design without pages has one, Page 1, and its file does not change", () => {
+    const { root } = parse(TWO);
+    assert.deepEqual(pagesOf(root), ["Page 1"]);
+    assert.equal(boardsOf(root).length, 2);
+    assert.equal(serializeDesign(root), `<!-- Nido design. Open it in Nido's design mode. -->\n${TWO}`);
+  });
+
+  it("adds, switches, renames, reorders and deletes pages", () => {
+    const { root } = parse(TWO);
+    assert.equal(addPage(root, "Flows"), "Flows");
+    assert.equal(addPage(root), "Page 3");
+    assert.deepEqual(pagesOf(root), ["Page 1", "Flows", "Page 3"]);
+    assert.deepEqual([...pageCounts(root)], [["Page 1", 2], ["Flows", 0], ["Page 3", 0]]);
+    setViewPage(root, "Flows");
+    assert.equal(boardsOf(root).length, 0);
+    const id = createBoard(root, { x: 5, y: 6, w: 300, h: 200 });
+    assert.equal(byNid(root, id)?.getAttribute("data-page"), "Flows");
+    assert.equal(allBoardsOf(root).length, 3);
+    assert.equal(renamePage(root, "Flows", "Page 1"), null, "a taken name is refused");
+    assert.equal(renamePage(root, "Flows", "Checkout"), "Checkout");
+    assert.equal(boardsOf(root).length, 2, "the view still names the old page, so it falls back to the first page");
+    setViewPage(root, "Checkout");
+    assert.equal(boardsOf(root).length, 1);
+    assert.equal(movePage(root, "Checkout", 0), true);
+    assert.deepEqual(pagesOf(root), ["Checkout", "Page 1", "Page 3"]);
+    assert.equal(deletePage(root, "Checkout"), true);
+    assert.equal(allBoardsOf(root).length, 2);
+    assert.equal(deletePage(root, "Page 3"), true);
+    assert.equal(deletePage(root, "Page 1"), false, "the last page stays");
+  });
+
+  it("keeps pages through a save and a reload, with no layer ids on the page elements", () => {
+    const { root } = parse(TWO);
+    addPage(root, "Flows");
+    const text = serializeDesign(root);
+    assert.match(text, /<div data-page-def="Page 1" hidden=""><\/div>/);
+    const again = parse(text);
+    assert.equal(again.idsFixed, false);
+    assert.deepEqual(pagesOf(again.root), ["Page 1", "Flows"]);
+    assert.equal(serializeDesign(again.root), text);
+  });
+
+  it("moves boards to another page in a row beside what is there", () => {
+    const { root } = parse(TWO);
+    addPage(root, "Flows");
+    assert.equal(moveBoardsToPage(root, ["b3"], "Flows"), 1);
+    assert.equal(moveBoardsToPage(root, ["b3"], "Flows"), 0, "already there");
+    const moved = byNid(root, "b3")!;
+    assert.equal(moved.getAttribute("data-page"), "Flows");
+    assert.equal(moved.getAttribute("data-x"), "0");
+    assert.equal(moveBoardsToPage(root, ["b1"], "Flows"), 1);
+    assert.equal(byNid(root, "b1")!.getAttribute("data-x"), "480");
+    assert.deepEqual([...pageCounts(root)], [["Page 1", 0], ["Flows", 2]]);
+  });
+
+  it("duplicates a page with fresh layer ids and its own board names", () => {
+    const { root } = parse(TWO);
+    const copy = duplicatePage(root, "Page 1");
+    assert.equal(copy, "Page 1 copy");
+    assert.deepEqual([...pageCounts(root)], [["Page 1", 2], ["Page 1 copy", 2]]);
+    const ids = [...root.querySelectorAll("[data-nid]")].map((e) => e.getAttribute("data-nid"));
+    assert.equal(new Set(ids).size, ids.length);
+    assert.deepEqual(allBoardsOf(root).map((b) => b.getAttribute("data-board")), ["Home", "Pricing", "Home 2", "Pricing 2"]);
+  });
+
+  it("the page cleaner keeps a name on one line, 40 characters at most", () => {
+    const { root } = parse(TWO);
+    assert.equal(addPage(root, "  A\nB\t<b>x</b>  "), "A B <b>x</b>");
+    assert.equal(addPage(root, "x".repeat(80))?.length, 40);
   });
 });

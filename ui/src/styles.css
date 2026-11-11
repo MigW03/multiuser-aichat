@@ -1193,6 +1193,29 @@ button.tool-chip:hover { background: var(--t20); }
 /* ---- the AI's panel proposals sit in the chat, under the last message */
 .panel-draft-tail { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; max-width: 560px; }
 
+/* pages in a design: the page menu sits top left, before the tools */
+.dz-topleft { position: absolute; top: 10px; left: 10px; z-index: 5; display: flex; align-items: flex-start; gap: 8px; }
+.dz-topleft .dz-tools { position: static; }
+.dz-menu-label { padding: 4px 10px 2px; }
+.dz-empty { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none; }
+.dz-empty > * { pointer-events: auto; }
+.dz-page-wrap { position: relative; }
+.dz-page-btn { display: inline-flex; align-items: center; gap: 6px; height: 38px; max-width: 220px; padding: 0 10px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-menu); font: var(--text-row); }
+.dz-page-btn:hover { background: var(--hover-row); }
+.dz-page-menu { top: calc(100% + 4px); left: 0; min-width: 230px; max-height: 60vh; overflow-y: auto; }
+.dz-page-row { position: relative; display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+.dz-page-row:hover { background: var(--hover-row); }
+.dz-page-row.on { background: var(--t8); }
+.dz-page-row.over { box-shadow: 0 -2px 0 0 var(--p); }
+.dz-page-row.dragging { opacity: 0.5; }
+.dz-page-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 10px; border: 0; background: none; text-align: left; font: var(--text-row); }
+.dz-page-count { margin-left: auto; }
+.dz-page-more { display: none; width: 26px; height: 26px; margin-right: 4px; border: 0; border-radius: 6px; background: none; align-items: center; justify-content: center; }
+.dz-page-row:hover .dz-page-more, .dz-page-more[aria-expanded="true"] { display: inline-flex; }
+.dz-page-more:hover { background: var(--hover-row); }
+.dz-page-input { flex: 1; min-width: 0; height: 28px; margin: 2px 4px; padding: 0 8px; border: 1px solid var(--p); border-radius: 6px; background: var(--card); font: var(--text-row); }
+.dz-page-sub { display: flex; flex-direction: column; padding: 0 0 4px 16px; }
+
 /* ------------------------------------------------------------------ skills */
 .skills { display: flex; flex-direction: column; gap: 12px; width: 100%; }
 .skills-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

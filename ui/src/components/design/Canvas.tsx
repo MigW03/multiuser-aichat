@@ -5,6 +5,7 @@ import {
   boardHash,
   boardsOf,
   byNid,
+  createBoard,
   insertWithNewline,
   isBoard,
   isContainer,
@@ -15,6 +16,7 @@ import {
   renumber,
   newNid,
   styleSet,
+  viewPageOf,
 } from "../../lib/designModel.ts";
 import { rect, SNAP_PX, union, type Guide, type Rect, type Targets } from "../../lib/designSnap.ts";
 import { ICON_SM, STROKE } from "../kit.tsx";
@@ -57,6 +59,13 @@ type Props = {
   onShortcuts: () => void;
   /** Escape with nothing selected: back to the chat. */
   onExit: () => void;
+  /** The page being shown, and all pages. */
+  page: string;
+  pages: string[];
+  /** Shown at the top left, before the tools (the page menu). */
+  topLeft?: ReactNode;
+  /** Moves boards to a page (null: a new page). */
+  onMoveToPage: (nids: string[], page: string | null) => void;
 };
 
 type Ov = {
@@ -166,6 +175,22 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
     // fitAll and measure read refs; drawing depends on the model's version only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.root, p.version]);
+
+  // Each page keeps its own pan and zoom while the design is open; a page not seen yet is fitted.
+  const pageViews = useRef(new Map<string, View>());
+  const shownPage = useRef(p.page);
+  useLayoutEffect(() => {
+    if (shownPage.current === p.page) return;
+    pageViews.current.set(shownPage.current, viewRef.current);
+    shownPage.current = p.page;
+    const saved = pageViews.current.get(p.page);
+    if (saved) applyView(saved);
+    else if (boardsOf(p.root).length) fitAll();
+    else applyView({ x: 40, y: 60, z: 0.5 });
+    measure();
+    // runs when the page changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.page]);
 
   useLayoutEffect(measure, [measure, p.selection, view, p.flash]);
   useEffect(() => {
@@ -663,17 +688,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
       if (g.tool !== "frame") return props.current.onToast("Draw inside a board, or use the frame tool (F) to make a new board.");
       let made = "";
       props.current.commit("added a board", (root) => {
-        const doc = root.ownerDocument;
-        const b = doc.createElement("section");
-        made = newNid(root);
-        b.setAttribute("data-board", `Board ${boardsOf(root).length + 1}`);
-        b.setAttribute("data-nid", made);
-        b.setAttribute("data-x", String(Math.round(x0)));
-        b.setAttribute("data-y", String(Math.round(y0)));
-        b.setAttribute("data-w", String(w ?? 1920));
-        b.setAttribute("data-h", String(h ?? 1080));
-        b.setAttribute("style", "display: flex; flex-direction: column; gap: 24px; padding: 48px; background: #ffffff; color: #111111");
-        root.append(doc.createTextNode("\n"), b, doc.createTextNode("\n"));
+        made = createBoard(root, { x: x0, y: y0, w: w ?? 1920, h: h ?? 1080 });
       });
       if (made) select([made]);
       return;
@@ -946,7 +961,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
       for (const c of [...tmp.children]) {
         renumber(root, c);
         made.push(nidOf(c)!);
-        if (c.hasAttribute("data-board")) root.append(root.ownerDocument.createTextNode("\n"), c);
+        if (c.hasAttribute("data-board")) {
+          c.setAttribute("data-page", viewPageOf(root));
+          root.append(root.ownerDocument.createTextNode("\n"), c);
+        }
         else if (into && isContainer(into) && !isTextLayer(into)) insertWithNewline(into, c, null);
         else if (into && into.parentElement) insertWithNewline(into.parentElement, c, into.nextSibling);
         else {
@@ -1170,6 +1188,21 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
       {icon}
     </button>
   );
+  const empty = boardsOf(p.root).length === 0;
+  const addBoard = (w: number, h: number) => {
+    let made = "";
+    props.current.commit("added a board", (root) => {
+      made = createBoard(root, { x: 0, y: 0, w, h });
+    });
+    if (made) props.current.onSelect([made]);
+  };
+  const moveSelectedBoards = (page: string | null) => {
+    const nids = props.current.selection.filter((n) => {
+      const el = byNid(props.current.root, n);
+      return !!el && isBoard(el);
+    });
+    if (nids.length) props.current.onMoveToPage(nids, page);
+  };
   const selectedBoards = useMemo(() => p.selection.map((n) => byNid(p.root, n)).filter((x): x is HTMLElement => !!x && isBoard(x)).map((b) => b.getAttribute("data-board") ?? ""), [p.selection, p.root, p.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -1299,6 +1332,24 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
               {"</>"} Build in code
             </button>
           )}
+          {!p.readOnly && selectedBoards.length > 0 && (
+            <>
+              <div className="menu-divider" />
+              <div className="small muted dz-menu-label">Move to page</div>
+              {p.pages
+                .filter((pg) => pg !== p.page)
+                .slice(0, 12)
+                .map((pg) => (
+                  <button key={pg} type="button" role="menuitem" className="menu-item" onClick={() => (setMenu(null), moveSelectedBoards(pg))}>
+                    <span className="truncate">{pg}</span>
+                  </button>
+                ))}
+              <button type="button" role="menuitem" className="menu-item" onClick={() => (setMenu(null), moveSelectedBoards(null))}>
+                <Plus size={ICON_SM} strokeWidth={STROKE} aria-hidden /> New page
+              </button>
+              <div className="menu-divider" />
+            </>
+          )}
           {!p.readOnly && p.selection.length > 0 && (
             <>
               <button type="button" role="menuitem" className="menu-item" onClick={() => (setMenu(null), duplicate())}>
@@ -1326,13 +1377,32 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
         </div>
       )}
 
-      <div className="dz-tools dz-ui" role="toolbar" aria-label="Tools">
-        {toolBtn("move", "Move", "V", <MousePointer2 size={ICON_SM} strokeWidth={STROKE} />)}
-        {toolBtn("frame", "Frame", "F", <FrameIcon size={ICON_SM} strokeWidth={STROKE} />)}
-        {toolBtn("text", "Text", "T", <Type size={ICON_SM} strokeWidth={STROKE} />)}
-        {toolBtn("box", "Box", "R", <Square size={ICON_SM} strokeWidth={STROKE} />)}
-        {toolBtn("hand", "Hand", "H", <Hand size={ICON_SM} strokeWidth={STROKE} />)}
+      <div className="dz-topleft dz-ui">
+        {p.topLeft}
+        <div className="dz-tools" role="toolbar" aria-label="Tools">
+          {toolBtn("move", "Move", "V", <MousePointer2 size={ICON_SM} strokeWidth={STROKE} />)}
+          {toolBtn("frame", "Frame", "F", <FrameIcon size={ICON_SM} strokeWidth={STROKE} />)}
+          {toolBtn("text", "Text", "T", <Type size={ICON_SM} strokeWidth={STROKE} />)}
+          {toolBtn("box", "Box", "R", <Square size={ICON_SM} strokeWidth={STROKE} />)}
+          {toolBtn("hand", "Hand", "H", <Hand size={ICON_SM} strokeWidth={STROKE} />)}
+        </div>
       </div>
+      {empty && (
+        <div className="dz-empty dz-ui">
+          <p className="muted">No boards on “{p.page}”.</p>
+          {!p.readOnly && (
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn" onClick={() => addBoard(1920, 1080)}>
+                Desktop board
+              </button>
+              <button type="button" className="btn" onClick={() => addBoard(390, 844)}>
+                Phone board
+              </button>
+            </div>
+          )}
+          <p className="small muted">Or press F and draw one, or ask the AI in the chat.</p>
+        </div>
+      )}
       <div className="dz-zoom dz-ui">
         <button type="button" aria-label="Zoom out" onClick={() => zoomAt(viewRef.current.z / 1.25, vpRect().width / 2, vpRect().height / 2)}>
           <Minus size={ICON_SM} strokeWidth={STROKE} />

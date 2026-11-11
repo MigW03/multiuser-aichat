@@ -127,7 +127,7 @@ export function parseDesign(text: string, doc: Document = document, purify: Puri
       FORBID_ATTR,
       ALLOW_DATA_ATTR: true,
       ALLOW_ARIA_ATTR: true,
-      ADD_ATTR: ["data-board", "data-nid", "data-name", "data-layout", "data-code", "data-built"],
+      ADD_ATTR: ["data-board", "data-nid", "data-name", "data-layout", "data-code", "data-built", "data-page", "data-page-def"],
       RETURN_DOM_FRAGMENT: true,
     }) as unknown as DocumentFragment;
   } finally {
@@ -158,7 +158,206 @@ export function serializeDesign(root: HTMLElement): string {
   return `${DESIGN_HEADER}\n${body}\n`;
 }
 
-export const boardsOf = (root: HTMLElement): HTMLElement[] => [...root.children].filter((c): c is HTMLElement => c.hasAttribute("data-board"));
+/** Every board in the design, on all pages. */
+export const allBoardsOf = (root: HTMLElement): HTMLElement[] => [...root.children].filter((c): c is HTMLElement => c.hasAttribute("data-board"));
+
+// ---- pages
+// A design has pages like a Figma file. Each board names its page in `data-page`; the pages' order (and pages with no
+// boards) live in hidden top-level elements `<div data-page-def="Name" hidden>`, one per page. A board with no data-page
+// is on the first page, so a design made before pages existed has one page, "Page 1".
+
+export const PAGE_LIMITS = { count: 30, name: 40 } as const;
+const FIRST_PAGE = "Page 1";
+const PAGE_DEF = "data-page-def";
+const defsOf = (root: HTMLElement): HTMLElement[] => [...root.children].filter((c): c is HTMLElement => c.hasAttribute(PAGE_DEF));
+
+/** A page name as it is kept: one line, no control characters, at most 40 characters. */
+export const cleanPageName = (s: string): string => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, PAGE_LIMITS.name).trim();
+
+/** The pages, in order. Always at least one. */
+export function pagesOf(root: HTMLElement): string[] {
+  const names: string[] = [];
+  const add = (n: string) => {
+    const c = cleanPageName(n);
+    if (c && !names.includes(c)) names.push(c);
+  };
+  for (const d of defsOf(root)) add(d.getAttribute(PAGE_DEF) ?? "");
+  const boards = allBoardsOf(root);
+  if (!names.length && (!boards.length || boards.some((b) => !cleanPageName(b.getAttribute("data-page") ?? "")))) names.push(FIRST_PAGE);
+  for (const b of boards) add(b.getAttribute("data-page") ?? "");
+  return names.length ? names : [FIRST_PAGE];
+}
+
+/** The page a board is on. */
+export const pageOfBoard = (root: HTMLElement, board: Element, pages: string[] = pagesOf(root)): string => cleanPageName(board.getAttribute("data-page") ?? "") || pages[0]!;
+
+/** The page of the board a layer (or board) lives in. */
+export function pageOfNid(root: HTMLElement, nid: string): string | null {
+  const el = byNid(root, nid);
+  const board = el ? boardOf(el) : null;
+  return board ? pageOfBoard(root, board) : null;
+}
+
+// The page the canvas shows is kept beside the design, not in it: the file holds no "current page".
+const viewPages = new WeakMap<HTMLElement, string>();
+export function setViewPage(root: HTMLElement, page: string) {
+  viewPages.set(root, page);
+}
+/** The page being shown (the first one when the chosen page is gone). */
+export function viewPageOf(root: HTMLElement, pages: string[] = pagesOf(root)): string {
+  const v = viewPages.get(root);
+  return v !== undefined && pages.includes(v) ? v : pages[0]!;
+}
+
+/** The boards of the page being shown. Everything on the canvas and in the layers list works on these. */
+export function boardsOf(root: HTMLElement): HTMLElement[] {
+  const pages = pagesOf(root);
+  const view = viewPageOf(root, pages);
+  return allBoardsOf(root).filter((b) => pageOfBoard(root, b, pages) === view);
+}
+
+/** How many boards each page has. */
+export function pageCounts(root: HTMLElement): Map<string, number> {
+  const pages = pagesOf(root);
+  const counts = new Map(pages.map((p) => [p, 0]));
+  for (const b of allBoardsOf(root)) {
+    const p = pageOfBoard(root, b, pages);
+    counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Writes the page list: every board names its page, and the hidden page elements are written again in order. */
+function writePages(root: HTMLElement, names: string[]) {
+  const pages = pagesOf(root);
+  for (const b of allBoardsOf(root)) b.setAttribute("data-page", pageOfBoard(root, b, pages));
+  for (const d of defsOf(root)) removeLayer(d);
+  const doc = root.ownerDocument;
+  const frag = doc.createDocumentFragment();
+  for (const n of names) {
+    const d = doc.createElement("div");
+    d.setAttribute(PAGE_DEF, n);
+    d.setAttribute("hidden", "");
+    frag.append(d, doc.createTextNode("\n"));
+  }
+  root.prepend(frag);
+}
+
+/** A page name nobody has: the wish, or "Page 3", with a number added when taken. */
+export function uniquePageName(root: HTMLElement, wish = ""): string {
+  const pages = pagesOf(root);
+  const base = cleanPageName(wish) || `Page ${pages.length + 1}`;
+  if (!pages.includes(base)) return base;
+  for (let n = 2; ; n++) {
+    const next = `${base.slice(0, PAGE_LIMITS.name - 4)} ${n}`;
+    if (!pages.includes(next)) return next;
+  }
+}
+
+/** Adds an empty page at the end. Returns its name, or null at the limit. */
+export function addPage(root: HTMLElement, wish = ""): string | null {
+  const pages = pagesOf(root);
+  if (pages.length >= PAGE_LIMITS.count) return null;
+  const name = uniquePageName(root, wish);
+  writePages(root, [...pages, name]);
+  return name;
+}
+
+/** Renames a page (its boards follow). Returns the new name, or null when it is empty or taken. */
+export function renamePage(root: HTMLElement, from: string, wish: string): string | null {
+  const name = cleanPageName(wish);
+  const pages = pagesOf(root);
+  if (!name || !pages.includes(from) || (name !== from && pages.includes(name))) return null;
+  writePages(root, pages);
+  for (const b of allBoardsOf(root)) if (b.getAttribute("data-page") === from) b.setAttribute("data-page", name);
+  writePages(root, pages.map((p) => (p === from ? name : p)));
+  return name;
+}
+
+/** Deletes a page and its boards. False for the last page. */
+export function deletePage(root: HTMLElement, name: string): boolean {
+  const pages = pagesOf(root);
+  if (pages.length < 2 || !pages.includes(name)) return false;
+  writePages(root, pages);
+  for (const b of allBoardsOf(root)) if (b.getAttribute("data-page") === name) removeLayer(b);
+  writePages(root, pages.filter((p) => p !== name));
+  return true;
+}
+
+/** Copies a page with its boards (new layer ids) to the end of the list. Returns the copy's name. */
+export function duplicatePage(root: HTMLElement, name: string): string | null {
+  const pages = pagesOf(root);
+  if (!pages.includes(name) || pages.length >= PAGE_LIMITS.count) return null;
+  writePages(root, pages);
+  const copy = uniquePageName(root, `${name} copy`);
+  for (const b of allBoardsOf(root).filter((x) => x.getAttribute("data-page") === name)) {
+    const clone = b.cloneNode(true) as HTMLElement;
+    renumber(root, clone);
+    clone.setAttribute("data-page", copy);
+    clone.setAttribute("data-board", uniqueBoardName(root, b.getAttribute("data-board") ?? "Board"));
+    root.append(root.ownerDocument.createTextNode("\n"), clone);
+  }
+  writePages(root, [...pages, copy]);
+  return copy;
+}
+
+/** A board name nobody has: the name, or "Home 2" when taken. Boards on different pages are told apart by name when building code. */
+export function uniqueBoardName(root: HTMLElement, wish: string): string {
+  const taken = new Set(allBoardsOf(root).map((b) => b.getAttribute("data-board")));
+  const base = wish.trim().slice(0, 56) || "Board";
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+}
+
+/** Adds an empty board to the page being shown. Returns its layer id. */
+export function createBoard(root: HTMLElement, box: { x: number; y: number; w: number; h: number }): string {
+  const doc = root.ownerDocument;
+  const b = doc.createElement("section");
+  const nid = newNid(root);
+  b.setAttribute("data-board", uniqueBoardName(root, `Board ${allBoardsOf(root).length + 1}`));
+  b.setAttribute("data-nid", nid);
+  b.setAttribute("data-page", viewPageOf(root));
+  b.setAttribute("data-x", String(Math.round(box.x)));
+  b.setAttribute("data-y", String(Math.round(box.y)));
+  b.setAttribute("data-w", String(box.w));
+  b.setAttribute("data-h", String(box.h));
+  b.setAttribute("style", "display: flex; flex-direction: column; gap: 24px; padding: 48px; background: #ffffff; color: #111111");
+  root.append(doc.createTextNode("\n"), b, doc.createTextNode("\n"));
+  return nid;
+}
+
+/** Moves a page to a place in the list (0 = first). False when nothing changed. */
+export function movePage(root: HTMLElement, name: string, to: number): boolean {
+  const pages = pagesOf(root);
+  const from = pages.indexOf(name);
+  const at = Math.max(0, Math.min(pages.length - 1, to));
+  if (from < 0 || from === at) return false;
+  const next = pages.filter((p) => p !== name);
+  next.splice(at, 0, name);
+  writePages(root, next);
+  return true;
+}
+
+/** Moves boards (by their ids) to another page, placed in a row to the right of what is there. Returns how many moved. */
+export function moveBoardsToPage(root: HTMLElement, nids: string[], page: string): number {
+  const pages = pagesOf(root);
+  if (!pages.includes(page)) return 0;
+  const moving = allBoardsOf(root).filter((b) => nids.includes(nidOf(b) ?? "") && pageOfBoard(root, b, pages) !== page);
+  if (!moving.length) return 0;
+  const there = allBoardsOf(root).filter((b) => pageOfBoard(root, b, pages) === page);
+  const boxes = moving.map((b) => boardBox(b));
+  const fromX = Math.min(...boxes.map((b) => b.x));
+  const fromY = Math.min(...boxes.map((b) => b.y));
+  const baseX = there.length ? Math.max(...there.map((b) => boardBox(b).x + boardBox(b).w)) + 80 : 0;
+  const baseY = there.length ? Math.min(...there.map((b) => boardBox(b).y)) : 0;
+  writePages(root, pages);
+  moving.forEach((b, i) => {
+    b.setAttribute("data-x", String(Math.round(baseX + boxes[i]!.x - fromX)));
+    b.setAttribute("data-y", String(Math.round(baseY + boxes[i]!.y - fromY)));
+    b.setAttribute("data-page", page);
+  });
+  return moving.length;
+}
 export const nidOf = (el: Element | null | undefined): string | null => el?.getAttribute("data-nid") ?? null;
 export const byNid = (root: ParentNode, nid: string): HTMLElement | null => (/^[\w-]{1,40}$/.test(nid) ? root.querySelector<HTMLElement>(`[data-nid="${nid}"]`) : null);
 export const isBoard = (el: Element) => el.hasAttribute("data-board") && !!el.parentElement && !el.parentElement.hasAttribute("data-nid");
@@ -174,7 +373,7 @@ export function boardOf(el: Element): HTMLElement | null {
 export function ensureIds(root: HTMLElement): boolean {
   const seen = new Set<string>();
   let max = 0;
-  const all = [...root.querySelectorAll("*")];
+  const all = [...root.querySelectorAll("*")].filter((el) => !el.hasAttribute(PAGE_DEF));
   for (const el of all) {
     const m = /^[a-z]*(\d+)$/i.exec(el.getAttribute("data-nid") ?? "");
     if (m) max = Math.max(max, Number(m[1]));

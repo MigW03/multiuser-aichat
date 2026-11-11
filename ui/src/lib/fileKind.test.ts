@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { candidatePaths, cleanPath, dirOf, fileKind, findFilePaths, looksLikeFilePath, resolveRelative } from "./fileKind.ts";
+import { candidatePaths, cleanPath, dirOf, fileKind, findFilePaths, splitFileRefs, looksLikeFilePath, resolveRelative } from "./fileKind.ts";
 
 describe("fileKind", () => {
   it("tells Markdown, HTML and the rest apart", () => {
@@ -71,5 +71,18 @@ describe("findFilePaths", () => {
   });
   it("ignores plain text that looks like a file", () => {
     assert.deepEqual(findFilePaths("Open README.md now"), []);
+  });
+});
+
+describe("splitFileRefs", () => {
+  it("finds file names in plain text, with punctuation left outside", () => {
+    assert.deepEqual(splitFileRefs("Review o protótipo (plataforma-rh.html): mural. Veja docs/a.md."), ["Review o protótipo (", { file: "plataforma-rh.html" }, "): mural. Veja ", { file: "docs/a.md" }, "."]);
+  });
+  it("leaves web addresses, libraries and plain words alone", () => {
+    assert.deepEqual(splitFileRefs("see https://example.com/a.html and Next.js"), ["see https://example.com/a.html and Next.js"]);
+  });
+  it("keeps all the text", () => {
+    const text = "a x.md\nb `y.json` c";
+    assert.equal(splitFileRefs(text).map((p) => (typeof p === "string" ? p : p.file)).join(""), text);
   });
 });

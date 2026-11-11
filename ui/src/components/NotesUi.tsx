@@ -1,8 +1,9 @@
 import { answerPreview, hasGeneratedUi, NOTE_LIMITS, splitAnswer, type ProjectNote, type ProjectSummary } from "@mc/shared";
 import { FileText, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api.ts";
+import { api, ApiRequestError } from "../api.ts";
 import { notifyChanged, useApp, useLive } from "../data.tsx";
+import { candidatePaths, splitFileRefs } from "../lib/fileKind.ts";
 import { listTime } from "../lib/time.ts";
 import { supabase } from "../supabase.ts";
 import { AnswerBody } from "../genui/AnswerBody.tsx";
@@ -104,7 +105,7 @@ export function NotesCard({ project }: { project: ProjectSummary }) {
                   }}
                 />
               ) : open === n.id ? (
-                <NoteReader key={n.id} note={n} onClose={() => setOpen(null)} onEdit={() => setEditing(n.id)} />
+                <NoteReader key={n.id} projectId={project.id} note={n} onClose={() => setOpen(null)} onEdit={() => setEditing(n.id)} />
               ) : (
                 <NoteRowView
                   key={n.id}
@@ -170,11 +171,61 @@ function NoteRowView({ note, canDelete, onOpen, onEdit, onDelete }: { note: Note
   );
 }
 
+// The host says "not found" when a path is not there; a file name in a note is tried under each shared folder.
+const MISSING = new Set(["not_found", "not_a_file", "invalid_path", "excluded"]);
+const RECHECK_MS = 10_000;
+
+/** Whether a file is in the shared files: true, false, or null when that cannot be told now (the host is offline). */
+async function isShared(projectId: string, raw: string, folders: string[]): Promise<boolean | null> {
+  let unknown = false;
+  for (const path of candidatePaths(raw, folders)) {
+    try {
+      await api.folderRead(projectId, path);
+      return true;
+    } catch (e) {
+      if (!(e instanceof ApiRequestError && e.code && MISSING.has(e.code))) unknown = true;
+    }
+  }
+  return unknown ? null : false;
+}
+
+/** A file name in a note: a link that opens the file in the file panel. On hover the tip says when no shared folder has it. */
+function NoteFileLink({ projectId, file }: { projectId: string; file: string }) {
+  const { files } = useApp();
+  const [shared, setShared] = useState<boolean | null>(null);
+  const checked = useRef(0);
+  const live = useRef(true);
+  useEffect(() => () => void (live.current = false), []);
+  // No folder is shared: no need to ask. Otherwise ask when the pointer arrives, not for every name in every note.
+  const check = () => {
+    if (!files.hasAny) return setShared(false);
+    if (shared === true || Date.now() - checked.current < RECHECK_MS) return;
+    checked.current = Date.now();
+    void isShared(projectId, file, files.folders).then((r) => live.current && setShared(r));
+  };
+  const missing = !files.hasAny || shared === false;
+  return (
+    <button type="button" className={`note-file-link ${missing ? "missing" : ""}`} title={missing ? `${file} is not in the shared files` : `Open ${file}`} onPointerEnter={check} onFocus={check} onClick={() => files.open(file, true)}>
+      {file}
+    </button>
+  );
+}
+
+/** A note's text as written, with the file names in it as links. */
+function NoteText({ projectId, text }: { projectId: string; text: string }) {
+  const parts = useMemo(() => splitFileRefs(text), [text]);
+  return (
+    <>
+      {parts.map((p, i) => (typeof p === "string" ? p : <NoteFileLink key={i} projectId={projectId} file={p.file} />))}
+    </>
+  );
+}
+
 /**
  * A note opened to read: the whole text as plain text, who wrote it and when. Nothing is editable until Edit is chosen.
  * A note with a visual (saved from an AI answer) is drawn like the answer: Markdown plus the visual.
  */
-function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => void; onEdit: () => void }) {
+function NoteReader({ projectId, note, onClose, onEdit }: { projectId: string; note: NoteRow; onClose: () => void; onEdit: () => void }) {
   return (
     <article className={`note-reader ${note.by_ai ? "ai" : ""}`} aria-label={note.title} onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <header className="note-reader-head">
@@ -187,7 +238,9 @@ function NoteReader({ note, onClose, onEdit }: { note: NoteRow; onClose: () => v
             <AnswerBody text={note.body} />
           </div>
         ) : (
-          <div className="note-reader-body">{note.body}</div>
+          <div className="note-reader-body">
+            <NoteText projectId={projectId} text={note.body} />
+          </div>
         )
       ) : (
         <p className="small muted">No text.</p>

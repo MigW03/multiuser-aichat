@@ -96,3 +96,22 @@ export function findFilePaths(text: string): string[] {
   }
   return [...found];
 }
+
+/**
+ * Plain text cut into pieces: ordinary text and the file names in it (`plataforma-rh.html`, bare or in parentheses or `code`).
+ * The same rule as for `code` in an answer decides what reads as a file; web addresses and "Next.js" stay text.
+ */
+export function splitFileRefs(text: string): (string | { file: string })[] {
+  const out: (string | { file: string })[] = [];
+  let last = 0;
+  const push = (s: string) => s && (typeof out.at(-1) === "string" ? (out[out.length - 1] += s) : out.push(s));
+  for (const m of text.matchAll(/(?<![\w@./:~-])(?:\.{1,2}\/)?[\w@+-][\w@.+-]*(?:\/[\w@.+-]+)*/g)) {
+    const raw = m[0].replace(/\.+$/, "");
+    if (!looksLikeFilePath(raw)) continue;
+    push(text.slice(last, m.index));
+    out.push({ file: raw });
+    last = m.index + raw.length;
+  }
+  push(text.slice(last));
+  return out;
+}

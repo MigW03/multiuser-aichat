@@ -22,6 +22,7 @@ import {
   RenameDialog,
 } from "./Dialogs.tsx";
 import { ProjectTile } from "./Join.tsx";
+import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { McpAttentionDot, McpFlyout, useMcpStatus } from "./McpStatusMenu.tsx";
 import { NEW_CHAT_SHORTCUT, PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, Button, IconButton, ICON, ICON_SM, Menu, SectionLabel, STROKE, UnreadBadge } from "./kit.tsx";
@@ -82,7 +83,7 @@ export function LeftPanel({ project, projects, chats, members, online, activeCha
         <div className="project-head">
           <ProjectTile name={project.name} size={32} />
           <div className="grow">
-            <div className="project-name truncate">{project.name}</div>
+            <ProjectSwitcher project={project} projects={projects} variant="panel" onNavigate={onNavigate} />
             {members ? (
               <button type="button" className="people-link" onClick={() => setDialog("members")} aria-label={`People, ${members.length}`}>
                 <span className="people-stack">

@@ -4,6 +4,8 @@ import type {
   AssignableRole,
   AiEditState,
   DesignList,
+  EditMessageRequest,
+  EditMessageResponse,
   DesignReadResult,
   DesignVersionList,
   DesignWriteResult,
@@ -222,6 +224,8 @@ export const api = {
   imageUrls: (chatId: string, ids: string[]) => call<ImageUrlsResponse>("POST", `/api/chats/${chatId}/images/urls`, { ids }),
   summarize: (chatId: string, body: SummarizeRequest & { fromSeq?: number }) => call<{ id: string }>("POST", `/api/chats/${chatId}/summarize`, body),
   stop: (chatId: string) => call<{ stopped: boolean }>("POST", `/api/chats/${chatId}/stop`, {}),
+  /** Changes the words of a message you wrote. With `regenerate` the AI answers the edited message again. */
+  editMessage: (messageId: string, body: EditMessageRequest) => call<EditMessageResponse>("PATCH", `/api/messages/${messageId}`, body),
   retry: (messageId: string) => call<{ ok: true }>("POST", `/api/messages/${messageId}/retry`, {}),
 
   previewInvite: (token: string) => call<InvitePreview>("GET", `/api/invites/${token}`, undefined, { auth: false }),

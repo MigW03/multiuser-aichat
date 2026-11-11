@@ -30,6 +30,8 @@ type Props = {
   onTyping: () => void;
   /** Resolves false when sending failed, so the text and pictures can be put back. */
   onSend: (m: OutgoingMessage) => Promise<boolean>;
+  /** Up arrow in an empty box: edit the person's newest message. */
+  onEditLast?: () => void;
   placeholder: string;
   focusKey: string;
   /** Small line on the left above the input, e.g. who is typing. */
@@ -54,7 +56,7 @@ export function mentionedIn(text: string, people: Person[]): string[] {
     .map((p) => p.id);
 }
 
-export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, placeholder, focusKey, status, draft, design, skills }: Props) {
+export function Composer({ people, choice, onModel, onReasoning, replyTo, onClearReply, canStop, onStop, onTyping, onSend, onEditLast, placeholder, focusKey, status, draft, design, skills }: Props) {
   const thinking = useModelReasoning(choice);
   const vision = useModelVision(choice);
   const [pictures, setPictures] = useState<Picture[]>([]);
@@ -266,6 +268,11 @@ export function Composer({ people, choice, onModel, onReasoning, replyTo, onClea
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
+      return;
+    }
+    if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing && onEditLast && text.length === 0 && pictures.length === 0) {
+      e.preventDefault();
+      onEditLast();
     }
   }
 

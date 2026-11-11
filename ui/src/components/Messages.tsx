@@ -1,18 +1,22 @@
-import { answerPreview, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, isDesignPath, isLocalProvider, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
-import { Code2, Copy, CornerUpLeft, File, FilePen, FileText, Monitor, Plug, RotateCcw, Shapes, Sparkles, X } from "lucide-react";
+import { answerPreview, canEditMessage, designChipLabel, designName, findPreviewUrls, IMAGE_ONLY_TEXT, answerOf, isRegenerated, isDesignPath, isLocalProvider, isPlanProvider, isProjectDesignPath, modelName, parseDesignMarker, PROVIDER_BILLING_URLS, PROVIDER_LABELS, previewLabel, type ChatMessage, type DesignRef } from "@mc/shared";
+import { Code2, Copy, CornerUpLeft, File, FilePen, FileText, Monitor, MoreHorizontal, Pencil, Plug, RotateCcw, Shapes, Sparkles, X } from "lucide-react";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppContext } from "../data.tsx";
 import { designChanged, designRunEnded } from "../lib/designBus.ts";
 import { sameDesignPath } from "../lib/designEditor.ts";
 import { findFilePaths } from "../lib/fileKind.ts";
+import { useLongPress, useOnline, useTouch } from "../lib/hooks.ts";
+import { editableWords } from "../lib/messageEdit.ts";
 import { chipFileNames, TOOL_CHIPS_SHOWN, toolChips } from "../lib/toolChips.ts";
 import { dayLabel, formatTime, sameDay } from "../lib/time.ts";
 import { ProposalCards } from "./Changes.tsx";
 import { EggLoader, useElapsed } from "./EggLoader.tsx";
 import { AnswerBody } from "../genui/AnswerBody.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { MessageEditor } from "./MessageEditor.tsx";
+import { MessageSheet } from "./MessageSheet.tsx";
 import { PictureGrid } from "./Pictures.tsx";
-import { Avatar, Button, AiAvatar, ICON_SM, STROKE } from "./kit.tsx";
+import { Avatar, Button, AiAvatar, ICON_SM, Menu, STROKE } from "./kit.tsx";
 import { ANSWER_ATTR, SelectionRespond } from "./SelectionRespond.tsx";
 import type { Proposal } from "./useChatRoom.ts";
 
@@ -35,6 +39,12 @@ export type MessageListProps = {
   onReply: (m: ChatMessage, quote?: string) => void;
   onRetry: (m: ChatMessage) => void;
   onCopy: (m: ChatMessage) => void;
+  /** The message being edited in place (yours), if any. */
+  editingId: string | null;
+  onEdit: (m: ChatMessage) => void;
+  onCancelEdit: () => void;
+  /** Saves new words for your message; rejects with the reason when it did not work. */
+  onSaveEdit: (m: ChatMessage, text: string, regenerate: boolean) => Promise<void>;
   /** Present in project chats: saves a message to the project's Notes. */
   onSaveNote?: (m: ChatMessage) => void;
   onAddKey: () => void;
@@ -115,6 +125,11 @@ export function MessageList(props: MessageListProps) {
     const m = byId.get(latestAnswerId);
     if (m) designRunEnded(m.chat_id);
   }, [latestAnswerId, byId]);
+  // Answers written again after their question was edited are tagged "(regenerated)".
+  const regenerated = useMemo(() => {
+    const edited = messages.filter((m) => m.role === "user" && m.edited_at && m.run_id);
+    return edited.length ? new Set(messages.filter((a) => a.role === "assistant" && isRegenerated(a, edited)).map((a) => a.id)) : new Set<string>();
+  }, [messages]);
   const lastKeylessOwn = useMemo(() => [...messages].reverse().find((m) => m.author_id === meId && m.skip_reason === "no_key")?.id, [messages, meId]);
   const firstUnread = useMemo(() => {
     if (readSeq === null) return null;
@@ -171,6 +186,7 @@ export function MessageList(props: MessageListProps) {
                 queued={m.status === "pending" && m.author_id === meId}
                 streamingText={streams[m.id]}
                 answerRunning={!!streaming}
+                regenerated={regenerated.has(m.id)}
                 isLatestAnswer={m.id === latestAnswerId}
                 showKeylessCard={m.id === lastKeylessOwn && !hasKey}
                 {...props}
@@ -192,6 +208,8 @@ type RowProps = MessageListProps & {
   queued: boolean;
   streamingText?: string;
   answerRunning: boolean;
+  /** An answer that was written again after its question was edited. */
+  regenerated: boolean;
   isLatestAnswer: boolean;
   showKeylessCard: boolean;
 };
@@ -217,6 +235,12 @@ function QuotedReply({ m, byId, names }: Pick<RowProps, "m" | "byId" | "names">)
   );
 }
 
+const WAIT_FOR_AI = "Wait for the AI to finish";
+
+function editedTitle(iso: string) {
+  return `Edited ${sameDay(iso, new Date().toISOString()) ? "" : `${dayLabel(iso).toLowerCase()} `}${formatTime(iso)}`;
+}
+
 function UserMessage(props: RowProps) {
   const { m, meId, names, avatars, queued, answerRunning, showKeylessCard } = props;
   const own = m.author_id === meId;
@@ -236,20 +260,72 @@ function UserMessage(props: RowProps) {
   ) : (
     text
   );
+
+  // Your own messages can be edited (not while the AI is answering). A phone opens the same actions with a long press.
+  const touch = useTouch();
+  const online = useOnline();
+  const [sheet, setSheet] = useState(false);
+  const actionable = own && m.kind === "message" && m.seq !== OPTIMISTIC_SEQ;
+  const editing = actionable && props.editingId === m.id;
+  const editBlocked = answerRunning || !canEditMessage(m, meId) ? WAIT_FOR_AI : null;
+  const press = useLongPress(() => setSheet(true), actionable && touch && !editing);
+  // Only needed while the editor is open: is there an AI reply to write again?
+  const hasReply = editing && !!answerOf(m, props.messages);
+
   return (
     <div className={`msg ${own ? "own" : "other"}`}>
       {!own && <Avatar id={m.author_id ?? name} name={name} src={avatars.get(m.author_id ?? "")} size={28} />}
-      <div className="msg-main">
+      <div className={`msg-main ${editing ? "editing" : ""}`}>
         {!own && (
           <div className="msg-meta">
             <b>{name}</b> <span className="muted">{formatTime(m.created_at)}</span>
           </div>
         )}
         <QuotedReply m={m} byId={props.byId} names={names} />
-        <div className={`bubble ${own ? "own" : "other"} ${waiting ? "queued" : ""} ${m.seq === OPTIMISTIC_SEQ ? "sending" : ""} ${m.images.length ? "has-pics" : ""}`}>
-          {m.images.length > 0 && <PictureGrid chatId={m.chat_id} ids={m.images} />}
-          {m.images.length > 0 ? body && <div className="pics-text">{body}</div> : body}
-        </div>
+        {editing ? (
+          <MessageEditor
+            initial={editableWords(m.content, m.images.length)}
+            hasPictures={m.images.length > 0}
+            hasReply={hasReply}
+            offline={!online}
+            onCancel={props.onCancelEdit}
+            onSave={(t, regenerate) => props.onSaveEdit(m, t, regenerate)}
+          />
+        ) : (
+          <div {...press} className={`bubble ${own ? "own" : "other"} ${waiting ? "queued" : ""} ${m.seq === OPTIMISTIC_SEQ ? "sending" : ""} ${m.images.length ? "has-pics" : ""} ${actionable && touch ? "pressable" : ""}`}>
+            {m.images.length > 0 && <PictureGrid chatId={m.chat_id} ids={m.images} />}
+            {m.images.length > 0 ? body && <div className="pics-text">{body}</div> : body}
+          </div>
+        )}
+        {m.edited_at && !editing && (
+          <div className="msg-edited small muted" title={editedTitle(m.edited_at)}>
+            (edited)
+          </div>
+        )}
+        {actionable && !editing && !touch && (
+          <div className="msg-actions own-actions" role="toolbar" aria-label="Message actions">
+            <button type="button" className="act" disabled={!!editBlocked} title={editBlocked ?? "Edit this message"} onClick={() => props.onEdit(m)}>
+              <Pencil size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Edit
+            </button>
+            <button type="button" className="act" onClick={() => props.onCopy(m)}>
+              <Copy size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Copy
+            </button>
+            <Menu
+              label="More actions"
+              align="end"
+              portal
+              items={[
+                { label: "Reply", icon: <CornerUpLeft size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => props.onReply(m) },
+                ...(props.onSaveNote ? [{ label: "Save as note", icon: <FileText size={ICON_SM} strokeWidth={STROKE} />, onSelect: () => props.onSaveNote?.(m) }] : []),
+              ]}
+              trigger={({ toggle, open }) => (
+                <button type="button" className={`act ${open ? "on" : ""}`} aria-label="More actions" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+                  <MoreHorizontal size={ICON_SM} strokeWidth={STROKE} aria-hidden />
+                </button>
+              )}
+            />
+          </div>
+        )}
         {waiting && <div className="msg-note muted">In line · next after this reply</div>}
         {!waiting && m.status === "processing" && own && <div className="msg-note muted">The AI is on it</div>}
         {m.skip_reason === "mention" && <div className="msg-note muted">AI skipped</div>}
@@ -267,6 +343,7 @@ function UserMessage(props: RowProps) {
           </div>
         )}
       </div>
+      {sheet && <MessageSheet editDisabled={editBlocked} onEdit={() => props.onEdit(m)} onCopy={() => props.onCopy(m)} onClose={() => setSheet(false)} />}
     </div>
   );
 }
@@ -394,7 +471,7 @@ function AssistantMessage(props: RowProps) {
   const text = streaming ? (streamingText ?? m.content) : m.content;
   const failed = m.status === "error";
   // With Auto, the name above is the model Jev chose from the person's set; "Auto" shows until it is known.
-  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, m.meta.smart_fallback ? `Smart unavailable (${m.meta.smart_fallback}), cheapest model used` : m.meta.smart ? "picked by Smart" : null, formatTime(m.created_at)].filter(Boolean);
+  const metaParts = [asker ? `for ${forMe ? "you" : asker}` : null, owner ? `${owner}'s key` : null, m.meta.smart_fallback ? `Smart unavailable (${m.meta.smart_fallback}), cheapest model used` : m.meta.smart ? "picked by Smart" : null, formatTime(m.created_at), props.regenerated ? "(regenerated)" : null].filter(Boolean);
 
   return (
     <div className="msg ai">

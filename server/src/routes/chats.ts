@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isLocalProvider, isPlanProvider, LIMITS, parseDesignMarker, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
+import { DEFAULT_CHAT_TITLE, IMAGE_LIMITS, IMAGE_ONLY_TEXT, isExcerptOf, isLocalProvider, isPlanProvider, LIMITS, parseDesignMarker, PROVIDER_IDS, PROVIDER_LABELS, REASONING_LEVELS, type EditMessageResponse, type MessageMeta, type ImageUrlsResponse, type SendMessageResponse, type SkipReason } from "@mc/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
@@ -6,6 +6,7 @@ import { nameChat } from "../chat-title.ts";
 import { dbError } from "../errors.ts";
 import { claimImages, imagePathsOfChats, releaseImages, removeImageFiles, signedUrls, storeImage } from "../images.ts";
 import { listKeyHints } from "../keys.ts";
+import { decideEdit, EDIT_WAIT, type EditAnswer, type EditTarget } from "../message-edit.ts";
 import { processChatQueue, stopRun } from "../run-queue.ts";
 import { admin } from "../supabase.ts";
 import { createInviteFor, listInvitesFor } from "./invites.ts";
@@ -37,6 +38,8 @@ const sendBody = z
     images: z.array(z.uuid()).max(IMAGE_LIMITS.perMessage).optional(),
   })
   .refine((b) => b.content.length > 0 || (b.images?.length ?? 0) > 0);
+// The new words only: a design marker at the start of the message stays as it was. No NUL: the database can't store it.
+const editBody = z.object({ content: z.string().max(LIMITS.messageChars).refine((t) => !t.includes("\u0000")), regenerate: z.boolean().optional() });
 const imageUrlsBody = z.object({ ids: z.array(z.uuid()).min(1).max(100) });
 // For "unread" the client passes the read marker it had when the chat was opened (the live marker moves as it reads).
 const summarizeBody = z.object({ id: z.uuid(), scope: z.enum(["unread", "day", "all"]), fromSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1).optional(), ...modelBody });
@@ -268,4 +271,50 @@ messages.post("/:id/retry", rateLimit("retry", 20, 60_000), async (c) => {
   await admin.from("messages").update({ status: "pending" }).eq("run_id", answer.run_id).eq("role", "user");
   void processChatQueue(answer.chat_id as string).catch((e) => console.error(`[run] chat ${answer.chat_id}:`, e));
   return c.json({ ok: true });
+});
+
+// Changes the words of a message. Only its author can (the browser has no write access to messages), and only once the AI
+// is done with it. Pictures stay; tags stay as they were, so an edit never notifies anyone or changes who is answered.
+messages.patch("/:id", rateLimit("edit", 20, 60_000), async (c) => {
+  const id = c.req.param("id");
+  const parsed = editBody.safeParse(await c.req.json().catch(() => null));
+  if (!uuid.safeParse(id).success || !parsed.success) return c.json({ error: "Invalid message" }, 400);
+  const userId = c.get("userId");
+  const { data: row } = await admin.from("messages").select("id, chat_id, author_id, role, kind, status, content, run_id, images").eq("id", id).maybeSingle();
+  // Not a member: the same answer as for a message that doesn't exist.
+  if (!row || !(await canAccess(userId, row.chat_id as string))) return c.json({ error: NOT_FOUND }, 404);
+  const target = row as unknown as EditTarget;
+
+  let answer: EditAnswer = null;
+  if (parsed.data.regenerate && target.run_id) {
+    const { data } = await admin.from("messages").select("id, status").eq("chat_id", target.chat_id).eq("role", "assistant").eq("kind", "message").eq("run_id", target.run_id).eq("for_user_id", userId).maybeSingle();
+    answer = (data as EditAnswer) ?? null;
+  }
+  const hasKey = parsed.data.regenerate ? (await listKeyHints(userId)).length > 0 : true;
+  const decision = decideEdit(target, userId, parsed.data.content, parsed.data.regenerate === true, answer, hasKey);
+  if (!decision.ok) return c.json({ error: decision.error }, decision.status);
+
+  let editedAt: string | null = null;
+  if (decision.changed) {
+    editedAt = new Date().toISOString();
+    // The conditions repeat the rule so a message that started a run in the meantime is left alone.
+    const { data: saved, error } = await admin
+      .from("messages")
+      .update({ content: decision.content, edited_at: editedAt })
+      .eq("id", id)
+      .eq("author_id", userId)
+      .eq("role", "user")
+      .eq("kind", "message")
+      .in("status", ["done", "error"])
+      .select("id");
+    if (error) return dbError(c, error);
+    if (!saved?.length) return c.json({ error: EDIT_WAIT }, 409);
+  }
+
+  if (decision.regenerate && target.run_id) {
+    // Same path as Retry: the questions of that run wait again, and the new answer takes the place of the old one.
+    await admin.from("messages").update({ status: "pending" }).eq("run_id", target.run_id).eq("author_id", userId).eq("role", "user").in("status", ["done", "error"]);
+    void processChatQueue(target.chat_id).catch((e) => console.error(`[run] chat ${target.chat_id}:`, e));
+  }
+  return c.json({ id, content: decision.content, edited_at: editedAt, regenerating: decision.regenerate && !!target.run_id } satisfies EditMessageResponse);
 });

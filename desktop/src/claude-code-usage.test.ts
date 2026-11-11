@@ -146,19 +146,37 @@ describe("the host", () => {
     const off = make(asker(calls), false);
     await off.host.setUser(ANA);
     assert.equal(await off.host.getUsage(true), null);
+    await off.host.refresh(); // looking for claude while switched off asks nothing either
     assert.equal(calls.n, 0, "claude is not asked while switched off");
 
     const { host, changes } = make(asker(calls));
     await host.setUser(ANA);
-    assert.equal(await host.getUsage(false), null, "nothing yet, and not asked");
-    assert.equal(calls.n, 0);
-    const u = await host.getUsage(true);
+    // Signing in with it already on asks by itself: nobody presses Refresh.
+    const u = await host.getUsage(false);
     assert.equal(u?.plan, "pro");
     assert.equal(u?.windows[0]?.usedPercent, 10);
     assert.equal(calls.n, 1);
     await host.getUsage(true);
     assert.equal(calls.n, 1, "asked again too soon: the last answer is shown");
     assert.ok(changes() > 0, "the page is told");
+  });
+  test("switching on asks by itself too, once it is ready", async () => {
+    const calls = { n: 0 };
+    const { host } = make(asker(calls), false);
+    await host.setUser(ANA);
+    assert.equal(calls.n, 0);
+    await host.setEnabled(ANA, true);
+    assert.equal((await host.getUsage(false))?.plan, "pro");
+    assert.equal(calls.n, 1);
+  });
+  test("it does not ask while signed out of claude, or when claude was not found", async () => {
+    const calls = { n: 0 };
+    for (const find of ["/c", null]) {
+      const host = new ClaudeCodeHost({ store: { load: async () => ({ [ANA]: { enabled: true } }), save: async () => undefined }, workDir: async () => "/tmp/w", query: async () => asker(calls), makeTools: () => ({}), find: async () => find, login: async () => ({ login: "signed_out", account: null }), onChange: () => undefined });
+      await host.setUser(ANA);
+      assert.equal(await host.getUsage(true), null);
+    }
+    assert.equal(calls.n, 0);
   });
   test("it is forgotten when the person signs out, so the next person never sees it", async () => {
     const calls = { n: 0 };

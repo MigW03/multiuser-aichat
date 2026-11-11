@@ -1,4 +1,4 @@
-import { MCP_LIMITS as M, mcpPresetFor, redactSecrets, resultText, toolEntries, type McpCallResult, type McpRemoteServer, type McpRemoteStatus, type McpState, type ToolEntry } from "@mc/shared";
+import { MCP_LIMITS as M, mcpPresetFor, redactSecrets, resultFiles, resultText, toolEntries, type McpCallResult, type McpRemoteServer, type McpRemoteStatus, type McpState, type ToolEntry } from "@mc/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -268,7 +268,9 @@ export class RemoteMcp {
     this.inFlight.set(userId, (this.inFlight.get(userId) ?? 0) + 1);
     entry.lastUsed = now;
     try {
-      return resultText(await entry.client.callTool({ name: req.tool, arguments: req.args }, undefined, { timeout: o.timeoutMs ?? M.callDefaultMs, signal: o.signal }));
+      const raw = await entry.client.callTool({ name: req.tool, arguments: req.args }, undefined, { timeout: o.timeoutMs ?? M.callDefaultMs, signal: o.signal });
+      const files = resultFiles(raw);
+      return files.length ? { ...resultText(raw), files } : resultText(raw);
     } catch (e) {
       if (o.signal?.aborted) throw new RelayError("cancelled", "Cancelled.");
       console.error("[mcp-remote] call failed:", redactSecrets(e instanceof Error ? e.message : String(e)).slice(0, 300));

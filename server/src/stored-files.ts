@@ -1,3 +1,4 @@
+import { attachmentPrefix } from "./attachments.ts";
 import { projectPrefix, sharePrefix } from "./file-paths.ts";
 import { designPrefix } from "./project-designs.ts";
 import { objectStore, storageOn } from "./r2.ts";
@@ -18,3 +19,5 @@ export const dropShareFiles = (projectId: string, shareId: string) => drop(() =>
 export const dropProjectFiles = (projectId: string) => drop(() => projectPrefix(projectId), "a project");
 /** A project's designs (designs/<project>/, see project-designs.ts). */
 export const dropProjectDesigns = (projectId: string) => drop(() => designPrefix(projectId), "a project's designs");
+/** The files a project's AI saved from downloads and tool results (attachments/<project>/, see attachments.ts). */
+export const dropProjectAttachments = (projectId: string) => drop(() => attachmentPrefix(projectId), "a project's attachments");

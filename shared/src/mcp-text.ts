@@ -1,5 +1,5 @@
 import { MCP_LIMITS as M } from "./mcp-limits.ts";
-import type { McpCallResult } from "./index.ts";
+import type { McpCallResult, McpFile } from "./index.ts";
 
 // Plain-text cleaning shared by everything that handles text written by someone else: what a command or an MCP tool
 // prints, and what an MCP server says about its tools. Used by the desktop app (local tools, commands, files) and by the
@@ -84,10 +84,85 @@ export function resultText(result: unknown): McpCallResult {
   }
   if (parts.length === 0 && r.structuredContent !== undefined) parts.push(safeJson(r.structuredContent));
   else if (parts.length === 0 && r.toolResult !== undefined) parts.push(safeJson(r.toolResult));
-  const cleaned = redactSecrets(cleanOutput(parts.join("\n")));
+  const { text: shown, links } = hideSignedLinks(cleanOutput(parts.join("\n")));
+  const cleaned = redactSecrets(shown);
   const truncated = cleaned.length > M.resultChars;
-  return { text: truncated ? cleaned.slice(0, M.resultChars) : cleaned, isError: r.isError === true, truncated };
+  return { text: truncated ? cleaned.slice(0, M.resultChars) : cleaned, isError: r.isError === true, truncated, ...(links.length ? { links } : {}) };
 }
+
+// ---- Download links in a tool's answer. A signed address (ClickUp, S3, Google) holds a token that looks like a secret, so
+// masking would cut it in the middle and leave a link nobody can open. Such an address is shown as [link:<id> host/path] with the
+// token left out; the id is a short hash the chat server can map back to the whole address (it keeps the raw list in `links`).
+
+const LINK = /https:\/\/[^\s"'<>\\\])}]+/g;
+const MAX_LINKS = 20;
+const MAX_LINK_CHARS = 4_000;
+
+/** A short, stable name for an address: 8 hex characters. Not a secret and not a security check, only a handle. */
+export function linkHandle(url: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < url.length; i++) {
+    a = Math.imul(a ^ url.charCodeAt(i), 0x01000193) >>> 0;
+    b = Math.imul(b + url.charCodeAt(i), 0x85ebca6b) >>> 0;
+  }
+  return a.toString(16).padStart(8, "0").slice(0, 4) + b.toString(16).padStart(8, "0").slice(0, 4);
+}
+
+function hideSignedLinks(text: string): { text: string; links: string[] } {
+  const links: string[] = [];
+  const out = text.replace(LINK, (m) => {
+    const url = m.replace(/[.,;:!?]+$/, "");
+    const tail = m.slice(url.length);
+    if (url.length > MAX_LINK_CHARS) return m;
+    if (!links.includes(url) && links.length < MAX_LINKS) links.push(url);
+    if (redactSecrets(url) === url) return m;
+    let where = "";
+    try {
+      const u = new URL(url);
+      where = ` ${u.host}${u.pathname}`.slice(0, 200);
+    } catch {
+      /* the handle alone is enough */
+    }
+    return `[link:${linkHandle(url)}${where}]${tail}`;
+  });
+  return { text: out, links };
+}
+
+/** Largest file, and the most one answer may carry in all (base64 characters): the chat server holds them in memory while it stores them. */
+const FILE_MAX_BASE64 = 36 * 1024 * 1024;
+const FILES_MAX = 5;
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg", "application/pdf": "pdf", "audio/mpeg": "mp3", "audio/wav": "wav", "text/plain": "txt", "text/html": "html", "text/csv": "csv", "application/json": "json" };
+
+/** The real files in a tool's answer: pictures, audio and binary resources (base64). Text is not a file; resultText has it. */
+export function resultFiles(result: unknown): McpFile[] {
+  const r = (result ?? {}) as { content?: unknown };
+  if (!Array.isArray(r.content)) return [];
+  const files: McpFile[] = [];
+  let n = 0;
+  let total = 0;
+  for (const c of r.content as { type?: unknown; data?: unknown; mimeType?: unknown; resource?: { uri?: unknown; blob?: unknown; mimeType?: unknown } }[]) {
+    if (files.length >= FILES_MAX) break;
+    n += 1;
+    const inline = (c?.type === "image" || c?.type === "audio") && typeof c.data === "string" ? c : null;
+    const res = c?.type === "resource" && typeof c.resource?.blob === "string" ? c.resource : null;
+    const data = inline ? (inline.data as string) : res ? (res.blob as string) : null;
+    if (!data || data.length > FILE_MAX_BASE64 || total + data.length > FILE_MAX_BASE64) continue;
+    total += data.length;
+    const mimeType = clip(oneLine(String((inline ? inline.mimeType : res?.mimeType) ?? "application/octet-stream")), 100);
+    const fromUri = res && typeof res.uri === "string" ? decodeSafe(res.uri.split(/[?#]/)[0]!.split("/").pop() ?? "") : "";
+    files.push({ name: fromUri || `${String(c.type)}-${n}.${EXT[mimeType.toLowerCase()] ?? "bin"}`, mimeType, data });
+  }
+  return files;
+}
+
+const decodeSafe = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
 
 const safeJson = (v: unknown) => {
   try {

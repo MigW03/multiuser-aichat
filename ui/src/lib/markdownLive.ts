@@ -1,7 +1,7 @@
 // Splits composer text into styled pieces for the live Markdown backdrop. The pieces always add back up to the exact
 // text, one line per entry, so the styled copy lines up with the textarea above it.
 
-export type SpanKind = "bold" | "italic" | "strike" | "code" | "mark" | "list";
+export type SpanKind = "bold" | "italic" | "strike" | "code" | "mark" | "list" | "skill";
 export type Span = { text: string; kind?: SpanKind };
 export type LineKind = "fence" | "code" | "add" | "del" | "heading" | "quote";
 export type StyledLine = { spans: Span[]; kind?: LineKind; first?: boolean; last?: boolean };

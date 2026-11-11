@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { DESIGN_LIMITS, FILE_STORE_LIMITS, IMAGE_LIMITS } from "@mc/shared";
+import { DESIGN_LIMITS, FILE_STORE_LIMITS, IMAGE_LIMITS, SKILL_LIMITS } from "@mc/shared";
 import { requireUser, type AuthVars } from "./auth.ts";
 import { env } from "./env.ts";
 import { sweepUnsentImages } from "./images.ts";
@@ -17,6 +17,7 @@ import { folder } from "./routes/folder.ts";
 import { invites, publicInvites } from "./routes/invites.ts";
 import { keys } from "./routes/keys.ts";
 import { notes } from "./routes/notes.ts";
+import { skills } from "./routes/skills.ts";
 import { mcpOauthPublic, mcpServers } from "./routes/mcp.ts";
 import { projects } from "./routes/projects.ts";
 import { smart } from "./routes/smart.ts";
@@ -37,8 +38,12 @@ const pictureBody = bodyLimit({ maxSize: IMAGE_LIMITS.bytes + 1024, onError: (c)
 const designBody = bodyLimit({ maxSize: DESIGN_LIMITS.chars * 3 + 4096, onError: (c) => c.json({ error: "That design is too large." }, 413) });
 // Storing a shared file sends the file itself as the body.
 const storedFileBody = bodyLimit({ maxSize: FILE_STORE_LIMITS.fileBytes + 1024, onError: (c) => c.json({ error: `That file is over ${FILE_STORE_LIMITS.fileBytes / 1024 / 1024} MB.` }, 413) });
+// Installing a plugin sends the .zip file itself as the body.
+const pluginBody = bodyLimit({ maxSize: SKILL_LIMITS.zipBytes + 1024, onError: (c) => c.json({ error: "That file is over 1 MB." }, 413) });
 app.use("/api/*", (c, next) =>
-  c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path)
+  c.req.method === "POST" && /^\/api\/skills\/plugins(\/preview)?$/.test(c.req.path)
+    ? pluginBody(c, next)
+    : c.req.method === "POST" && /^\/api\/chats\/[^/]+\/images$/.test(c.req.path)
     ? pictureBody(c, next)
     : (c.req.method === "PUT" && /^\/api\/projects\/[^/]+\/designs\/[^/]+$/.test(c.req.path)) || (c.req.method === "POST" && /^\/api\/projects\/[^/]+\/designs$/.test(c.req.path))
       ? designBody(c, next)
@@ -63,6 +68,7 @@ app.route("/api/projects", folder);
 app.route("/api/projects", files);
 app.route("/api/projects", createDesignRoutes());
 app.route("/api/projects", notes);
+app.route("/api/skills", skills);
 app.route("/api/projects", supabase);
 app.route("/api/projects", vercel);
 app.route("/api/mcp", mcpServers);

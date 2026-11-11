@@ -61,7 +61,7 @@ function Answering({ who }: { who: string }) {
   );
 }
 
-const CHIP_ICON = { read: File, edit: FilePen, failed: X, mcp: Plug } as const;
+const CHIP_ICON = { read: File, edit: FilePen, failed: X, mcp: Plug, skill: Sparkles } as const;
 
 /** What the AI did for this answer: files read and changed, connected tools used. Files open in the file panel. The first few show; the rest follow "+N more". */
 function ToolChips({ meta }: { meta: ChatMessage["meta"] }) {

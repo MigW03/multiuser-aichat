@@ -2,7 +2,7 @@ import type { MessageMeta } from "@mc/shared";
 
 export type ToolChip = {
   key: string;
-  kind: "read" | "edit" | "failed" | "mcp";
+  kind: "read" | "edit" | "failed" | "mcp" | "skill";
   label: string;
   /** read, edit: the file path, so the chip can open it. */
   path?: string;
@@ -16,7 +16,7 @@ export const TOOL_CHIPS_SHOWN = 4;
 const name = (path: string) => path.split("/").at(-1) || path;
 
 /** What the AI did while writing an answer, from the answer's meta: files edited, files read, connected tools used. A file both read and edited shows once, as edited. */
-export function toolChips(meta: Pick<MessageMeta, "files" | "edits" | "mcp">): ToolChip[] {
+export function toolChips(meta: Pick<MessageMeta, "files" | "edits" | "mcp" | "skills">): ToolChip[] {
   const chips: ToolChip[] = [];
   const edited = new Set<string>();
   for (const e of meta.edits ?? []) {
@@ -27,6 +27,7 @@ export function toolChips(meta: Pick<MessageMeta, "files" | "edits" | "mcp">): T
   for (const p of new Set(meta.files ?? [])) {
     if (!edited.has(p)) chips.push({ key: `r:${p}`, kind: "read", label: `Read ${name(p)}`, path: p, title: `Read ${p}` });
   }
+  for (const k of new Set(meta.skills ?? [])) chips.push({ key: `s:${k}`, kind: "skill", label: `Skill: ${k}`, title: `Followed the skill /${k}` });
   for (const t of new Set(meta.mcp ?? [])) chips.push({ key: `m:${t}`, kind: "mcp", label: t, title: `Used ${t}` });
   return chips;
 }

@@ -25,9 +25,13 @@ import type {
   McpRemoteServer,
   ModelsResponse,
   PendingInvite,
+  PluginPreview,
   ProviderId,
   SendMessageRequest,
   SendMessageResponse,
+  SkillFull,
+  SkillInput,
+  SkillsList,
   SmartSettings,
   SummarizeRequest,
   SupabaseLink,
@@ -96,7 +100,23 @@ async function sendFile<T>(path: string, file: Blob): Promise<T> {
 export type InviteRow = Omit<PendingInvite, "token"> & { link: string };
 export type InviteCreated = { id: string; link: string; expires_at: string; emailed: boolean };
 
+/** The place a skill call is about: a project's, or (no project) the person's own. */
+const skillScope = (projectId?: string) => (projectId ? `?project=${projectId}` : "");
+
 export const api = {
+  // Skills and plugins (saved instructions for the AI). Text only; `project` is a project they are in, or leave it out for their own.
+  skills: (projectId?: string) => call<SkillsList>("GET", `/api/skills${skillScope(projectId)}`),
+  skill: (id: string, projectId?: string) => call<SkillFull>("GET", `/api/skills/${id}${skillScope(projectId)}`),
+  addSkill: (input: SkillInput, projectId?: string) => call<{ id: string }>("POST", `/api/skills${skillScope(projectId)}`, input),
+  saveSkill: (id: string, input: SkillInput, projectId?: string) => call<{ ok: true }>("PUT", `/api/skills/${id}${skillScope(projectId)}`, input),
+  setSkill: (id: string, body: { enabled?: boolean; auto_use?: boolean }, projectId?: string) => call<{ ok: true }>("PATCH", `/api/skills/${id}${skillScope(projectId)}`, body),
+  deleteSkill: (id: string, projectId?: string) => call<{ ok: true }>("DELETE", `/api/skills/${id}${skillScope(projectId)}`),
+  /** Looks inside a plugin file. Nothing is saved. */
+  previewPlugin: (file: Blob, projectId?: string) => sendFile<PluginPreview>(`/api/skills/plugins/preview${skillScope(projectId)}`, file),
+  installPlugin: (file: Blob, skills: string[], projectId?: string) => sendFile<{ id: string }>(`/api/skills/plugins?${projectId ? `project=${projectId}&` : ""}skills=${encodeURIComponent(skills.join(","))}`, file),
+  setPlugin: (id: string, enabled: boolean, projectId?: string) => call<{ ok: true }>("PATCH", `/api/skills/plugins/${id}${skillScope(projectId)}`, { enabled }),
+  deletePlugin: (id: string, projectId?: string) => call<{ ok: true }>("DELETE", `/api/skills/plugins/${id}${skillScope(projectId)}`),
+
   // Remote MCP servers (connected tools the chat server calls for you; secrets are write-only)
   mcpServers: () => call<McpRemoteList>("GET", "/api/mcp/servers"),
   mcpAdd: (body: { name: string; url: string; auth: McpRemoteAuthInput }) => call<McpRemoteServer>("POST", "/api/mcp/servers", body),

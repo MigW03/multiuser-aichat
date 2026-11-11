@@ -23,11 +23,14 @@ import { useSkills } from "../lib/skills.ts";
 import { skillMenu } from "../lib/skillsText.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, IconButton, ICON, ICON_SM, Menu, STROKE, useToast } from "./kit.tsx";
+import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { useChatRoom } from "./useChatRoom.ts";
 
 type Props = {
   chat: ChatSummary;
   project: ProjectSummary | null;
+  /** The person's projects, for the switcher shown while the left panel is hidden. */
+  projects?: ProjectSummary[];
   /** The project's people when this is a project chat. */
   projectPeople: Person[] | undefined;
   projectOnline: Set<string>;
@@ -43,7 +46,7 @@ function typingText(names: string[]): string | null {
   return `${names.length} people are typing…`;
 }
 
-export function ChatView({ chat, project, projectPeople, projectOnline, leftCollapsed, onShowLeft }: Props) {
+export function ChatView({ chat, project, projects, projectPeople, projectOnline, leftCollapsed, onShowLeft }: Props) {
   const { me, keys, choice, setChoice, openAddKey, openSettings, openInvite, preview, design } = useApp();
   const thinking = useModelReasoning(choice);
   const toast = useToast();
@@ -221,6 +224,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
             <PanelLeftOpen size={ICON} strokeWidth={STROKE} />
           </IconButton>
         )}
+        {leftCollapsed && project && <ProjectSwitcher project={project} projects={projects} variant="header" />}
         <div className="chat-title">
           <h1 className={`truncate ${chat.title === DEFAULT_CHAT_TITLE ? "unnamed" : ""}`}>{chat.title}</h1>
           {shared && (

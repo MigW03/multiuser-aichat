@@ -39,6 +39,8 @@ export const PREF = {
   hideJoinNotice: (userId: string) => `mc.hideJoinNotice.${userId}`,
   /** An invite token the person was opening when they had to sign in or confirm their email first. */
   pendingJoin: "mc.pendingJoin",
+  /** Ids of the projects the person opened lately, newest first (the project switcher's RECENT list). */
+  recentProjects: (userId: string) => `mc.recentProjects.${userId}`,
   lastRoute: (userId: string) => `mc.lastRoute.${userId}`,
   /** The shared folder panel is open (on wide screens; a small screen opens it as a drawer each time). */
   folderOpen: (userId: string) => `mc.folderOpen.${userId}`,

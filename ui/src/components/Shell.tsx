@@ -411,6 +411,7 @@ export function Shell({ userId }: { userId: string }) {
         key={chat.id}
         chat={chat}
         project={project}
+        projects={projects.data}
         projectPeople={members.data as Person[] | undefined}
         projectOnline={online}
         leftCollapsed={leftOff}

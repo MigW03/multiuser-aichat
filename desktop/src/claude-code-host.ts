@@ -128,6 +128,8 @@ export class ClaudeCodeHost {
       }
       this.login = await (this.d.login ?? loginState)(this.bin);
       this.error = this.login.login === "signed_out" ? "Claude Code is not signed in." : null;
+      // Once it is switched on and signed in (app start, sign-in, switching on), the person's usage is fetched by itself: nobody has to press Refresh.
+      this.startUsageAsk();
     } catch {
       this.error = "Could not check Claude Code.";
     }
@@ -199,14 +201,18 @@ export class ClaudeCodeHost {
   async getUsage(refresh: boolean): Promise<ClaudeCodeUsage | null> {
     await this.loaded;
     if (!this.report().ready || !this.bin) return null;
-    if (refresh && Date.now() - this.usageAskedAt > 30_000) {
-      this.usageAskedAt = Date.now();
-      this.usageAsk ??= this.askUsage().finally(() => {
-        this.usageAsk = null;
-      });
-    }
+    if (refresh) this.startUsageAsk();
     if (this.usageAsk) await this.usageAsk;
     return this.usage.snapshot();
+  }
+
+  /** Asks `claude` for the plan limits in the background: only while it is switched on and ready, at most every 30 s, one at a time. */
+  private startUsageAsk() {
+    if (!this.report().ready || !this.bin || Date.now() - this.usageAskedAt <= 30_000) return;
+    this.usageAskedAt = Date.now();
+    this.usageAsk ??= this.askUsage().finally(() => {
+      this.usageAsk = null;
+    });
   }
 
   private async askUsage() {

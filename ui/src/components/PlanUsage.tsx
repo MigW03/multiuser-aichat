@@ -344,6 +344,8 @@ function OpenRouterRing({ answering }: { answering: boolean }) {
 function ClaudeCodeRing({ answering }: { answering: boolean }) {
   const state = useClaudeCodeUsage(true);
   const { load } = state;
+  // The ring appearing is the moment to look: the app asks `claude` (at most every 30 s), so nobody has to press Refresh.
+  useEffect(() => void load(true), [load]);
   const u = state.usage?.value ?? null;
   const values = (u?.windows ?? []).map((w) => w.usedPercent).filter((p): p is number => p !== null);
   const used = values.length ? Math.max(...values) : null;

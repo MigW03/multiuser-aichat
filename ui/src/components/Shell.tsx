@@ -224,6 +224,7 @@ export function Shell({ userId }: { userId: string }) {
   const filesCtx = useMemo(
     () => ({
       hasAny: hasShares,
+      folders: shareFolders,
       path: fileReq && !fileReq.guess ? fileReq.path : null,
       open: (path: string, guess = false) => {
         setPreview(null);
@@ -235,7 +236,7 @@ export function Shell({ userId }: { userId: string }) {
       canRun,
       run: runPage,
     }),
-    [hasShares, fileReq, closeFile, canRun, runPage, closeDesign],
+    [hasShares, shareFolders, fileReq, closeFile, canRun, runPage, closeDesign],
   );
   useEffect(() => {
     const el = mainRef.current;

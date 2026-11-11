@@ -537,7 +537,17 @@ export type McpToolInfo = { name: string; description: string; inputSchema: Reco
 export type McpServerState = { name: string; tools: McpToolInfo[] };
 export type McpState = { servers: McpServerState[] };
 /** What a tool returned, as text. `isError` is the tool's own error flag. */
-export type McpCallResult = { text: string; isError: boolean; truncated: boolean };
+export type McpCallResult = {
+  text: string;
+  isError: boolean;
+  truncated: boolean;
+  /** Every https address the tool's text held, as the tool wrote it (before secrets are masked). Used by the server only, never shown. */
+  links?: string[];
+  /** Real files the tool returned (pictures, audio, binary resources). Only remote servers pass these on; the chat server stores them. */
+  files?: McpFile[];
+};
+/** A file inside a tool result: its name, its type and its bytes as base64. */
+export type McpFile = { name: string; mimeType: string; data: string };
 
 // ---- Remote MCP servers: tool servers at an https address, called by the chat server for the person who added them, so
 // they work in the web and desktop apps alike. The server holds their sign-in (a header value or OAuth tokens), encrypted

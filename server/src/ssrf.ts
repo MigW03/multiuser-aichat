@@ -135,14 +135,14 @@ const defaultResolve: Resolve = (hostname, cb) => dnsLookup(hostname, { all: tru
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
-function limitBody(res: Response): Response {
+function limitBody(res: Response, max: number): Response {
   if (!res.body) return res;
   let seen = 0;
   const limited = res.body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         seen += chunk.byteLength;
-        if (seen > MAX_BODY_BYTES) controller.error(new Error("response too large"));
+        if (seen > max) controller.error(new Error("response too large"));
         else controller.enqueue(chunk);
       },
     }),
@@ -154,7 +154,7 @@ function limitBody(res: Response): Response {
  * A fetch for MCP traffic. Every connection it makes resolves the name and refuses blocked addresses. `allowPrivate` is
  * for tests that talk to a server on this machine; production code never sets it.
  */
-export function createGuardedFetch(opts: { resolve?: Resolve; allowPrivate?: boolean } = {}): typeof fetch {
+export function createGuardedFetch(opts: { resolve?: Resolve; allowPrivate?: boolean; /** Largest response body (default 8 MB). */ maxBodyBytes?: number } = {}): typeof fetch {
   const resolve = opts.resolve ?? defaultResolve;
   const agent = new Agent({
     connect: {
@@ -194,7 +194,7 @@ export function createGuardedFetch(opts: { resolve?: Resolve; allowPrivate?: boo
     for (let hop = 0; ; hop++) {
       const res = (await undiciFetch(target, { ...(init as object), method, body, headers, redirect: "manual", dispatcher: agent } as never)) as unknown as Response;
       const location = res.headers.get("location");
-      if (![301, 302, 303, 307, 308].includes(res.status) || !location) return limitBody(res);
+      if (![301, 302, 303, 307, 308].includes(res.status) || !location) return limitBody(res, opts.maxBodyBytes ?? MAX_BODY_BYTES);
       void res.body?.cancel().catch(() => undefined);
       if (hop >= MAX_REDIRECTS) throw new BlockedAddress("invalid");
       const next = opts.allowPrivate ? new URL(location, target) : redirectTarget(target, location);

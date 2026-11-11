@@ -22,6 +22,8 @@ import { APICallError, stepCountIs, streamText, type ModelMessage, type ToolSet 
 import { randomUUID } from "node:crypto";
 import { answerSlot } from "./answer-slot.ts";
 import { designAi } from "./design-events.ts";
+import { attachmentInstructions, attachmentTools } from "./attachment-tools.ts";
+import { createAttachments, createLinkBook } from "./attachments.ts";
 import { designInstructions, designsOffInstructions, designTools } from "./design-tools.ts";
 import { FOLDER_MAX_STEPS_EDIT, fitFiles, folderInstructions, folderTools, type FolderUse } from "./folder-tools.ts";
 import { loadProjectRules, projectRulesInstructions } from "./project-rules.ts";
@@ -290,6 +292,10 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
     let noting: ToolSet | null = null;
     /** The project's designs, in any project chat (they belong to the project, not to a folder). */
     let designing: ReturnType<typeof designTools> | null = null;
+    /** Files the AI brings in from download links and tool results (project chats, with storage on). */
+    let attaching: ReturnType<typeof attachmentTools> | null = null;
+    const attachBook = createLinkBook();
+    const attachUse = { saved: [] as string[] };
     /** A project chat on a server without design storage: the AI is told designs can't be saved here. */
     let designsOff = false;
     /** The asker's custom panels: tools when their desktop app keeps panels, a plain "only in the desktop app" note when it does not. */
@@ -363,6 +369,9 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         // steps, so these runs get the longer lock too.
         designsOff = !storageOn();
         if (!designsOff) {
+          // Addresses people pasted in this chat may be opened by the AI; so may the ones a tool hands it during the answer.
+          attachBook.addText(rows.filter((r) => r.role !== "assistant").map((r) => r.content).join("\n"));
+          attaching = attachmentTools(createAttachments(), { userId: authorId, projectId }, attachBook, attachUse);
           designs.projectId = projectId;
           designing = designTools(projectDesigns, { userId: authorId, projectId }, use, {
             event: (path, state, version) => {
@@ -405,9 +414,9 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
         return { servers: [] } as McpState;
       });
       if (localState.servers.length || remoteState.servers.length) {
-        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(noting ?? {}), ...Object.keys(skilling ?? {}), "panel_list", "panel_draft", "panel_request_delete"];
-        const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed }) : {};
-        const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed }) : {};
+        const reserved = [...Object.keys(folder?.tools ?? {}), ...Object.keys(designing ?? {}), ...Object.keys(attaching?.tools ?? {}), ...Object.keys(noting ?? {}), ...Object.keys(skilling ?? {}), "panel_list", "panel_draft", "panel_request_delete"];
+        const localTools = localState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => mcpRelay.call(authorId, req, opts), localState, { reserved, signal: controller.signal, used: mcpUsed, ...(attaching ? { attach: { book: attachBook, saveFiles: attaching.saveToolFiles } } : {}) }) : {};
+        const remoteTools = remoteState.servers.length ? mcpTools((req: McpRequest, opts?: McpCallOptions) => remoteMcp.call(authorId, req, opts), remoteState, { reserved: [...reserved, ...Object.keys(localTools)], signal: controller.signal, used: mcpUsed, ...(attaching ? { attach: { book: attachBook, saveFiles: attaching.saveToolFiles } } : {}) }) : {};
         connected = { tools: { ...localTools, ...remoteTools }, state: { servers: [...localState.servers, ...remoteState.servers] } };
         if (runSeconds < LOCK_SECONDS_EDIT) {
           runSeconds = LOCK_SECONDS_EDIT;
@@ -450,11 +459,11 @@ async function runOnce(db: Admin, chatId: string): Promise<boolean> {
           streamError = error;
         },
         model,
-        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${typedSkills ? `\n\n${typedSkills}` : ""}${withTools && skilling ? `\n\n${skillMenu}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker, panelLinks)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
+        instructions: `${instructions}${folder ? `\n\n${folderInstructions(folderName, withTools, folder.caps.edit, folder.caps.git, folder.caps.exec, folder.editState)}` : ""}${projectRules ? `\n\n${projectRules}` : ""}${typedSkills ? `\n\n${typedSkills}` : ""}${withTools && skilling ? `\n\n${skillMenu}` : ""}${withTools && designing ? `\n\n${designInstructions()}` : ""}${withTools && attaching ? `\n\n${attachmentInstructions()}` : ""}${designsOff ? `\n\n${designsOffInstructions()}` : ""}${withTools && connected ? `\n\n${mcpInstructions(connected.state, asker)}` : ""}${withTools && noting ? `\n\n${noteInstructions}` : ""}${withTools && panelling ? `\n\n${panelInstructions(asker, panelLinks)}` : ""}${panelsOff ? `\n\n${panelsOffInstructions(asker)}` : ""}`,
         messages,
         ...thinking,
         ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
-        ...(withTools && (folder || connected || noting || designing || panelling || skilling) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...noting, ...panelling, ...skilling }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
+        ...(withTools && (folder || connected || noting || designing || panelling || skilling || attaching) ? { tools: { ...connected?.tools, ...folder?.tools, ...designing, ...attaching?.tools, ...noting, ...panelling, ...skilling }, stopWhen: stepCountIs(FOLDER_MAX_STEPS_EDIT) } : {}),
         abortSignal: controller.signal,
         timeout: { totalMs: (runSeconds - 30) * 1000 },
       });

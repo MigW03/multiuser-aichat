@@ -1,5 +1,6 @@
-import { MCP_LIMITS as ML, type McpCallResult, type McpState } from "@mc/shared";
+import { MCP_LIMITS as ML, type McpCallResult, type McpFile, type McpState } from "@mc/shared";
 import { jsonSchema, tool, type ToolSet } from "ai";
+import type { LinkBook } from "./attachments.ts";
 import { RelayError } from "./folder-relay.ts";
 import type { McpCallOptions, McpRequest } from "./mcp-relay.ts";
 
@@ -58,7 +59,15 @@ function inputSchemaOf(raw: Record<string, unknown>) {
 export function mcpTools(
   call: Caller,
   state: McpState,
-  ctx: { /** Names already used by built-in tools. */ reserved: Iterable<string>; signal: AbortSignal; /** Filled with "server: tool" for each tool the answer used. */ used: Set<string> },
+  ctx: {
+    /** Names already used by built-in tools. */
+    reserved: Iterable<string>;
+    signal: AbortSignal;
+    /** Filled with "server: tool" for each tool the answer used. */
+    used: Set<string>;
+    /** Where downloads go (project chats): the addresses a result held, and a place to keep the files it returned. */
+    attach?: { book: LinkBook; saveFiles: (files: McpFile[], source: string) => Promise<string> };
+  },
 ): ToolSet {
   const taken = new Set(ctx.reserved);
   const tools: ToolSet = {};
@@ -75,7 +84,10 @@ export function mcpTools(
           try {
             const r = (await call({ server: server.name, tool: t.name, args: input ?? {} }, { timeoutMs: ML.callDefaultMs + 15_000, signal: ctx.signal })) as McpCallResult;
             ctx.used.add(`${server.name}: ${t.name}`);
-            return formatToolResult(server.name, t.name, r);
+            ctx.attach?.book.addResult(r.links);
+            ctx.attach?.book.addText(r.text);
+            const saved = ctx.attach && r.files?.length ? await ctx.attach.saveFiles(r.files, `${server.name}: ${t.name}`) : "";
+            return `${formatToolResult(server.name, t.name, r)}${saved}`;
           } catch (e) {
             return failure(e);
           }

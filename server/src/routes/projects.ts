@@ -4,7 +4,7 @@ import { z } from "zod";
 import { rateLimit, type AuthVars } from "../auth.ts";
 import { dbError } from "../errors.ts";
 import { imagePathsOfChats, removeImageFiles } from "../images.ts";
-import { dropProjectDesigns, dropProjectFiles } from "../stored-files.ts";
+import { dropProjectAttachments, dropProjectDesigns, dropProjectFiles } from "../stored-files.ts";
 import { admin } from "../supabase.ts";
 import { createInviteFor, listInvitesFor } from "./invites.ts";
 
@@ -49,6 +49,7 @@ projects.delete("/:id", async (c) => {
   void removeImageFiles(paths);
   void dropProjectFiles(c.req.param("id"));
   void dropProjectDesigns(c.req.param("id"));
+  void dropProjectAttachments(c.req.param("id"));
   return c.json({ ok: true });
 });
 

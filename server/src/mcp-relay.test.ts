@@ -124,6 +124,17 @@ describe("tools and calls", () => {
     assert.deepEqual(mcp.tools(ANA), { servers: [] }); // the app is gone
   });
 
+  test("there is no cap on tools in all: 68 on one server and 60 on another all pass", async () => {
+    const c = await connect("ana-token");
+    await c.first();
+    const many = (n: number) => Array.from({ length: n }, (_, i) => tool(`t${i}`));
+    send(c, { servers: [{ name: "clickup", tools: many(68) }, { name: "other", tools: many(60) }] });
+    await until(() => mcp.tools(ANA).servers.length === 2);
+    assert.deepEqual(mcp.tools(ANA).servers.map((s) => s.tools.length), [68, 60]);
+    c.ws.close();
+    await c.closed;
+  });
+
   test("a list that breaks the rules means no tools at all", async () => {
     const c = await connect("ana-token");
     await c.first();
@@ -133,8 +144,7 @@ describe("tools and calls", () => {
       { servers: [{ name: "files", tools: [tool("bad tool!")] }] },
       { servers: [{ name: "files", tools: [tool("a", { inputSchema: { type: "object", properties: { x: { description: "z".repeat(9000) } } } })] }] },
       { servers: [{ name: "files", tools: [tool("a")] }, { name: "files", tools: [tool("b")] }] },
-      { servers: [{ name: "files", tools: Array.from({ length: 51 }, (_, i) => tool(`t${i}`)) }] },
-      { servers: [{ name: "a", tools: Array.from({ length: 30 }, (_, i) => tool(`t${i}`)) }, { name: "b", tools: Array.from({ length: 30 }, (_, i) => tool(`t${i}`)) }] },
+      { servers: [{ name: "files", tools: Array.from({ length: 401 }, (_, i) => tool(`t${i}`)) }] },
       { servers: Array.from({ length: 11 }, (_, i) => ({ name: `s${i}`, tools: [] })) },
       { servers: [{ name: "files", tools: [tool("a", { inputSchema: "nope" })] }] },
       { servers: "all" },

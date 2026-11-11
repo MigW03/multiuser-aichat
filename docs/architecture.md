@@ -193,7 +193,7 @@ chat server only relays.
   on. Started with the SDK's stdio transport, no shell, in an empty folder the app owns, with a trimmed environment (no
   host tokens) plus what the person typed for that server. Killed on switch-off, removal, sign-out and quit.
 - **What the server is told:** the app sends the tool list when connected and whenever it changes (`mcp` message);
-  `mcp-relay.ts` checks it again (name patterns, 10 servers, 50 tools, 8 KB schemas, descriptions cut to one line of 1000
+  `mcp-relay.ts` checks it again (name patterns, 10 servers, up to 400 tools per server and no cap on tools in all, 8 KB schemas, descriptions cut to one line of 1000
   characters) and a list that breaks a rule means no tools. Calls go down the same socket; the app checks server, tool,
   switches and argument size again. Limits: 25 calls per answer, 120 per person per 10 minutes, 4 at once, 60 s each,
   results cut to 50k characters.

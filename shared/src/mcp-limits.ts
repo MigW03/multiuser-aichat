@@ -1,10 +1,10 @@
 // Limits for connected tools (MCP): see the comment above the MCP types in index.ts. Kept in their own file so mcp-text.ts can use them without a circular import.
 
 export const MCP_LIMITS = {
-  /** Servers per person, characters in a server name, tools handed to the AI in all. */
+  /** Servers per person, characters in a server name, tools one server may list (a sanity bound; there is no cap on tools in all). */
   servers: 10,
   nameChars: 32,
-  tools: 50,
+  toolsPerServer: 400,
   toolNameChars: 64,
   /** A tool's description (cut) and its input schema (a tool with a bigger one is left out), in characters. */
   descriptionChars: 1_000,

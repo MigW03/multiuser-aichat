@@ -371,7 +371,8 @@ h1, h2, h3, p { margin: 0; }
 .project-name { font: var(--text-title); }
 /* project switcher: the name as a button, and its popover */
 .switch-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; border: 0; border-radius: 8px; background: none; color: var(--fg); }
-.switch-btn.panel { margin: -2px -6px; padding: 2px 6px; }
+/* its own row (block-level, as wide as its content): the people row sits below it, not beside it */
+.switch-btn.panel { display: flex; width: fit-content; margin: -2px -6px; padding: 2px 6px; }
 .switch-btn.header { height: 30px; padding: 0 6px 0 4px; gap: 6px; flex: 0 1 auto; border: 1px solid var(--border); background: var(--card); }
 .switch-btn:hover, .switch-btn.open { background: var(--hover-row); }
 .switch-name.panel { font: var(--text-title); }

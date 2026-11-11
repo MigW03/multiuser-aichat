@@ -12,6 +12,7 @@ import { LinkSupabaseDialog, linkText, supabaseDashboardUrl } from "./SupabaseUi
 import { LinkVercelDialog, linkText as vercelLinkText, vercelDashboardUrl } from "./VercelUi.tsx";
 import { Button, Dialog, ErrorLine, ICON, ICON_SM, IconButton, STROKE } from "./kit.tsx";
 import { RightPanelToggle } from "./FolderUi.tsx";
+import { SkillsManager } from "./SkillsUi.tsx";
 
 // The project's settings, in place of the chat (project menu > Project settings). Add a setting by adding a
 // <SettingRow> to a <SettingsSection>; a new group of settings is a new <SettingsSection>.
@@ -461,6 +462,11 @@ export function ProjectSettings({ project, leftCollapsed, onShowLeft }: { projec
             <CapSetting project={project} which={SWITCHES.exec} />
             <AutoSetting project={project} which="exec" />
             <AlwaysAllowed project={project} />
+          </SettingsSection>
+          <SettingsSection title="Skills">
+            <div className="setting-row skills-section">
+              <SkillsManager projectId={project.id} projectName={project.name} />
+            </div>
           </SettingsSection>
           <SettingsSection title="Connected services">
             <SupabaseSetting project={project} />

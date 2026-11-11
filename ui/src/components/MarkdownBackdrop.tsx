@@ -1,13 +1,14 @@
 import { memo, type Ref } from "react";
 import { styleMarkdown } from "../lib/markdownLive.ts";
+import { markSkillTokens } from "../lib/skillsText.ts";
 
 /**
  * The composer's text drawn with Markdown styling, sitting on top of the (see-through) textarea. It never takes
  * clicks. Styling must not change how wide any character is, or the caret in the textarea would drift away from
  * the styled text: no mono font, no real bold, no padding on inline pieces.
  */
-export const MarkdownBackdrop = memo(function MarkdownBackdrop({ text, innerRef }: { text: string; innerRef: Ref<HTMLDivElement> }) {
-  const lines = styleMarkdown(text);
+export const MarkdownBackdrop = memo(function MarkdownBackdrop({ text, innerRef, skills }: { text: string; innerRef: Ref<HTMLDivElement>; /** Names of the skills this chat can use: "/name" for one of them is marked. */ skills?: ReadonlySet<string> }) {
+  const lines = skills ? markSkillTokens(styleMarkdown(text), skills) : styleMarkdown(text);
   return (
     <div className="md-backdrop" aria-hidden>
       <div className="md-inner" ref={innerRef}>

@@ -97,7 +97,7 @@ function failure(e: unknown): string {
   return "Error: the shared folder could not be read.";
 }
 
-export type FolderUse = { files: Set<string>; offline: boolean; edits: { p: string; ok: boolean }[]; /** Connected tools used, as "server: tool". */ mcp: Set<string> };
+export type FolderUse = { files: Set<string>; offline: boolean; edits: { p: string; ok: boolean }[]; /** Connected tools used, as "server: tool". */ mcp: Set<string>; /** Skills followed, as the name typed after "/". */ skills?: Set<string> };
 
 /** What the people in the chat see while a change waits for the host, and how it ended. */
 export type ChangeHooks = {
@@ -116,7 +116,7 @@ const normalize = (p: string) => p.split("/").filter((x) => x !== "" && x !== ".
  * object), so the sizes below are estimates on the safe side, not the text length. Changes go first (they matter
  * more) and the files get what is left.
  */
-export function fitFiles(use: FolderUse): { files?: string[]; edits?: { p: string; ok: boolean }[]; mcp?: string[]; folder_offline?: true } {
+export function fitFiles(use: FolderUse): { files?: string[]; edits?: { p: string; ok: boolean }[]; mcp?: string[]; skills?: string[]; folder_offline?: true } {
   const bytes = (s: string) => Buffer.byteLength(s);
   const edits: { p: string; ok: boolean }[] = [];
   let size = 120; // keys, the offline flag and the jsonb header
@@ -126,7 +126,14 @@ export function fitFiles(use: FolderUse): { files?: string[]; edits?: { p: strin
     edits.push(e);
     size += cost;
   }
-  // Connected tools come before the files, which get what is left.
+  // Skills followed and connected tools come before the files, which get what is left.
+  const skills: string[] = [];
+  for (const k of use.skills ?? []) {
+    const cost = bytes(k) + 8;
+    if (size + cost > 620) break;
+    skills.push(k);
+    size += cost;
+  }
   const mcp: string[] = [];
   for (const m of use.mcp) {
     const cost = bytes(m) + 8;
@@ -141,7 +148,7 @@ export function fitFiles(use: FolderUse): { files?: string[]; edits?: { p: strin
     files.push(f);
     size += cost;
   }
-  return { ...(files.length ? { files } : {}), ...(edits.length ? { edits } : {}), ...(mcp.length ? { mcp } : {}), ...(use.offline ? { folder_offline: true as const } : {}) };
+  return { ...(files.length ? { files } : {}), ...(edits.length ? { edits } : {}), ...(mcp.length ? { mcp } : {}), ...(skills.length ? { skills } : {}), ...(use.offline ? { folder_offline: true as const } : {}) };
 }
 
 /** What this run's tools may do. `edit` and `git` writes need `changes` (the hooks that show proposals to the chat). */

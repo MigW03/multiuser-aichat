@@ -149,6 +149,8 @@ export type MessageMeta = {
   edits?: { p: string; ok: boolean }[];
   /** answers: connected tools (MCP) the AI used, as "server: tool", distinct, as many as fit. Shares the column's 1 KB. */
   mcp?: string[];
+  /** answers: skills the AI followed, as the name typed after "/", distinct, as many as fit. Shares the column's 1 KB. */
+  skills?: string[];
   /** answers: the model was chosen by Smart model selection (the answer's `model` is the one that really answered). */
   smart?: boolean;
   /** With `smart`: the choice could not be made (this is the short reason), so the cheapest model of the person's set answered. */
@@ -661,3 +663,4 @@ export * from "./edit-match.ts";
 export * from "./files.ts";
 export * from "./panels.ts";
 export * from "./panel-check.ts";
+export * from "./skills.ts";

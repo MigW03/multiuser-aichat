@@ -19,6 +19,8 @@ import { MessageList, OPTIMISTIC_SEQ } from "./Messages.tsx";
 import { noteTitleFrom } from "./NotesUi.tsx";
 import { PanelDraftCards } from "./PanelDraftCards.tsx";
 import { usePanelDrafts } from "../lib/panels.ts";
+import { useSkills } from "../lib/skills.ts";
+import { skillMenu } from "../lib/skillsText.ts";
 import { PANEL_SHORTCUT } from "../lib/shortcuts.ts";
 import { Avatar, IconButton, ICON, ICON_SM, Menu, STROKE, useToast } from "./kit.tsx";
 import { useChatRoom } from "./useChatRoom.ts";
@@ -48,6 +50,9 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
   const room = useChatRoom(chat.id, me.id);
   const homePeople = useLive(() => (project ? Promise.resolve([] as Person[]) : fetchChatPeople(chat.id)), [chat.id, project?.id]);
   const people: Person[] = project ? (projectPeople ?? []) : (homePeople.data ?? [{ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url }]);
+  // The skills "/" can list: the person's own, and the project's in a project chat.
+  const skillList = useSkills(project?.id);
+  const skillItems = useMemo(() => skillMenu(skillList.list), [skillList.list]);
   const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [draft, setDraft] = useState<{ text: string; key: number } | null>(null);
   const [dialog, setDialog] = useState<"rename" | "delete" | "summarize" | null>(null);
@@ -300,6 +305,7 @@ export function ChatView({ chat, project, projectPeople, projectOnline, leftColl
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}
         draft={draft}
+        skills={skillItems}
         {...(project && design.available
           ? {
               design: {

@@ -516,6 +516,7 @@ button.tool-chip:hover { background: var(--t20); }
 .md-strike { text-decoration: line-through; }
 .md-code { background: color-mix(in srgb, var(--fg) 10%, transparent); border-radius: 4px; color: var(--p-text); }
 .md-list { color: var(--p-text); }
+.md-skill { background: color-mix(in srgb, var(--p) 22%, transparent); border-radius: 4px; color: var(--p-text); }
 .send-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--p); color: var(--p-fg); display: inline-flex; align-items: center; justify-content: center; }
 .send-btn:hover:not(:disabled) { filter: brightness(1.1); }
 .send-btn.stop { background: var(--p); color: var(--p-fg); }
@@ -1191,3 +1192,31 @@ button.tool-chip:hover { background: var(--t20); }
 
 /* ---- the AI's panel proposals sit in the chat, under the last message */
 .panel-draft-tail { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; max-width: 560px; }
+
+/* ------------------------------------------------------------------ skills */
+.skills { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.skills-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.skills-empty { padding: 4px 0; }
+.skills-rows { margin: 0; }
+.skills-section { padding: 14px 16px; }
+.skill-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.skill-row.nested { padding-left: 40px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
+.skill-actions { display: flex; gap: 2px; align-items: center; flex: none; }
+.skill-auto { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.skill-fold { flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: none; color: var(--muted-fg); }
+.skill-fold:hover { background: var(--hover-btn); color: var(--fg); }
+.skill-body { width: 100%; resize: vertical; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.45; }
+.skill-auto-row { display: flex; gap: 12px; align-items: flex-start; margin: 8px 0; }
+.skill-auto-row .block { display: block; }
+.skill-drop { padding: 18px 12px; text-align: center; border: 1.5px dashed var(--border); border-radius: 10px; background: var(--muted); margin: 10px 0; }
+.skill-drop.over { border-color: var(--p); background: color-mix(in srgb, var(--p) 10%, transparent); }
+.skill-preview { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.skill-pick { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.skill-pick label { display: block; }
+.skill-leftout { padding: 8px 12px; border-radius: 8px; margin: 8px 0; background: color-mix(in srgb, var(--warning) 16%, transparent); border: 1px dashed var(--warning); }
+.skill-target { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
+.skill-chip { display: inline-flex; }
+.skill-list { min-width: min(420px, calc(100% - 16px)); }
+.skill-item-name { flex: none; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.skill-auto input, .skill-pick input { accent-color: var(--p); }
+.plugin-actions { margin: 4px 0 0 -8px; }

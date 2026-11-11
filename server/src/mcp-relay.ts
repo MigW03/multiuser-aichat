@@ -55,10 +55,9 @@ const stateMsg = z.object({
   claudeCode: z.object({ ready: z.boolean() }).optional(),
   mcp: z.object({
     servers: z
-      .array(z.object({ name: serverName, tools: z.array(tool).max(ML.tools) }))
+      .array(z.object({ name: serverName, tools: z.array(tool).max(ML.toolsPerServer) }))
       .max(ML.servers)
-      .refine((all) => new Set(all.map((x) => x.name)).size === all.length, "duplicate server")
-      .refine((all) => all.reduce((n, x) => n + x.tools.length, 0) <= ML.tools, "too many tools"),
+      .refine((all) => new Set(all.map((x) => x.name)).size === all.length, "duplicate server"),
   }),
 });
 const NO_TOOLS: McpState = { servers: [] };

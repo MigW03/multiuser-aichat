@@ -241,11 +241,9 @@ export class RemoteMcp {
     const pending = entries.map((x) => x.entry.connecting).filter((p): p is Promise<void> => !!p);
     if (pending.length) await Promise.race([Promise.allSettled(pending), new Promise((r) => setTimeout(r, waitMs).unref())]);
     const servers: McpState["servers"] = [];
-    let total = 0;
     for (const { row, entry } of entries) {
       if (entry.status !== "ready" || !entry.client) continue;
-      const tools = entry.tools.filter((t) => t.usable && toolOffered(row, t.name)).slice(0, Math.max(0, M.tools - total));
-      total += tools.length;
+      const tools = entry.tools.filter((t) => t.usable && toolOffered(row, t.name));
       if (tools.length) servers.push({ name: row.name, tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
     }
     return { servers };

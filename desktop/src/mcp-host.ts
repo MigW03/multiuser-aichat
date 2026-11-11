@@ -113,12 +113,10 @@ export class McpHost {
     const u = userId ? this.config[userId] : undefined;
     const servers: McpState["servers"] = [];
     if (!userId || !u) return { servers };
-    let total = 0;
     for (const [name, s] of Object.entries(u.servers)) {
       const conn = this.conns.get(this.key(userId, name));
       if (!s.enabled || conn?.status !== "ready") continue;
-      const tools = conn.tools.filter((t) => t.usable && !s.disabledTools.includes(t.name)).slice(0, Math.max(0, M.tools - total));
-      total += tools.length;
+      const tools = conn.tools.filter((t) => t.usable && !s.disabledTools.includes(t.name));
       if (tools.length) servers.push({ name, tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
     }
     return { servers };

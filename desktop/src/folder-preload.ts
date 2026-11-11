@@ -149,6 +149,8 @@ export const claudeCodeApi = {
   /** Looks for `claude` again and asks it whether it is signed in. */
   refresh: (): Promise<unknown> => ipcRenderer.invoke("claudecode:refresh"),
   setEnabled: (enabled: boolean): Promise<unknown> => ipcRenderer.invoke("claudecode:set-enabled", enabled),
+  /** The plan limits `claude` reported (null: none known). `refresh` asks `claude` directly first. */
+  usage: (refresh: boolean): Promise<unknown> => ipcRenderer.invoke("claudecode:usage", refresh),
   chooseBinary: (): Promise<unknown> => ipcRenderer.invoke("claudecode:choose-binary"),
   resetBinary: (): Promise<unknown> => ipcRenderer.invoke("claudecode:reset-binary"),
   onChange: (callback: () => void): (() => void) => {

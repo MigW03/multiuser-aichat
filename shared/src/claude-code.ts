@@ -91,3 +91,24 @@ export type ClaudeCodeStatus = {
   /** The connection to the chat server (the AI can use the login only while connected). */
   link: "off" | "connecting" | "connected" | "auth";
 };
+
+/** One limit window of the person's Claude plan: "5-hour", "Weekly", ... `usedPercent` is 0-100 (null: not reported). `resetsAt` is a Unix time in seconds. */
+export type ClaudeCodeUsageWindow = { key: string; label: string; usedPercent: number | null; resetsAt: number | null };
+
+/**
+ * What the person's own `claude` says about their Claude plan limits. Shown only to them, on their desktop: it never goes to the
+ * chat server or to other people in a chat. `source`: "events" is what `claude` reported while answering; "usage" is the
+ * answer to asking it directly (the data behind its /usage command).
+ */
+export type ClaudeCodeUsage = {
+  plan: string | null;
+  windows: ClaudeCodeUsageWindow[];
+  /** `claude` says a limit is reached (status "rejected"), or a window is full. */
+  reached: boolean;
+  /** `claude` says a limit is close (status "allowed_warning"). */
+  warning: boolean;
+  /** Extra usage (credits beyond the plan), when the plan has it. Amounts are in major units of `currency`. */
+  extra: { enabled: boolean; used: number | null; limit: number | null; currency: string | null } | null;
+  source: "events" | "usage";
+  fetchedAt: number;
+};

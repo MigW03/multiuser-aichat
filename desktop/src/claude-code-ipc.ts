@@ -96,6 +96,9 @@ export function setupClaudeCode(opts: { allowedOrigin: string; getWindow: () => 
 
   ipcMain.handle("claudecode:get", async (e) => (me(e) ? host.status() : off));
 
+  // The person's plan limits as their own `claude` reports them: only for the app's own page, only for the signed-in person.
+  ipcMain.handle("claudecode:usage", async (e, refresh: unknown) => (me(e) ? host.getUsage(refresh === true) : null));
+
   ipcMain.handle("claudecode:refresh", async (e) => {
     if (!me(e)) return off;
     await host.refresh(); // looks for `claude` and asks it about its sign-in; it switches nothing on

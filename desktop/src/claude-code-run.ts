@@ -188,8 +188,8 @@ export function describeSpawnFailure(err: unknown, stderr: string): StepError {
 }
 
 /** The slice of the Agent SDK this needs, so a test can stand in for it. */
-export type QueryLike = AsyncIterable<unknown> & { close?: () => void; interrupt?: () => Promise<void> };
-export type QueryFn = (params: { prompt: string; options: Record<string, unknown> }) => QueryLike;
+export type QueryLike = AsyncIterable<unknown> & { close?: () => void; interrupt?: () => Promise<void>; usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (opts?: { skipBehaviors?: boolean }) => Promise<unknown> };
+export type QueryFn = (params: { prompt: string | AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryLike;
 
 export type StepDeps = {
   query: QueryFn;
@@ -199,6 +199,8 @@ export type StepDeps = {
   /** An empty folder `claude` runs in. */
   cwd: string;
   env: Record<string, string>;
+  /** `claude` reported something about the person's plan limits (a `rate_limit_event`). */
+  onRateLimit?: (info: unknown) => void;
 };
 
 /** Runs one step. Calls `emit` for each event; resolves after the `end` event, or throws a StepError. */
@@ -239,6 +241,7 @@ export async function runStep(req: ClaudeCodeRequest, deps: StepDeps, emit: (e: 
   try {
     for await (const msg of q) {
       if (signal.aborted) throw new StepError("cc_failed", "Cancelled.");
+      if ((msg as { type?: unknown } | null)?.type === "rate_limit_event") deps.onRateLimit?.((msg as { rate_limit_info?: unknown }).rate_limit_info);
       for (const ev of reader.push(msg)) {
         if (ev.kind === "text") sent += ev.text.length;
         if (sent > CC.outputChars) throw new StepError("cc_limit", "The answer was too long.");
@@ -261,6 +264,45 @@ export async function runStep(req: ClaudeCodeRequest, deps: StepDeps, emit: (e: 
     try {
       abort.abort();
       q.close?.();
+    } catch {
+      /* already stopped */
+    }
+  }
+}
+
+/**
+ * Asks `claude` directly for the data behind its /usage command (plan limits). No question is sent to the model, so it uses none
+ * of the plan: `claude` is started with an input that never says anything, asked, and closed. The SDK marks this call
+ * experimental, so any failure just means "no answer" (null) and the events from answers stay the source.
+ */
+export async function askPlanUsage(deps: Pick<StepDeps, "query" | "bin" | "cwd" | "env">, signal: AbortSignal, timeoutMs = 25_000): Promise<unknown> {
+  const abort = new AbortController();
+  const stop = () => abort.abort();
+  signal.addEventListener("abort", stop, { once: true });
+  const timer = setTimeout(stop, timeoutMs);
+  // An input that stays silent until stopped: there is no user turn, so no model request.
+  const silent: AsyncIterable<unknown> = {
+    [Symbol.asyncIterator]: () => ({
+      next: () => new Promise<IteratorResult<unknown>>((resolve) => abort.signal.addEventListener("abort", () => resolve({ done: true, value: undefined }), { once: true })),
+    }),
+  };
+  let q: QueryLike | null = null;
+  try {
+    q = deps.query({
+      prompt: silent,
+      options: { pathToClaudeCodeExecutable: deps.bin, cwd: deps.cwd, env: deps.env, tools: [], settingSources: [], skills: [], plugins: [], persistSession: false, permissionMode: "dontAsk", strictMcpConfig: true, settings: { autoMemoryEnabled: false }, abortController: abort },
+    });
+    const ask = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (typeof ask !== "function") return null;
+    return await Promise.race([ask.call(q, { skipBehaviors: true }), new Promise<null>((resolve) => abort.signal.addEventListener("abort", () => resolve(null), { once: true }))]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", stop);
+    try {
+      abort.abort();
+      q?.close?.();
     } catch {
       /* already stopped */
     }

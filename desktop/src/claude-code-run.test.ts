@@ -18,7 +18,7 @@ const result = (extra: Record<string, unknown> = {}) => ({ type: "result", subty
 
 const req = (over: Partial<ClaudeCodeRequest> = {}): ClaudeCodeRequest => ({ model: "sonnet", system: "sys", prompt: "hi", effort: null, tools: [{ name: "read.file", description: "Read", inputSchema: { type: "object" } }], ...over });
 
-function fakeQuery(messages: unknown[], seen: { options?: Record<string, unknown>; prompt?: string; closed?: boolean } = {}): QueryFn {
+function fakeQuery(messages: unknown[], seen: { options?: Record<string, unknown>; prompt?: unknown; closed?: boolean } = {}): QueryFn {
   return ({ prompt, options }) => {
     seen.prompt = prompt;
     seen.options = options;

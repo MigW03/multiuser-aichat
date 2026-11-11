@@ -1,4 +1,4 @@
-import type { ClaudeCodeStatus } from "@mc/shared";
+import type { ClaudeCodeStatus, ClaudeCodeUsage } from "@mc/shared";
 import { useEffect, useState } from "react";
 
 // "Use my Claude Code login": only in the desktop app. The app runs the person's own `claude` program; the page can read the
@@ -10,6 +10,8 @@ export type ClaudeCodeBridge = {
   get: () => Promise<ClaudeCodeStatus>;
   /** Looks for `claude` again and asks it whether it is signed in. */
   refresh: () => Promise<ClaudeCodeStatus>;
+  /** The plan limits `claude` reported, or null when none are known. `refresh` asks `claude` directly first. */
+  usage: (refresh: boolean) => Promise<ClaudeCodeUsage | null>;
   setEnabled: (enabled: boolean) => Promise<ClaudeCodeResult>;
   chooseBinary: () => Promise<ClaudeCodeResult>;
   resetBinary: () => Promise<ClaudeCodeStatus>;

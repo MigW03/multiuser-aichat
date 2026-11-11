@@ -480,6 +480,29 @@ h1, h2, h3, p { margin: 0; }
 .act { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--muted-fg); font: var(--text-small); }
 .act:hover { background: var(--hover-btn); color: var(--fg); }
 .act.reply { color: var(--p-text); }
+.act:disabled { opacity: 0.45; cursor: not-allowed; }
+.act:disabled:hover { background: none; color: var(--muted-fg); }
+.act.on { background: var(--hover-btn); color: var(--fg); }
+.msg-actions.own-actions { justify-content: flex-end; }
+.msg-edited { padding: 0 4px; line-height: 1; cursor: default; }
+/* Editing a message in place: the composer's live-Markdown box, inside the message's place in the chat. */
+.msg.own .msg-main.editing, .msg .msg-main.editing { width: min(100%, 640px); max-width: min(100%, 640px); align-items: stretch; }
+.msg-edit { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px 8px 14px; border: 1px solid var(--p); border-radius: var(--r-composer); background: var(--card); box-shadow: 0 0 0 3px var(--t12); }
+.msg-edit-input { position: relative; display: flex; margin: 0 -4px; }
+.msg-edit textarea { max-height: 320px; }
+.msg-edit .md-inner { padding: 6px 4px; }
+.msg-edit-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.msg-edit-note { margin-right: auto; min-width: 0; }
+@media (hover: none) { .msg-edit .kbd-hint { display: none; } }
+/* On a phone there is no hover: a long press opens the sheet instead of the buttons under the message. */
+.bubble.pressable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.sheet-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: var(--overlay); }
+.sheet { width: min(100%, 480px); display: flex; flex-direction: column; gap: 2px; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: var(--card); border: 1px solid var(--border); border-bottom: 0; border-radius: var(--r-panel) var(--r-panel) 0 0; box-shadow: var(--shadow-menu); }
+.sheet-item { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg); font: var(--text-row); font-size: 15px; text-align: left; }
+.sheet-item:hover:not(:disabled), .sheet-item:active:not(:disabled) { background: var(--hover-row); }
+.sheet-item:disabled { opacity: 0.5; }
+.sheet-item.cancel { justify-content: center; margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 var(--r-control) var(--r-control); color: var(--muted-fg); }
+.sheet-hint { margin-left: auto; }
 .answering { display: flex; align-items: center; gap: 8px; }
 .egg-loader .egg { opacity: 0.25; animation: egg-glow 1.5s infinite ease-in-out; }
 @keyframes egg-glow { 0%, 100% { opacity: 0.25; } 30%, 55% { opacity: 1; } }
@@ -516,11 +539,11 @@ button.tool-chip:hover { background: var(--t20); }
 .composer:focus-within { border-color: var(--p); box-shadow: 0 0 0 3px var(--t12); }
 .composer-row { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; }
 .composer-input { position: relative; flex: 1; min-width: 0; display: flex; margin: 0 -4px; }
-.composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; padding: 6px 4px; max-height: 200px; line-height: 1.5; font-size: 14.5px; overflow-wrap: break-word; scrollbar-width: none; }
-.composer textarea::-webkit-scrollbar { display: none; }
+.composer textarea, .msg-edit textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; padding: 6px 4px; max-height: 200px; line-height: 1.5; font-size: 14.5px; overflow-wrap: break-word; scrollbar-width: none; }
+.composer textarea::-webkit-scrollbar, .msg-edit textarea::-webkit-scrollbar { display: none; }
 /* Live Markdown: the textarea keeps the caret and selection but its text is see-through; the backdrop above it draws
    the same characters, styled. Nothing in it may change a character's width (see MarkdownBackdrop.tsx). */
-.composer textarea.md-live { color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg); }
+.composer textarea.md-live, .msg-edit textarea.md-live { color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg); }
 .md-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .md-inner { padding: 6px 4px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
 .md-line { margin: 0 -4px; padding: 0 4px; }

@@ -193,11 +193,13 @@ export type ChatMessage = {
   meta: MessageMeta;
   /** Ids of the pictures attached to this message (see IMAGE_LIMITS). */
   images: string[];
+  /** When the author last changed the words (null: never edited). */
+  edited_at: string | null;
 };
 
 /** Columns the clients select. Keep in step with ChatMessage. */
 export const MESSAGE_COLUMNS =
-  "id, chat_id, author_id, role, kind, content, status, seq, created_at, provider, model, reasoning, reply_to, mentions, skip_reason, for_user_id, key_user_id, run_id, meta, images";
+  "id, chat_id, author_id, role, kind, content, status, seq, created_at, provider, model, reasoning, reply_to, mentions, skip_reason, for_user_id, key_user_id, run_id, meta, images, edited_at";
 
 export type ChatSummary = {
   id: string;
@@ -674,3 +676,4 @@ export * from "./files.ts";
 export * from "./panels.ts";
 export * from "./panel-check.ts";
 export * from "./skills.ts";
+export * from "./message-edit.ts";

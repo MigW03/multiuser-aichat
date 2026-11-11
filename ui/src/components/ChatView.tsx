@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
+import { lastEditableOf, DEFAULT_CHAT_TITLE, DEFAULT_REASONING, IMAGE_ONLY_TEXT, isSmartModel, LIMITS, NOTE_LIMITS, canManagePeople, modelName, type ChatMessage, type ChatSummary, type Person, type ProjectSummary, type Reasoning, type ModelChoice } from "@mc/shared";
 import { Link2, Monitor, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Shapes, Sparkles, Trash2, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -62,6 +62,9 @@ export function ChatView({ chat, project, projects, projectPeople, projectOnline
   const [extraNames, setExtraNames] = useState<Map<string, string>>(new Map());
   const [extraAvatars, setExtraAvatars] = useState<Map<string, string | null>>(new Map());
   const asked = useRef(new Set<string>());
+  /** The message of this person that is open for editing. */
+  const [editId, setEditId] = useState<string | null>(null);
+  useEffect(() => setEditId(null), [chat.id]);
 
   const names = useMemo(() => {
     const map = new Map(extraNames);
@@ -123,6 +126,7 @@ export function ChatView({ chat, project, projects, projectPeople, projectOnline
       role: "user",
       kind: "message",
       content: out.content || IMAGE_ONLY_TEXT,
+      edited_at: null,
       images: out.pictures.map((p) => p.id),
       status: answered ? "pending" : "done",
       seq: OPTIMISTIC_SEQ,
@@ -163,6 +167,31 @@ export function ChatView({ chat, project, projects, projectPeople, projectOnline
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "Could not retry.", "error");
     }
+  }
+
+  /** While an answer is being written, messages stay as they are: the answer may be about them. */
+  const answerRunning = room.messages.some((m) => m.role === "assistant" && m.status === "streaming");
+
+  function startEdit(m: ChatMessage) {
+    if (answerRunning) return toast.push("Wait for the AI to finish before editing.", "info");
+    setEditId(m.id);
+  }
+
+  /** Up arrow in an empty composer: edit your newest message. */
+  function editLast() {
+    const m = lastEditableOf(
+      room.messages.filter((x) => x.seq !== OPTIMISTIC_SEQ),
+      me.id,
+    );
+    if (m) startEdit(m);
+  }
+
+  async function saveEdit(m: ChatMessage, text: string, regenerate: boolean) {
+    const res = await api.editMessage(m.id, { content: text, regenerate });
+    // Everyone else gets the change live; this shows it here without waiting for that.
+    room.upsert({ ...m, content: res.content, edited_at: res.edited_at ?? m.edited_at, ...(res.regenerating ? { status: "pending" as const } : {}) });
+    setEditId(null);
+    if (res.regenerating) toast.push("The AI is writing its reply again", "info");
   }
 
   async function copy(m: ChatMessage) {
@@ -285,6 +314,10 @@ export function ChatView({ chat, project, projects, projectPeople, projectOnline
         onReply={replyTo}
         onRetry={(m) => void retry(m)}
         onCopy={(m) => void copy(m)}
+        editingId={editId}
+        onEdit={startEdit}
+        onCancelEdit={() => setEditId(null)}
+        onSaveEdit={saveEdit}
         {...(project ? { onSaveNote: (m: ChatMessage) => void saveNote(m) } : {})}
         onAddKey={openAddKey}
         onUpdateKey={() => openSettings("key")}
@@ -305,6 +338,7 @@ export function ChatView({ chat, project, projects, projectPeople, projectOnline
         onStop={() => void api.stop(chat.id).catch(() => undefined)}
         onTyping={shared ? room.sendTyping : () => undefined}
         onSend={send}
+        onEditLast={editLast}
         placeholder={shared ? "Message the chat. Tag someone with @ to talk to them, not the AI." : choice ? `Message ${modelName(choice.model)}` : "Message the AI"}
         focusKey={chat.id}
         status={typing ? <span className="typing-line small muted">{typing}</span> : null}

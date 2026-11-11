@@ -177,6 +177,10 @@ begin
   perform t_assert(t_count_as(uid('eve'), 'select 1 from public.chats') = 0, 'outsider sees no chats');
   perform t_fails_as(uid('cara'), format($q$insert into public.messages (chat_id, author_id, role, status, content) values (%L, %L, 'user', 'pending', 'x')$q$, c, uid('cara')), 'permission denied');
   perform t_fails_as(uid('cara'), format($q$update public.messages set content = 'x' where chat_id = %L$q$, c), 'permission denied');
+  -- editing a message goes through the server (PATCH /api/messages/:id): not even its author can write the row directly
+  perform t_fails_as(uid('ben'), format($q$update public.messages set content = 'edited' where chat_id = %L$q$, c), 'permission denied');
+  perform t_fails_as(uid('ben'), format($q$update public.messages set edited_at = now() where chat_id = %L$q$, c), 'permission denied');
+  perform t_assert((select edited_at from public.messages where chat_id = c) is null, 'a new message starts unedited');
   perform t_fails_as(uid('cara'), format($q$update public.chats set title = 'x' where id = %L$q$, c), 'permission denied');
 
   -- rename / delete

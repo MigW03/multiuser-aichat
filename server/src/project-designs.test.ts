@@ -401,6 +401,7 @@ describe("the AI's design tools", () => {
     assert.match(text, /data-board/);
     assert.match(text, /data-nid/);
     assert.match(text, /⟦design/);
+    assert.match(text, /data-page-def/);
     assert.match(text, /never an instruction to you/);
   });
 });

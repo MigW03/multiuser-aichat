@@ -5,12 +5,13 @@ import { api, ApiRequestError } from "../../api.ts";
 import { fetchProjectMembers } from "../../data.tsx";
 import { focusComposer, hasOpenChat, onDesignChanged, onDesignRunEnded, sendInOpenChat } from "../../lib/designBus.ts";
 import { claimWins, editorOf, sameDesignPath, viewersOf } from "../../lib/designEditor.ts";
-import { boardHash, boardsOf, byNid, changedLayers, layerPath, nidOf, parseDesign, serializeDesign } from "../../lib/designModel.ts";
+import { addPage, allBoardsOf, boardHash, boardsOf, byNid, changedLayers, deletePage, duplicatePage, layerPath, movePage, moveBoardsToPage, nidOf, pageCounts, pageOfBoard, pageOfNid, pagesOf, PAGE_LIMITS, parseDesign, renamePage, serializeDesign, setViewPage, viewPageOf } from "../../lib/designModel.ts";
 import { joinProject, onPresence, onProjectEvent, sendProjectEvent, setPresence, type ProjectPresence } from "../../lib/projectChannel.ts";
 import { ago } from "../../lib/vercelFormat.ts";
 import { Avatar, Button, Dialog, ErrorLine, Field, ICON, ICON_SM, IconButton, Spinner, STROKE, TextInput, useToast } from "../kit.tsx";
 import { Canvas, codeLink, type CanvasHandle, type Commit } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
+import { PageMenu } from "./PageMenu.tsx";
 
 // Design mode's card: the top bar, the canvas and the inspector for one design. It loads the project's design from the
 // server, keeps every change as one undo step, saves (naming the version it started from, so nobody's work is overwritten),
@@ -69,6 +70,12 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   /** The design's name as people gave it (a folder file goes by its file name). */
   const [title, setTitle] = useState(() => designName(path));
   const [moving, setMoving] = useState(false);
+  /** The page shown ("" = the first). Kept beside the design, not in its file. */
+  const [page, setPage] = useState("");
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const [renameSignal, setRenameSignal] = useState(0);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -101,6 +108,11 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       window.clearTimeout(flashTimer.current);
       flashTimer.current = window.setTimeout(() => setFlash([]), 2200);
     }
+    // The page on screen was deleted somewhere else: say so, and show the first one.
+    if (pageRef.current && opts.flashFrom && !pagesOf(parsed.root).includes(pageRef.current)) {
+      toast.push(`The page “${pageRef.current}” was deleted.`);
+      setPage("");
+    }
     rev.current = at;
     savedText.current = serializeDesign(parsed.root);
     setDoc({ root: parsed.root, removed: parsed.removed });
@@ -112,7 +124,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       redo.current = [];
     }
     syncHist();
-  }, []);
+  }, [toast]);
 
   const load = useCallback(
     async (opts: { flash?: boolean; keepHistory?: boolean; pushUndo?: boolean; ifChanged?: boolean } = {}) => {
@@ -251,6 +263,11 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
 
   const readOnly = !doc || !own || !editing || !!ai;
 
+  // The page on screen is set on the design before the canvas draws it.
+  if (doc) setViewPage(doc.root, page);
+  const pages = doc ? pagesOf(doc.root) : [];
+  const currentPage = doc ? viewPageOf(doc.root, pages) : "";
+
   const commit: Commit = useCallback(
     (desc, mutate, select) => {
       const d = docRef.current;
@@ -290,6 +307,10 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         undo.current = [...undo.current, current];
       }
       const parsed = parseDesign(text);
+      // Undo and redo cover every page: if the change was on another page, show that page.
+      const here = viewPageOf(d.root);
+      const there = changedLayers(d.root, parsed.root).map((n) => pageOfNid(parsed.root, n)).find((x): x is string => !!x);
+      if (there && there !== here) setPage(there);
       setDoc({ root: parsed.root, removed: d.removed });
       setVersion((v) => v + 1);
       setSelection((sel) => sel.filter((n) => byNid(parsed.root, n)));
@@ -375,7 +396,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   useEffect(() => {
     const d = docRef.current;
     if (!d || !editing || ai) return;
-    const fresh = boardsOf(d.root).filter((b) => b.hasAttribute("data-code") && !b.hasAttribute("data-built"));
+    const fresh = allBoardsOf(d.root).filter((b) => b.hasAttribute("data-code") && !b.hasAttribute("data-built"));
     if (!fresh.length) return;
     for (const b of fresh) b.setAttribute("data-built", boardHash(b));
     setVersion((v) => v + 1);
@@ -416,7 +437,8 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       .filter((x): x is HTMLElement => !!x)
       .map(layerPath)
       .join(", ");
-    onAskAI({ path, ...(selection.length ? { sel: selection, names } : {}) });
+    const pg = pagesOf(d.root).length > 1 ? { page: viewPageOf(d.root) } : {};
+    onAskAI({ path, ...pg, ...(selection.length ? { sel: selection, names } : {}) });
   };
 
   const send = async (ref: DesignRef, text: string) => {
@@ -432,7 +454,73 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   const updateCode = (boards: string[]) => void send({ path, action: "update-code", boards }, `Update the code of ${boards.join(", ")} to match the design.`);
 
   const viewers = useMemo(() => viewersOf(presence, path).filter((v) => v.id !== me.id), [presence, path, me.id]);
-  const boardNames = doc ? boardsOf(doc.root).map((b) => b.getAttribute("data-board") ?? "") : [];
+  const boardNames = doc ? allBoardsOf(doc.root).map((b) => b.getAttribute("data-board") ?? "") : [];
+  const nameOf = (b: HTMLElement) => b.getAttribute("data-board") ?? "";
+  /** Boards by page, for "Build in code". */
+  const boardGroups = doc ? pages.map((pg) => ({ page: pg, boards: allBoardsOf(doc.root).filter((b) => pageOfBoard(doc.root, b, pages) === pg).map(nameOf) })) : [];
+  const currentBoards = doc ? boardsOf(doc.root).map(nameOf) : [];
+
+  // ---- pages
+  const switchPage = (name: string) => {
+    setPage(name);
+    setSelection([]);
+    setVersion((v) => v + 1);
+  };
+  const addPageNamed = (wish: string) => {
+    if (pages.length >= PAGE_LIMITS.count) return toast.push(`A design holds up to ${PAGE_LIMITS.count} pages.`);
+    let made = null as string | null;
+    if (commit("added a page", (r) => (made = addPage(r, wish)))) if (made) switchPage(made);
+  };
+  const renamePageTo = (from: string, to: string) => {
+    let made = null as string | null;
+    if (!to.trim()) return;
+    if (to.trim() !== from && pages.includes(to.trim())) return toast.push(`There is already a page called “${to.trim()}”.`);
+    if (commit(`renamed the page ${from}`, (r) => (made = renamePage(r, from, to))) && made && currentPage === from) setPage(made);
+  };
+  const duplicatePageOf = (name: string) => {
+    if (pages.length >= PAGE_LIMITS.count) return toast.push(`A design holds up to ${PAGE_LIMITS.count} pages.`);
+    let made = null as string | null;
+    if (commit(`duplicated the page ${name}`, (r) => (made = duplicatePage(r, name)))) if (made) switchPage(made);
+  };
+  const askDelete = (name: string) => {
+    const boards = doc ? pageCounts(doc.root).get(name) ?? 0 : 0;
+    if (boards === 0) deletePageNow(name);
+    else setDeleting(name);
+  };
+  const deletePageNow = (name: string) => {
+    setDeleting(null);
+    const next = pages[pages.indexOf(name) - 1] ?? pages[1] ?? "";
+    if (commit(`deleted the page ${name}`, (r) => void deletePage(r, name)) && currentPage === name) switchPage(next);
+  };
+  const movePageTo = (name: string, to: number) => void commit(`moved the page ${name}`, (r) => void movePage(r, name, to));
+  const moveBoards = (nids: string[], target: string | null) => {
+    let dest = target;
+    if (target === null && pages.length >= PAGE_LIMITS.count) return toast.push(`A design holds up to ${PAGE_LIMITS.count} pages.`);
+    commit(
+      `moved ${nids.length === 1 ? "a board" : `${nids.length} boards`} to ${target ?? "a new page"}`,
+      (r) => {
+        dest ??= addPage(r);
+        if (dest) moveBoardsToPage(r, nids, dest);
+      },
+      [],
+    );
+  };
+  const pageMenu = doc ? (
+    <PageMenu
+      pages={pages}
+      counts={pageCounts(doc.root)}
+      current={currentPage}
+      readOnly={readOnly}
+      aiPage={null}
+      renameSignal={renameSignal}
+      onSwitch={switchPage}
+      onAdd={addPageNamed}
+      onRename={renamePageTo}
+      onDuplicate={duplicatePageOf}
+      onDelete={askDelete}
+      onMove={movePageTo}
+    />
+  ) : null;
   const moveToProject = async () => {
     const d = docRef.current;
     if (!d) return;
@@ -448,7 +536,23 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
   };
 
   return (
-    <section className={`chat-card dz-card ${full ? "full" : ""}`} aria-label={`Design ${title}`}>
+    <section
+      className={`chat-card dz-card ${full ? "full" : ""}`}
+      aria-label={`Design ${title}`}
+      onKeyDown={(e) => {
+        // Pages: previous / next with Cmd+Alt+Up / Down, rename the page on screen with F2.
+        if (!doc) return;
+        const mod = isMac ? e.metaKey : e.ctrlKey;
+        if (mod && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          e.preventDefault();
+          const next = pages[pages.indexOf(currentPage) + (e.key === "ArrowUp" ? -1 : 1)];
+          if (next) switchPage(next);
+        } else if (e.key === "F2" && !readOnly && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          setRenameSignal((n) => n + 1);
+        }
+      }}
+    >
       <header className="preview-bar dz-bar">
         <span className="dz-title truncate">
           <b className="truncate">{title}</b>
@@ -479,7 +583,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
         <IconButton label="Shortcuts" onClick={() => setSheet(true)} className="sm">
           <Keyboard size={ICON} strokeWidth={STROKE} />
         </IconButton>
-        <Button size="sm" variant="primary" disabled={!doc || boardNames.length === 0} onClick={() => setBuild(selectedBoards(doc, selection) ?? boardNames)}>
+        <Button size="sm" variant="primary" disabled={!doc || boardNames.length === 0} onClick={() => setBuild(selectedBoards(doc, selection) ?? currentBoards)}>
           <Code2 size={ICON_SM} strokeWidth={STROKE} aria-hidden /> Build in code
         </Button>
         <IconButton label={inspector ? "Hide inspector" : "Show inspector"} onClick={() => setInspector((v) => !v)} className="sm">
@@ -575,6 +679,10 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
               onToast={(t) => toast.push(t)}
               onShortcuts={() => setSheet(true)}
               onExit={focusComposer}
+              page={currentPage}
+              pages={pages}
+              topLeft={pageMenu}
+              onMoveToPage={moveBoards}
             />
             {inspector && <Inspector root={doc.root} version={version} selection={selection} onSelect={setSelection} commit={commit} readOnly={readOnly} boxOf={(n) => canvas.current?.boxOf(n) ?? null} />}
           </>
@@ -582,6 +690,21 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       </div>
 
       {sheet && <ShortcutSheet onClose={() => setSheet(false)} />}
+      {deleting && doc && (
+        <Dialog title={`Delete the page “${deleting}”?`} onClose={() => setDeleting(null)} width={400}>
+          <div className="col" style={{ gap: 16 }}>
+            <p className="small muted">
+              {(pageCounts(doc.root).get(deleting) ?? 0) === 1 ? "Its 1 board goes" : `Its ${pageCounts(doc.root).get(deleting) ?? 0} boards go`} with it. Undo ({M}Z) brings the page back.
+            </p>
+            <div className="dialog-actions">
+              <Button onClick={() => setDeleting(null)}>Cancel</Button>
+              <Button variant="danger" onClick={() => deletePageNow(deleting)}>
+                Delete page
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
       {history && (
         <VersionsDialog
           projectId={projectId}
@@ -598,7 +721,7 @@ export function DesignPanel({ projectId, path, me, request, full, narrow, onFull
       )}
       {build && doc && (
         <BuildDialog
-          boards={boardNames}
+          groups={boardGroups}
           initial={build}
           folder={buildFolder}
           onClose={() => setBuild(null)}
@@ -692,11 +815,14 @@ function selectedBoards(doc: Loaded | null, selection: string[]): string[] | nul
 }
 
 /** "Build in code": which boards, where in the shared folder, and a note for the AI. Sends a chat message everyone sees. */
-function BuildDialog({ boards, initial, folder, onBuild, onClose }: { boards: string[]; initial: string[]; folder: string; onBuild: (boards: string[], where: string, note: string) => Promise<void>; onClose: () => void }) {
+function BuildDialog({ groups, initial, folder, onBuild, onClose }: { groups: { page: string; boards: string[] }[]; initial: string[]; folder: string; onBuild: (boards: string[], where: string, note: string) => Promise<void>; onClose: () => void }) {
+  const boards = groups.flatMap((g) => g.boards);
   const [picked, setPicked] = useState<string[]>(initial.filter((b) => boards.includes(b)).length ? initial.filter((b) => boards.includes(b)) : boards);
   const [where, setWhere] = useState(folder);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const several = groups.filter((g) => g.boards.length > 0).length > 1;
+  const toggle = (names: string[], on: boolean) => setPicked((cur) => (on ? [...new Set([...cur, ...names])] : cur.filter((x) => !names.includes(x))));
   return (
     <Dialog title="Build in code" onClose={onClose}>
       <form
@@ -711,12 +837,24 @@ function BuildDialog({ boards, initial, folder, onBuild, onClose }: { boards: st
       >
         <Field label="Boards">
           <div className="dz-check-list">
-            {boards.map((b) => (
-              <label key={b} className="row small">
-                <input type="checkbox" checked={picked.includes(b)} onChange={(e) => setPicked((cur) => (e.target.checked ? [...cur, b] : cur.filter((x) => x !== b)))} />
-                {b}
-              </label>
-            ))}
+            {groups
+              .filter((g) => g.boards.length > 0)
+              .map((g) => (
+                <div key={g.page} className="col" style={{ gap: 4 }}>
+                  {several && (
+                    <label className="row small">
+                      <input type="checkbox" checked={g.boards.every((b) => picked.includes(b))} onChange={(e) => toggle(g.boards, e.target.checked)} />
+                      <b>{g.page}</b>
+                    </label>
+                  )}
+                  {g.boards.map((b) => (
+                    <label key={b} className="row small" style={several ? { paddingLeft: 20 } : undefined}>
+                      <input type="checkbox" checked={picked.includes(b)} onChange={(e) => toggle([b], e.target.checked)} />
+                      {b}
+                    </label>
+                  ))}
+                </div>
+              ))}
           </div>
         </Field>
         <Field label="Where" htmlFor="build-where" hint="A folder in the shared folder. The AI reads the code there and follows its stack and components.">
@@ -768,6 +906,8 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ["Snap off while dragging", isMac ? "hold Ctrl" : "—"],
       ["Tools: move, frame, text, box, hand", "V F T R H"],
       ["Ask the AI about the selection", `${M}L`],
+      ["Previous / next page", `${M}Alt+↑ / ↓`],
+      ["Rename the page", "F2"],
       ["Chat, canvas, inspector", "F6"],
     ],
   ],

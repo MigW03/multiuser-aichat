@@ -59,6 +59,17 @@ describe("project design addresses", () => {
   });
 });
 
+describe("pages in a design", () => {
+  const paged = `<div data-page-def="Page 1" hidden></div>\n<div data-page-def="Flows" hidden></div>\n<section data-board="Home" data-page="Flows" data-nid="b1" data-x="0" data-y="0" data-w="400"></section>`;
+  test("page elements and attributes are plain and pass the safety check", () => {
+    assert.equal(designUnsafe(paged), null);
+  });
+  test("the marker carries the page", () => {
+    const text = `${designMarker({ path: "project:a.design.html", page: "Flows", sel: ["n1"] })}\nmake it blue`;
+    assert.equal(parseDesignMarker(text)?.ref.page, "Flows");
+  });
+});
+
 describe("designUnsafe", () => {
   test("refuses what can run or load from outside, however it is spelled", () => {
     for (const html of [
